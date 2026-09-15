@@ -1,0 +1,18 @@
+# Thư viện Python cho phần điều khiển máy Android.
+#
+# ⚠ CÀI ĐÚNG BẢN PYTHON MÀ APP SẼ CHẠY. Máy làm việc hay có 2–3 bản Python cùng lúc, và
+# `pip install` trần rất dễ rơi vào bản khác — app vẫn báo thiếu thư viện dù bạn vừa cài xong,
+# rồi cài đi cài lại mà không hiểu vì sao.
+#
+# Trong app, bấm nút 🔌 Kiểm tra: nó in ra ĐÚNG câu lệnh cần gõ cho máy này, ví dụ:
+#
+#     python -m pip install -r requirements.txt
+#     py -3.12 -m pip install -r requirements.txt
+#
+# (Ghi chú 2026-09-15: uiautomator2 3.7.0 cài được trên Python 3.14 — đo bằng
+#  `pip install --dry-run uiautomator2` trên chính máy chủ dự án, mọi phụ thuộc đều có bánh xe
+#  cp314. KHÔNG cần hạ bậc Python. App chọn bản nào import được uiautomator2, không chọn theo
+#  số phiên bản.)
+
+uiautomator2>=3.0
+requests>=2.28

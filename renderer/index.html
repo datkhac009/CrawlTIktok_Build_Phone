@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>TikTok Phone Crawler</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="logo">📱</span>
+      <span class="title">TikTok Phone Crawler</span>
+      <span class="version" id="appVersion"></span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn" id="sheetsBtn">☁ Google Sheet</button>
+    </div>
+  </div>
+
+  <div class="layout layout-col">
+
+    <!-- Bảng thiết bị -->
+    <section class="panel grow">
+      <div class="panel-head">
+        <h2>Thiết bị</h2>
+        <div class="row gap wrap">
+          <button class="btn" id="runSelectedBtn">▶ Chạy đã chọn</button>
+          <button class="btn" id="stopSelectedBtn">■ Dừng đã chọn</button>
+          <button class="btn" id="settingsSelectedBtn">⚙️ Cài đặt đã chọn</button>
+          <button class="btn btn-primary" id="manageDevicesBtn">➕ Thêm / Quản lý</button>
+        </div>
+      </div>
+      <div style="overflow:auto; flex:1;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width:28px;"><input type="checkbox" id="selectAll"></th>
+              <th>Tên</th>
+              <th>Serial (ADB)</th>
+              <th>Trạng thái</th>
+              <th style="width:80px;">Đã check</th>
+              <th style="width:70px;">Hợp lệ</th>
+              <th style="width:250px;">Hành động</th>
+            </tr>
+          </thead>
+          <tbody id="deviceTableBody"></tbody>
+        </table>
+      </div>
+      <div class="placeholder" id="deviceEmptyPlaceholder" hidden>
+        <div>Chưa có thiết bị nào.</div>
+        <div class="hint">Bấm "➕ Thêm / Quản lý" để thêm thiết bị theo serial ADB (vd: 192.168.5.104:5555).</div>
+      </div>
+    </section>
+
+    <!-- Bảng dữ liệu thu thập -->
+    <section class="panel grow">
+      <div class="panel-head">
+        <h2>Dữ liệu thu thập</h2>
+        <div class="crawl-status-bar">
+          <span class="badge" id="crawlCount">0 sound</span>
+          <span class="status-msg" id="crawlStatusMsg"></span>
+          <button class="btn" id="pushSheetBtn">☁ Đẩy lên Sheet</button>
+          <button class="btn" id="exportExcelBtn">📥 Xuất Excel</button>
+        </div>
+      </div>
+      <div class="result-wrap">
+        <table class="result-table">
+          <thead>
+            <tr>
+              <th style="width:40px;">#</th>
+              <th>Tên sound</th>
+              <th>Link</th>
+              <th style="width:90px;">Số post</th>
+              <th style="width:140px;">Thiết bị</th>
+            </tr>
+          </thead>
+          <tbody id="resultBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Modal: Quản lý thiết bị -->
+  <div class="modal" id="deviceModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>➕ Thêm / Quản lý thiết bị</h3>
+        <button class="btn-icon" id="deviceModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="section">
+          <div class="section-title">Thêm thiết bị mới</div>
+          <div class="add-row">
+            <input class="input" id="newDeviceName" placeholder="Tên (vd: May 104)">
+            <input class="input" id="newDeviceSerial" placeholder="Serial ADB (vd: 192.168.5.104:5555)">
+            <button class="btn btn-primary" id="addDeviceBtn">Thêm</button>
+          </div>
+        </div>
+        <div class="section">
+          <div class="row gap" style="align-items:center; justify-content:space-between;">
+            <div class="section-title">Quét ADB (thiết bị đang kết nối)</div>
+            <button class="btn btn-sm" id="scanAdbBtn">🔄 Quét ADB</button>
+          </div>
+          <div class="adb-scan-list" id="adbScanList"></div>
+        </div>
+        <div class="section">
+          <div class="section-title">Danh sách thiết bị</div>
+          <div class="device-list" id="deviceList"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-primary" id="deviceModalDone">Xong</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Cài đặt crawl -->
+  <div class="modal" id="settingsModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>⚙️ Cài đặt crawl — <span id="settingsTarget"></span></h3>
+        <button class="btn-icon" id="settingsModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="section">
+          <div class="field-label">Ngưỡng số post (chỉ lấy sound trong khoảng này)</div>
+          <div class="row gap">
+            <input class="input input-sm" type="number" id="cfgMinPosts" placeholder="Min">
+            <input class="input input-sm" type="number" id="cfgMaxPosts" placeholder="Max">
+          </div>
+        </div>
+        <div class="section">
+          <div class="field-label">Delay giữa các video (giây)</div>
+          <div class="row gap">
+            <input class="input input-sm" type="number" step="0.5" id="cfgDelayMin" placeholder="Min">
+            <input class="input input-sm" type="number" step="0.5" id="cfgDelayMax" placeholder="Max">
+          </div>
+        </div>
+        <div class="section">
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="cfgOriginalOnly" checked>
+              <span class="slider"></span>
+            </label>
+            <span class="switch-label">Chỉ lấy Original Sound (loại "Contains: ...")</span>
+          </div>
+        </div>
+        <div class="section">
+          <div class="field-label">Giới hạn số video quét (0 = không giới hạn, chạy tới khi bấm Dừng)</div>
+          <input class="input input-sm" type="number" id="cfgLimit" placeholder="0">
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="settingsCancel">Hủy</button>
+        <button class="btn btn-primary" id="settingsSave">Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Cài đặt Google Sheet -->
+  <div class="modal" id="sheetsModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>☁ Cài đặt Google Sheet</h3>
+        <button class="btn-icon" id="sheetsModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="switch-row">
+          <label class="switch">
+            <input type="checkbox" id="sheetsEnabled">
+            <span class="slider"></span>
+          </label>
+          <span class="switch-label">Bật tự động đẩy realtime khi crawl</span>
+        </div>
+        <div class="section">
+          <div class="field-label">Spreadsheet ID (hoặc dán cả link Sheet)</div>
+          <input class="input" id="sheetsId" placeholder="vd: 1BKKxKh15LCkFN9jrqPmsYxpxNy9DSBAoDrXPc52JQmA">
+        </div>
+        <div class="section">
+          <div class="field-label">Tên tab</div>
+          <input class="input" id="sheetsTab" placeholder="Data">
+        </div>
+        <div class="section">
+          <div class="field-label">Đồng bộ lọc trùng liên máy (phút)</div>
+          <input class="input input-sm" type="number" id="sheetsReseedMin" placeholder="5">
+        </div>
+        <div class="section">
+          <div class="field-label">Service Account (dán toàn bộ nội dung file JSON)</div>
+          <textarea class="input" id="sheetsSa" rows="6" placeholder='{ "client_email": "...", "private_key": "-----BEGIN PRIVATE KEY-----\n..." }'></textarea>
+          <div class="section-desc">Nhớ chia sẻ Sheet cho email service account với quyền <b>Editor</b>. Cột ghi: A=Tên sound, B=Link, C=Số post, D=Thiết bị, E=Tình trạng(=1).</div>
+        </div>
+        <div class="sheets-test-row">
+          <button class="btn" id="sheetsTestBtn">🔌 Test kết nối</button>
+          <span class="status-msg" id="sheetsTestResult"></span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="sheetsCancel">Hủy</button>
+        <button class="btn btn-primary" id="sheetsSaveBtn">Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Log riêng từng thiết bị -->
+  <div class="modal" id="logModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 id="logTitle">📄 Log</h3>
+        <button class="btn-icon" id="logModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <pre class="log-body" id="logBody"></pre>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="logClear">Xóa log</button>
+        <button class="btn btn-primary" id="logDone">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Kiểm tra trước khi chạy (preflight) -->
+  <div class="modal" id="preflightModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>🔌 Kiểm tra — <span id="preflightTarget"></span></h3>
+        <button class="btn-icon" id="preflightModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="preflightBody"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="preflightRetry">Kiểm tra lại</button>
+        <button class="btn btn-primary" id="preflightDone">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

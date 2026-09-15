@@ -1,0 +1,72 @@
+{
+  "name": "crawl-tiktok-phone",
+  "version": "0.1.0",
+  "description": "TikTok Phone Crawler — Device manager + crawler (ADB/uiautomator2)",
+  "main": "main.js",
+  "author": "HUNFI",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "set \"ELECTRON_RUN_AS_NODE=\" && electron .",
+    "dev": "set \"ELECTRON_RUN_AS_NODE=\" && electronmon .",
+    "build": "electron-builder --win portable --x64",
+    "test": "node tests/run-all.cjs"
+  },
+  "electronmon": {
+    "patterns": [
+      "!config/**",
+      "!node_modules/**",
+      "!**/*.md",
+      "!*.py",
+      "!*.txt"
+    ]
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.0",
+    "electronmon": "^2.0.4"
+  },
+  "build": {
+    "appId": "com.hunfi.crawl-tiktok-phone",
+    "productName": "Crawl_DataTiktok_Phone",
+    "directories": {
+      "output": "../Crawl_Data_Tiktok_Phone_release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "renderer/icon.png",
+      "artifactName": "Crawl_DataTiktok_Phone.exe",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "Crawl_DataTiktok_Phone.exe"
+    },
+    "files": [
+      "**/*",
+      "!config/**",
+      "!node_modules/.cache/**",
+      "!tests/**",
+      "!*.md",
+      "!*.py",
+      "!sound_links.txt",
+      "!probe_*.xml",
+      "!start_scan_feed_sound.bat",
+      "!build.bat",
+      "!version-bump.cjs"
+    ],
+    "extraResources": [
+      "scan_feed_sounds.py",
+      "adb_helper.py",
+      "requirements.txt"
+    ]
+  }
+}

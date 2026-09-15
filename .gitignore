@@ -1,0 +1,28 @@
+# Phu thuoc - 451MB, dung npm install de dung lai
+node_modules/
+
+# Ket qua build
+../Crawl_Data_Tiktok_Phone_release/
+dist/
+*.exe
+
+# Trang thai rieng cua tung may chay app - KHONG day len repo chung:
+#  - devices.json chua dia chi IP farm cua chu du an
+#  - devices/<id>/ chua so kenh chat luong, tuc khau vi cua TUNG tai khoan TikTok
+config/
+
+# Du lieu thu thap duoc - la ket qua kinh doanh, khong phai ma nguon
+sound_links.txt
+probe_*.xml
+
+# Python
+__pycache__/
+*.pyc
+
+# adb di kem - tai rieng, khong day binary len git
+platform-tools/
+
+# Rac he dieu hanh / trinh soan thao
+Thumbs.db
+.DS_Store
+.vscode/
