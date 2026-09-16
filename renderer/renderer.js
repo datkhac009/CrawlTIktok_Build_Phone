@@ -333,14 +333,49 @@ function renderDeviceList() {
     wrap.innerHTML = '<div class="device-empty">Chưa có thiết bị nào.</div>';
     return;
   }
+  // Tên là ô NHẬP ĐƯỢC NGAY, không phải nhãn tĩnh: sửa xong Enter hoặc bấm ra ngoài là lưu.
+  // Làm một modal đổi tên riêng cho 21 máy thì mỗi lần sửa mất ba cú bấm.
   wrap.innerHTML = devices.map((d) => `
     <div class="device-item" data-id="${d.id}">
       <div class="device-item-info">
-        <div class="device-item-name">${esc(d.name)}</div>
+        <input class="input input-sm device-name-input" data-id="${d.id}"
+               value="${esc(d.name)}" placeholder="Tên máy" title="Sửa rồi Enter để lưu">
         <div class="device-item-serial">${esc(d.serial)}</div>
       </div>
+      <button class="btn-icon" data-act="modal-identify" data-id="${d.id}"
+              title="Nháy thanh thông báo trên máy để biết là ô nào">💡</button>
       <button class="btn-icon" data-act="modal-delete" data-id="${d.id}" title="Xóa">✕</button>
     </div>`).join('');
+}
+
+// Đổi tên máy. Trả về true nếu có đổi.
+async function renameDevice(id, ten) {
+  const d = devices.find((x) => x.id === id);
+  const moi = String(ten || '').trim();
+  if (!d || !moi || moi === d.name) return false;
+  try {
+    await window.api.devicesUpdate({ id, name: moi });
+    d.name = moi;
+    renderDeviceRow(id);          // bảng chính cũng phải đổi theo, không chỉ trong modal
+    toast(`Đã đổi tên thành "${moi}"`);
+    return true;
+  } catch (e) {
+    toast(String((e && e.message) || e), false);
+    return false;
+  }
+}
+
+// Làm máy tự lộ diện trên màn hình soi.
+async function identifyDevice(serial, nut) {
+  if (!serial) return;
+  const cu = nut ? nut.textContent : '';
+  if (nut) { nut.textContent = '⏳'; nut.disabled = true; }
+  try {
+    const r = await window.api.deviceIdentify(serial);
+    if (!r || !r.ok) toast((r && r.msg) || 'Máy không nhận lệnh', false);
+  } finally {
+    if (nut) { nut.textContent = cu || '💡'; nut.disabled = false; }
+  }
 }
 
 async function addDevice() {
@@ -369,20 +404,42 @@ async function deleteDeviceById(id) {
   renderDeviceTable();
 }
 
+// Danh sách quét, có TÊN MÁY để biết IP nào ứng với ô nào trên màn hình soi.
+//
+// `ro.product.model` cho ra đúng chuỗi mà phần mềm soi in trên mỗi ô (GM1911, TECNO LC8...),
+// nên nhìn là khớp được. Hai máy CÙNG ĐỜI thì tên trùng nhau — lúc đó dùng nút 💡 để làm máy
+// tự lộ diện.
 async function scanAdb() {
-  const list = await window.api.devicesListAdb();
   const wrap = document.getElementById('adbScanList');
+  wrap.innerHTML = '<div class="hint">Đang quét và đọc tên máy…</div>';
+  const list = await window.api.devicesListAdb();
   if (!list.length) {
     wrap.innerHTML = '<div class="hint">Không thấy thiết bị nào qua adb devices.</div>';
     return;
   }
-  wrap.innerHTML = list.map((s) => `
+  // Máy cùng đời thì đánh dấu, để người dùng biết là phải dùng nút 💡 mới phân biệt được.
+  const demModel = {};
+  list.forEach((s) => { if (s.model) demModel[s.model] = (demModel[s.model] || 0) + 1; });
+
+  wrap.innerHTML = list.map((s) => {
+    const trung = s.model && demModel[s.model] > 1;
+    const ten = s.model ? `${esc(s.model)}${s.brand ? ` · ${esc(s.brand)}` : ''}` : '(không đọc được tên)';
+    return `
     <div class="adb-scan-item">
-      <span class="serial">${esc(s.serial)} <span class="hint">(${s.state})</span></span>
-      ${s.added
-        ? '<span class="hint">đã thêm</span>'
-        : `<button class="btn btn-sm" data-act="quick-add" data-serial="${esc(s.serial)}">+ Thêm</button>`}
-    </div>`).join('');
+      <span class="serial">
+        <b>${ten}</b>${trung ? ' <span class="hint">⚠ có máy cùng đời</span>' : ''}
+        <span class="hint">${esc(s.serial)} · ${s.state}</span>
+      </span>
+      <span class="row gap">
+        <button class="btn-icon" data-act="identify" data-serial="${esc(s.serial)}"
+                title="Nháy thanh thông báo trên máy để biết là ô nào">💡</button>
+        ${s.added
+          ? '<span class="hint">đã thêm</span>'
+          : `<button class="btn btn-sm" data-act="quick-add" data-serial="${esc(s.serial)}"
+                     data-name="${esc(s.model || '')}">+ Thêm</button>`}
+      </span>
+    </div>`;
+  }).join('');
 }
 
 // ---- Modal: Cài đặt crawl ----
@@ -648,15 +705,39 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  document.getElementById('deviceList').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-act="modal-delete"]');
-    if (btn) deleteDeviceById(btn.dataset.id);
+  const dsList = document.getElementById('deviceList');
+  dsList.addEventListener('click', (e) => {
+    const xoa = e.target.closest('[data-act="modal-delete"]');
+    if (xoa) { deleteDeviceById(xoa.dataset.id); return; }
+    const nhay = e.target.closest('[data-act="modal-identify"]');
+    if (nhay) {
+      const d = devices.find((x) => x.id === nhay.dataset.id);
+      if (d) identifyDevice(d.serial, nhay);
+    }
+  });
+  // Enter để lưu ngay; rời ô cũng lưu — người dùng sửa xong hay bấm đi chỗ khác luôn.
+  dsList.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const inp = e.target.closest('.device-name-input');
+    if (inp) { renameDevice(inp.dataset.id, inp.value); inp.blur(); }
+  });
+  dsList.addEventListener('focusout', (e) => {
+    const inp = e.target.closest('.device-name-input');
+    if (inp) renameDevice(inp.dataset.id, inp.value);
   });
 
   document.getElementById('adbScanList').addEventListener('click', (e) => {
+    const nhay = e.target.closest('[data-act="identify"]');
+    if (nhay) { identifyDevice(nhay.dataset.serial, nhay); return; }
+
     const btn = e.target.closest('[data-act="quick-add"]');
     if (!btn) return;
     document.getElementById('newDeviceSerial').value = btn.dataset.serial;
-    document.getElementById('newDeviceName').focus();
+    // Tự điền tên máy đọc được. Vẫn để người dùng sửa trước khi bấm Thêm — 21 máy mà gõ tay
+    // từng cái thì vừa lâu vừa dễ gõ nhầm.
+    const oTen = document.getElementById('newDeviceName');
+    if (btn.dataset.name && !oTen.value.trim()) oTen.value = btn.dataset.name;
+    oTen.focus();
+    oTen.select();
   });
 });

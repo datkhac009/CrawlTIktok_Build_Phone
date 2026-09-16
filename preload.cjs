@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('api', {
   devicesDelete: (data) => ipcRenderer.invoke('devices-delete', data),
   devicesListAdb: () => ipcRenderer.invoke('devices-list-adb'),
   deviceCheck: (serial) => ipcRenderer.invoke('device-check', serial),
+  deviceIdentify: (serial) => ipcRenderer.invoke('device-identify', serial),
 
   deviceStart: (params) => ipcRenderer.invoke('device-start', params),
   deviceStop: (deviceId) => ipcRenderer.invoke('device-stop', deviceId),

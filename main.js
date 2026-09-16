@@ -122,6 +122,7 @@ ipcMain.handle('devices-delete', (_e, data) => {
 });
 ipcMain.handle('devices-list-adb', () => devices.listAdbSerials());
 ipcMain.handle('device-check', (_e, serial) => devices.checkDevice(serial));
+ipcMain.handle('device-identify', (_e, serial) => devices.identifyDevice(serial));
 
 // ---- Crawl control ----
 // Chạy một lượt. Tách riêng để lượt chạy lại sau giờ nghỉ đi qua ĐÚNG đường này — viết hai

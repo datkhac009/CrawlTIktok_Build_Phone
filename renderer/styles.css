@@ -350,3 +350,9 @@ textarea.input { resize: vertical; font-family: 'Consolas', monospace; font-size
   color: var(--text-dim); font-size: 12px; line-height: 1.5;
   margin: 4px 0 8px;
 }
+
+/* Danh sách quản lý thiết bị: tên là ô nhập được ngay */
+.device-name-input { width: 100%; max-width: 260px; margin-bottom: 3px; }
+.device-item-info { flex: 1; min-width: 0; }
+.adb-scan-item .serial { display: flex; flex-direction: column; gap: 2px; }
+.adb-scan-item .serial b { font-weight: 600; }

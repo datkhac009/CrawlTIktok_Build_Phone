@@ -61,7 +61,24 @@ function deleteDevice({ id }) {
   return { ok: true };
 }
 
-// Chạy `adb devices` để liệt kê serial đang online, đánh dấu cái nào đã được thêm.
+// Đọc một thuộc tính của máy. Trả chuỗi rỗng nếu không đọc được — KHÔNG ném, vì đây chỉ là
+// thông tin phụ giúp nhận ra máy; hỏng nó không được làm hỏng cả danh sách.
+function _getprop(adb, serial, key) {
+  return new Promise((resolve) => {
+    execFile(adb, ['-s', serial, 'shell', 'getprop', key], { timeout: 6000, encoding: 'utf-8' },
+      (err, stdout) => resolve(err ? '' : String(stdout || '').trim()));
+  });
+}
+
+// Chạy `adb devices` để liệt kê serial đang online, KÈM TÊN MÁY.
+//
+// VÌ SAO CẦN TÊN (2026-09-16):
+// Danh sách chỉ có `192.168.5.111:5555` thì không ai biết đó là máy nào trong 21 ô trên màn
+// hình soi. `ro.product.model` cho ra đúng chuỗi mà phần mềm soi in trên mỗi ô (GM1911,
+// TECNO LC8, SM-A920F...), nên nhìn là khớp được ngay.
+//
+// ⚠ KHÔNG dùng `settings get global device_name`: đo trên farm thật thấy hai máy khác hẳn nhau
+// cùng báo "SM-N950F" — thuộc tính đó bị đặt đè nên vô dụng cho việc phân biệt.
 function listAdbSerials() {
   return new Promise((resolve) => {
     const ADB_PATH = adbPath();
@@ -76,8 +93,42 @@ function listAdbSerials() {
         const m = line.match(/^(\S+)\t(device|unauthorized|offline)$/);
         if (m) serials.push({ serial: m[1], state: m[2], added: added.has(m[1]) });
       });
-      resolve(serials);
+      // Đọc tên SONG SONG: hơn 20 máy mà đọc tuần tự thì mất cả chục giây và người dùng tưởng
+      // app treo.
+      Promise.all(serials.map(async (x) => {
+        if (x.state !== 'device') return;
+        const [model, brand, hw] = await Promise.all([
+          _getprop(ADB_PATH, x.serial, 'ro.product.model'),
+          _getprop(ADB_PATH, x.serial, 'ro.product.brand'),
+          _getprop(ADB_PATH, x.serial, 'ro.serialno'),
+        ]);
+        x.model = model;
+        x.brand = brand;
+        x.hwSerial = hw;    // số máy phần cứng — phân biệt được hai máy CÙNG đời
+      })).then(() => resolve(serials), () => resolve(serials));
     });
+  });
+}
+
+// Làm một máy TỰ LỘ DIỆN trên màn hình soi: kéo thanh thông báo xuống rồi thu lại sau vài giây.
+//
+// VÌ SAO CẦN: hai máy cùng đời (farm có hai chiếc Redmi K20 Pro) thì `ro.product.model` giống
+// hệt nhau, nhìn tên không phân biệt được IP nào ứng với ô nào.
+//
+// Chọn thanh thông báo vì nó KHÔNG rời khỏi app đang mở, không bấm vào thứ gì, và tự trả lại
+// nguyên trạng — khác hẳn mở Cài đặt hay bấm phím nguồn.
+function identifyDevice(serial, ms = 4000) {
+  return new Promise((resolve) => {
+    const ADB_PATH = adbPath();
+    if (!ADB_PATH) return resolve({ ok: false, msg: 'Không tìm thấy adb.exe' });
+    execFile(ADB_PATH, ['-s', serial, 'shell', 'cmd', 'statusbar', 'expand-notifications'],
+      { timeout: 8000 }, (err) => {
+        if (err) return resolve({ ok: false, msg: 'Máy không nhận lệnh hiện thanh thông báo' });
+        setTimeout(() => {
+          execFile(ADB_PATH, ['-s', serial, 'shell', 'cmd', 'statusbar', 'collapse'],
+            { timeout: 8000 }, () => resolve({ ok: true }));
+        }, ms);
+      });
   });
 }
 
@@ -105,5 +156,6 @@ module.exports = {
   updateDevice,
   deleteDevice,
   listAdbSerials,
+  identifyDevice,
   checkDevice,
 };
