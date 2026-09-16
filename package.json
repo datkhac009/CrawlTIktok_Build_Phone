@@ -1,6 +1,6 @@
 {
   "name": "crawl-tiktok-phone",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "TikTok Phone Crawler — Device manager + crawler (ADB/uiautomator2)",
   "main": "main.js",
   "author": "HUNFI",
