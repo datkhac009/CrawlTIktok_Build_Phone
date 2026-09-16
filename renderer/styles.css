@@ -335,3 +335,18 @@ textarea.input { resize: vertical; font-family: 'Consolas', monospace; font-size
   word-break: break-word;
   user-select: text;
 }
+
+/* Ô tích nhóm ký tự trong bộ lọc ngôn ngữ */
+.ni-script {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel-2); cursor: pointer; font-size: 13px; user-select: none;
+}
+.ni-script input { cursor: pointer; }
+#cfgNiScripts { flex-wrap: wrap; }
+
+/* Dòng giải thích dưới một mục cài đặt */
+.section-desc {
+  color: var(--text-dim); font-size: 12px; line-height: 1.5;
+  margin: 4px 0 8px;
+}

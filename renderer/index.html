@@ -151,6 +151,106 @@
           <div class="field-label">Giới hạn số video quét (0 = không giới hạn, chạy tới khi bấm Dừng)</div>
           <input class="input input-sm" type="number" id="cfgLimit" placeholder="0">
         </div>
+
+        <!-- ── Chu kỳ chạy ──
+             Đây là thứ làm HÀNG ĐỢI CHẢY. Với trần 6 máy và 19 máy trong danh sách, nếu máy
+             chạy tới khi bị bấm Dừng thì 6 khe bị giữ vĩnh viễn và 13 máy còn lại chờ mãi.
+             Hết ca thì máy tự nhả khe cho máy đang chờ. -->
+        <div class="section" id="cfgCycleSection">
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="cfgCycleOn">
+              <span class="slider"></span>
+            </label>
+            <span class="switch-label">Chạy theo chu kỳ (quét một lát rồi nghỉ, nhường máy khác)</span>
+          </div>
+          <div class="section-desc">Tắt = máy chạy tới khi bấm Dừng và giữ khe suốt thời gian đó.</div>
+          <div class="field-label">Quét trong … phút</div>
+          <input class="input input-sm" type="number" id="cfgCycleScanMinutes" placeholder="30">
+          <div class="field-label">Rồi nghỉ … – … phút</div>
+          <div class="row gap">
+            <input class="input input-sm" type="number" id="cfgCycleBreakMin" placeholder="5">
+            <input class="input input-sm" type="number" id="cfgCycleBreakMax" placeholder="10">
+          </div>
+        </div>
+
+        <!-- ── Lọc nội dung ── -->
+        <div class="section" id="cfgNiSection">
+          <div class="field-label">Lọc nội dung không mong muốn</div>
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="cfgNiEnabled">
+              <span class="slider"></span>
+            </label>
+            <span class="switch-label">Bấm "Not interested" khi caption/tên khớp bộ lọc ngôn ngữ</span>
+          </div>
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="cfgNiAi">
+              <span class="slider"></span>
+            </label>
+            <span class="switch-label">Bấm "Not interested" với video gắn nhãn AI-generated</span>
+          </div>
+          <div class="section-desc">⚠ Hai ô trên DẠY FEED VĨNH VIỄN, không hoàn tác được — nên mặc định tắt. Tắt cả hai thì app vẫn nhận diện và vẫn BỎ QUA sound của video đó, chỉ là không bấm gì.</div>
+          <div class="field-label">Nhóm ký tự</div>
+          <div class="row gap" id="cfgNiScripts"></div>
+          <div class="field-label">Từ khóa — mỗi dòng một từ</div>
+          <textarea class="input" id="cfgNiKeywords" rows="4" placeholder="afghan&#10;kabul&#10;pashto"></textarea>
+        </div>
+
+        <!-- ── Tương tác ──
+             Phần này bản PC KHÔNG có: TikTok Web chặn follow với các nick này và IP trung tâm
+             dữ liệu chặn luôn cả tym (crawler.cjs:1537-1539). Máy Android thật thì làm được. -->
+        <div class="section" id="cfgActSection">
+          <div class="field-label">Tương tác (chỉ với chủ kênh có sound HỢP LỆ)</div>
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="cfgFollowOn">
+              <span class="slider"></span>
+            </label>
+            <span class="switch-label">Follow kênh</span>
+          </div>
+          <div class="field-label">Tối đa … follow mỗi máy mỗi ngày (0 = không follow)</div>
+          <input class="input input-sm" type="number" id="cfgFollowPerDay" placeholder="30">
+          <div class="field-label">Giãn cách giữa hai lần follow … – … giây</div>
+          <div class="row gap">
+            <input class="input input-sm" type="number" id="cfgFollowGapMin" placeholder="120">
+            <input class="input input-sm" type="number" id="cfgFollowGapMax" placeholder="300">
+          </div>
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="cfgLikeOn">
+              <span class="slider"></span>
+            </label>
+            <span class="switch-label">Thả tim</span>
+          </div>
+          <div class="field-label">Tối đa … tym mỗi máy mỗi ngày (0 = không tym)</div>
+          <input class="input input-sm" type="number" id="cfgLikePerDay" placeholder="60">
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="cfgVisitOn">
+              <span class="slider"></span>
+            </label>
+            <span class="switch-label">Ghé thăm trang cá nhân (vuốt vài giây rồi quay lại)</span>
+          </div>
+          <div class="field-label">Mỗi kênh … – … giây</div>
+          <div class="row gap">
+            <input class="input input-sm" type="number" id="cfgVisitSecMin" placeholder="4">
+            <input class="input input-sm" type="number" id="cfgVisitSecMax" placeholder="8">
+          </div>
+          <div class="field-label">Tối đa … kênh mỗi lượt chạy (0 = không giới hạn)</div>
+          <input class="input input-sm" type="number" id="cfgVisitMaxUsers" placeholder="0">
+          <div class="section-desc">⚠ Follow tác động lên TÀI KHOẢN THẬT và không hoàn tác được bằng cách chạy lại. Trần ngày đếm từ sổ trên đĩa nên tắt app mở lại KHÔNG reset. Nên thử một máy vài ngày trước khi mở cả farm.</div>
+        </div>
+
+        <!-- ── Toàn app, không theo từng máy ── -->
+        <div class="section" id="cfgGlobalSection">
+          <div class="field-label">Số máy chạy đồng thời (toàn app)</div>
+          <input class="input input-sm" type="number" id="cfgDeviceConcurrency" placeholder="6">
+          <div class="section-desc">Mỗi máy đang chạy tốn 1 tiến trình Python + 1 ADB server (~100MB). Bật cả 19 máy cùng lúc là ~2GB chỉ riêng phần điều khiển, chưa tính phần mềm soi màn hình. Máy vượt trần sẽ xếp hàng chờ.</div>
+          <div class="field-label">Giãn cách khi khởi động nhiều máy … mili-giây (toàn app)</div>
+          <input class="input input-sm" type="number" id="cfgLaunchStaggerMs" placeholder="3000">
+        </div>
       </div>
       <div class="modal-foot">
         <button class="btn" id="settingsCancel">Hủy</button>

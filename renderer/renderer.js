@@ -8,6 +8,8 @@ let crawlResults = [];          // full data giữ trong JS để export
 let settingsTargetIds = [];     // danh sách deviceId đang sửa trong modal cài đặt
 let currentLogDeviceId = null;
 
+// Nguồn sự thật cho giá trị mặc định. Thuộc tính `value=` trong HTML chỉ là trang trí —
+// `openSettingsModal` luôn ghi đè từ đây, đúng như bản PC làm.
 const DEFAULT_SETTINGS = {
   minPosts: 1000,
   maxPosts: 100000,
@@ -15,7 +17,52 @@ const DEFAULT_SETTINGS = {
   delayMax: 6,
   originalOnly: true,
   limit: 0,
+
+  // Chu kỳ — thứ làm hàng đợi chảy khi số máy nhiều hơn trần song song
+  cycleOn: false,
+  cycleScanMinutes: 30,
+  cycleBreakMin: 5,
+  cycleBreakMax: 10,
+
+  // Lọc nội dung. Hai ô bấm mặc định TẮT: cú "Not interested" dạy feed vĩnh viễn.
+  niEnabled: false,
+  niAi: false,
+  niScripts: ['bengali', 'urdu', 'pashto', 'perso'],
+  niKeywords: [
+    'afghan', 'afghanistan', 'kabul', 'pashto', 'pashtun', 'kandahar',
+    'pakistan', 'pakistani', 'urdu', 'karachi', 'lahore', 'islamabad',
+    'bangladesh', 'bangladeshi', 'bangla', 'dhaka',
+  ].join('\n'),
+
+  // Tương tác — mặc định TẮT hết. Follow tác động lên tài khoản thật.
+  followOn: false,
+  followPerDay: 30,
+  followGapMin: 120,
+  followGapMax: 300,
+  likeOn: false,
+  likePerDay: 60,
+  visitOn: false,
+  visitSecMin: 4,
+  visitSecMax: 8,
+  visitMaxUsers: 0,
 };
+
+// Nhóm ký tự cho bộ lọc ngôn ngữ. Danh sách này phải khớp SCRIPT_GROUPS trong
+// src/langfilter.cjs — thêm nhóm bên đó mà quên ở đây thì người dùng không bật được nó.
+const NI_SCRIPTS = [
+  { key: 'bengali', label: 'Bengali' },
+  { key: 'urdu', label: 'Urdu' },
+  { key: 'pashto', label: 'Pashto' },
+  { key: 'perso', label: 'Perso-Arabic' },
+  { key: 'arabic', label: 'Arabic' },
+];
+
+// Cài đặt TOÀN APP, không theo từng máy.
+const DEFAULT_GLOBAL = {
+  deviceConcurrency: 6,
+  launchStaggerMs: 3000,
+};
+let globalSettings = { ...DEFAULT_GLOBAL };
 
 const MAX_RESULT_ROWS = 5000;
 const MAX_LOG_LINES = 500;
@@ -43,8 +90,12 @@ async function init() {
   const ver = await window.api.getVersion();
   document.getElementById('appVersion').textContent = ver ? `v${ver}` : '';
 
-  const stored = await window.api.storeGet(['device_settings']);
+  const stored = await window.api.storeGet(['device_settings', 'global_settings']);
   deviceSettings = stored.device_settings || {};
+  globalSettings = Object.assign({}, DEFAULT_GLOBAL, stored.global_settings || {});
+  // Day xuong tien trinh chinh NGAY luc khoi dong: neu chi day luc bam Luu thi lan chay dau
+  // tien sau khi mo app se dung tran mac dinh chu khong phai tran nguoi dung da dat.
+  await window.api.setGlobalSettings(globalSettings);
 
   devices = await window.api.devicesList();
   devices.forEach((d) => {
@@ -204,6 +255,10 @@ async function startDeviceById(id) {
     dwellMax: s.delayMax,
     originalOnly: s.originalOnly,
     limit: s.limit,
+    // Gui NGUYEN ca goi cai dat xuong. Liet ke tung truong o day la kieu de quen: them mot o
+    // moi trong modal ma quen them vao day thi o do hien ra nhung KHONG lam gi ca - dung loai
+    // hong cam ma ban PC ghi lai o QD-38.
+    cfg: s,
   });
   if (!res.ok) {
     toast(res.msg || 'Không chạy được', false);
@@ -339,12 +394,39 @@ function openSettingsModal(ids) {
   document.getElementById('settingsTarget').textContent = label;
 
   const base = getSettingsFor(ids[0]);
-  document.getElementById('cfgMinPosts').value = base.minPosts;
-  document.getElementById('cfgMaxPosts').value = base.maxPosts;
-  document.getElementById('cfgDelayMin').value = base.delayMin;
-  document.getElementById('cfgDelayMax').value = base.delayMax;
-  document.getElementById('cfgOriginalOnly').checked = base.originalOnly;
-  document.getElementById('cfgLimit').value = base.limit;
+  const $ = (id) => document.getElementById(id);
+
+  $('cfgMinPosts').value = base.minPosts;
+  $('cfgMaxPosts').value = base.maxPosts;
+  $('cfgDelayMin').value = base.delayMin;
+  $('cfgDelayMax').value = base.delayMax;
+  $('cfgOriginalOnly').checked = base.originalOnly;
+  $('cfgLimit').value = base.limit;
+
+  $('cfgCycleOn').checked = !!base.cycleOn;
+  $('cfgCycleScanMinutes').value = base.cycleScanMinutes;
+  $('cfgCycleBreakMin').value = base.cycleBreakMin;
+  $('cfgCycleBreakMax').value = base.cycleBreakMax;
+
+  $('cfgNiEnabled').checked = !!base.niEnabled;
+  $('cfgNiAi').checked = !!base.niAi;
+  $('cfgNiKeywords').value = base.niKeywords;
+  renderNiScripts(base.niScripts);
+
+  $('cfgFollowOn').checked = !!base.followOn;
+  $('cfgFollowPerDay').value = base.followPerDay;
+  $('cfgFollowGapMin').value = base.followGapMin;
+  $('cfgFollowGapMax').value = base.followGapMax;
+  $('cfgLikeOn').checked = !!base.likeOn;
+  $('cfgLikePerDay').value = base.likePerDay;
+  $('cfgVisitOn').checked = !!base.visitOn;
+  $('cfgVisitSecMin').value = base.visitSecMin;
+  $('cfgVisitSecMax').value = base.visitSecMax;
+  $('cfgVisitMaxUsers').value = base.visitMaxUsers;
+
+  // Hai o toan app - khong theo tung may, nen doc tu globalSettings
+  $('cfgDeviceConcurrency').value = globalSettings.deviceConcurrency;
+  $('cfgLaunchStaggerMs').value = globalSettings.launchStaggerMs;
 
   document.getElementById('settingsModal').classList.add('open');
 }
@@ -352,19 +434,72 @@ function closeSettingsModal() {
   document.getElementById('settingsModal').classList.remove('open');
 }
 
+// Doc mot o so. Dung `??` chu KHONG dung `||`: voi `||` thi 0 bi coi la "chua nhap" va bi
+// thay bang mac dinh. Ma 0 la gia tri HOP LE va mang nghia that o day - "0 follow/ngay" nghia
+// la khong follow, khong phai "dung mac dinh 30". Ban PC ghi ro bai hoc nay (QD-27).
+function numOf(id, mac) {
+  const raw = document.getElementById(id).value;
+  if (raw === '' || raw === null || raw === undefined) return mac;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : mac;
+}
+
 async function saveSettings() {
+  const D = DEFAULT_SETTINGS;
   const s = {
-    minPosts: Number(document.getElementById('cfgMinPosts').value) || DEFAULT_SETTINGS.minPosts,
-    maxPosts: Number(document.getElementById('cfgMaxPosts').value) || DEFAULT_SETTINGS.maxPosts,
-    delayMin: Number(document.getElementById('cfgDelayMin').value) || DEFAULT_SETTINGS.delayMin,
-    delayMax: Number(document.getElementById('cfgDelayMax').value) || DEFAULT_SETTINGS.delayMax,
+    minPosts: numOf('cfgMinPosts', D.minPosts),
+    maxPosts: numOf('cfgMaxPosts', D.maxPosts),
+    delayMin: numOf('cfgDelayMin', D.delayMin),
+    delayMax: numOf('cfgDelayMax', D.delayMax),
     originalOnly: document.getElementById('cfgOriginalOnly').checked,
-    limit: Number(document.getElementById('cfgLimit').value) || 0,
+    limit: numOf('cfgLimit', 0),
+
+    cycleOn: document.getElementById('cfgCycleOn').checked,
+    cycleScanMinutes: numOf('cfgCycleScanMinutes', D.cycleScanMinutes),
+    cycleBreakMin: numOf('cfgCycleBreakMin', D.cycleBreakMin),
+    cycleBreakMax: numOf('cfgCycleBreakMax', D.cycleBreakMax),
+
+    niEnabled: document.getElementById('cfgNiEnabled').checked,
+    niAi: document.getElementById('cfgNiAi').checked,
+    niScripts: readNiScripts(),
+    niKeywords: document.getElementById('cfgNiKeywords').value,
+
+    followOn: document.getElementById('cfgFollowOn').checked,
+    followPerDay: numOf('cfgFollowPerDay', D.followPerDay),
+    followGapMin: numOf('cfgFollowGapMin', D.followGapMin),
+    followGapMax: numOf('cfgFollowGapMax', D.followGapMax),
+    likeOn: document.getElementById('cfgLikeOn').checked,
+    likePerDay: numOf('cfgLikePerDay', D.likePerDay),
+    visitOn: document.getElementById('cfgVisitOn').checked,
+    visitSecMin: numOf('cfgVisitSecMin', D.visitSecMin),
+    visitSecMax: numOf('cfgVisitSecMax', D.visitSecMax),
+    visitMaxUsers: numOf('cfgVisitMaxUsers', D.visitMaxUsers),
   };
   settingsTargetIds.forEach((id) => { deviceSettings[id] = s; });
-  await window.api.storeSet({ device_settings: deviceSettings });
+
+  globalSettings = {
+    deviceConcurrency: numOf('cfgDeviceConcurrency', DEFAULT_GLOBAL.deviceConcurrency),
+    launchStaggerMs: numOf('cfgLaunchStaggerMs', DEFAULT_GLOBAL.launchStaggerMs),
+  };
+
+  await window.api.storeSet({ device_settings: deviceSettings, global_settings: globalSettings });
+  await window.api.setGlobalSettings(globalSettings);
   closeSettingsModal();
   toast('Đã lưu cài đặt');
+}
+
+// ---- O tich nhom ky tu, dung khuon cua ban PC ----
+function renderNiScripts(daChon) {
+  const chon = new Set(Array.isArray(daChon) ? daChon : []);
+  document.getElementById('cfgNiScripts').innerHTML = NI_SCRIPTS.map((g) => `
+    <label class="ni-script">
+      <input type="checkbox" class="ni-script-cb" value="${g.key}"${chon.has(g.key) ? ' checked' : ''}>
+      <span>${esc(g.label)}</span>
+    </label>`).join('');
+}
+
+function readNiScripts() {
+  return Array.from(document.querySelectorAll('.ni-script-cb:checked')).map((el) => el.value);
 }
 
 // ---- Modal: Log ----

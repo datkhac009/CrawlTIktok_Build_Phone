@@ -26,6 +26,8 @@ import re
 import sys
 import time
 from adb_helper import connect, adb
+from askbridge import AskBridge
+import phone_actions as PA
 
 # Ha timeout HTTP cua uiautomator2 (mac dinh 300s = 5 phut) xuong ngan hon: khi 1 lenh RPC
 # bi TREO (hay gap khi chay nhieu may song song), no se tu RAISE loi sau HTTP_TIMEOUT giay
@@ -68,6 +70,18 @@ DWELL_MAX = float(os.environ.get("DWELL_MAX", "6.0"))
 # GUI_MODE=1 (do runner.cjs cua app Electron dat) -> in them dong @@EVENT@@<json>
 # de tien trinh cha parse duoc; khong anh huong gi khi chay CLI binh thuong.
 GUI_MODE = os.environ.get("GUI_MODE") == "1"
+
+# ASK_ON=1 khi nguoi dung bat bat ky o loc/tuong tac nao. Tat thi KHONG dump hierarchy moi
+# video -> giu nguyen toc do cu. Dump la buoc dat nhat (~0.3-2s/video), dat hon nhieu so voi
+# ban than kenh hoi/dap.
+ASK_ON = os.environ.get("ASK_ON") == "1"
+
+# Chu ky: quet bao nhieu phut roi tu dung, NHA KHE cho may dang xep hang.
+# Khong co chu ky thi voi "Gioi han video = 0" may chay mai va 13 may con lai cho vinh vien.
+CYCLE_ON = os.environ.get("CYCLE_ON") == "1"
+CYCLE_SCAN_MIN = float(os.environ.get("CYCLE_SCAN_MIN", "30") or 30)
+VISIT_SEC_MIN = float(os.environ.get("VISIT_SEC_MIN", "4") or 4)
+VISIT_SEC_MAX = float(os.environ.get("VISIT_SEC_MAX", "8") or 8)
 
 
 def log(msg):
@@ -329,6 +343,53 @@ def setup_device(d):
     raise RuntimeError("Khong the mo TikTok sau 3 lan thu.")
 
 
+def _thi_hanh(d, bridge, aid, ans, info, res):
+    """Thi hanh phan quyet cua phia Node. KHONG quyet dinh gi o day.
+
+    THU TU CO CHU Y:
+      1. Not interested TRUOC — no lam feed nhay sang video khac, nen moi thu khac phai xong truoc.
+         Thuc te lam nguoc lai: tuong tac truoc, Not interested sau cung.
+      2. Kiem "van dung video do" TRUOC MOI CU BAM. Sau khi tu trang nhac `back` ve, feed CO THE
+         da nhay sang video khac; bam luc do la bam nham nguoi, va cu Not interested thi khong
+         hoan tac duoc (QD-31: ban PC tung 5/10 cu bam trung kenh khong lien quan).
+    """
+    if not ans:
+        return
+    handle = (info or {}).get("handle", "")
+    kq = {}
+
+    # Video da doi thi DUNG HET. Mac dinh an toan la khong bam.
+    if (ans.get("ni") or ans.get("follow") or ans.get("like") or ans.get("visit")):
+        if not PA.same_video(d, handle):
+            log("video da doi sau khi quay lai feed -> KHONG bam gi (tranh bam nham nguoi)")
+            bridge.acted(aid, ni="skip_changed_video", follow="skip_changed_video",
+                         like="skip_changed_video", visit="skip_changed_video")
+            return
+
+    # FOLLOW chi khi sound HOP LE. Node cap quyen truoc, nhung dieu kien "sound hop le" thi
+    # chi o day moi biet — `res` khac None nghia la sound da dat nguong.
+    if ans.get("follow"):
+        if res:
+            kq["follow"] = PA.do_follow(d, log)
+        else:
+            kq["follow"] = "not_needed"
+
+    if ans.get("like"):
+        kq["like"] = PA.do_like(d, log)
+
+    if ans.get("visit") and res:
+        kq["visit"] = PA.do_visit(d, handle, VISIT_SEC_MIN, VISIT_SEC_MAX, log)
+
+    # Not interested SAU CUNG: no doi feed.
+    if ans.get("ni"):
+        kq["ni"] = PA.tap_not_interested(d, log)
+        if kq["ni"] == "ok":
+            log("da bam 'Not interested' (ly do: %s)" % ans.get("why", "?"))
+
+    if kq:
+        bridge.acted(aid, **kq)
+
+
 def main():
     serial = sys.argv[1] if len(sys.argv) > 1 else None
 
@@ -363,17 +424,49 @@ def main():
     qualified = 0
     consecutive_fail = 0
 
+    # Cay cau hoi/dap voi phia Node. Tat thi moi thu chay y het truoc khi co tinh nang nay.
+    bridge = AskBridge(enabled=ASK_ON, log=log)
+    if ASK_ON:
+        log("loc & tuong tac: BAT (phan xet o phia app, may chi doc man hinh va thi hanh)")
+
+    # Han chu ky. Het gio thi THOAT SACH de nha khe cho may dang xep hang.
+    han_chu_ky = (time.time() + CYCLE_SCAN_MIN * 60) if CYCLE_ON else None
+    if han_chu_ky:
+        log("chu ky: quet %.0f phut roi tu dung, nhuong may khac" % CYCLE_SCAN_MIN)
+
     with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
         while True:
             if limit and count >= limit:
+                break
+            if han_chu_ky and time.time() >= han_chu_ky:
+                log("het ca chu ky -> dung, nha khe cho may dang cho")
+                emit_event("status", state="cycle_done")
+                break
+            # Tien trinh cha da chet: truoc khi co kenh stdin, Electron chet la cac tien trinh
+            # Python MO COI cu vuot may that mai mai, khong ai don. Gio phat hien duoc.
+            if bridge.parent_gone:
+                log("tien trinh cha da dong -> thoat")
                 break
             count += 1
             try:
                 if dismiss_popups(d):
                     log("da bo qua 1 popup")
                     time.sleep(1)
+
+                # ── HOI TRUOC KHI BAM ICON SOUND ──
+                # Gui cau hoi RUOC, lay cau tra loi SAU khi tu trang nhac quay ve. Quang 5-9
+                # giay mo trang nhac che tron thoi gian di ve, nen duong binh thuong khong ton
+                # them mili-giay nao.
+                info = PA.read_video_info(d) if bridge.enabled else None
+                aid = bridge.ask(**info) if info else None
+
                 res = check_current_video(d)
                 consecutive_fail = 0
+
+                # ── LAY PHAN QUYET VA THI HANH ──
+                if aid is not None:
+                    ans = bridge.take(aid)
+                    _thi_hanh(d, bridge, aid, ans, info, res)
             except Exception as e:
                 consecutive_fail += 1
                 log(f"loi video #{count}: {str(e)[:100]} (loi lien tiep {consecutive_fail})")

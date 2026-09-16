@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('api', {
   onCrawlData: (cb) => ipcRenderer.on('crawl-data', (_e, payload) => cb(payload)),
   onCrawlStatus: (cb) => ipcRenderer.on('crawl-status', (_e, payload) => cb(payload)),
 
+  setGlobalSettings: (cfg) => ipcRenderer.invoke('set-global-settings', cfg),
+
   storeGet: (keys) => ipcRenderer.invoke('store-get', keys),
   storeSet: (data) => ipcRenderer.invoke('store-set', data),
 

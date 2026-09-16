@@ -7,9 +7,38 @@ const { spawn, execFile } = require('child_process');
 const { getBaseDir, getPythonScriptPath } = require('./paths.cjs');
 const { adbPath } = require('./adbpath.cjs');
 const { findPython } = require('./pythonpath.cjs');
+const askproto = require('./askproto.cjs');
+const { getDeviceDir } = require('./paths.cjs');
+
+const uilabels = require('./uilabels.cjs');
 
 const SCRIPT_PATH = getPythonScriptPath();
 const TIKTOK_PKGS = ['com.zhiliaoapp.musically', 'com.ss.android.ugc.trill'];
+
+// ── Dựng biểu thức tìm nút TỪ `uilabels.cjs`, rồi truyền xuống Python ──
+//
+// VÌ SAO KHÔNG CHÉP DANH SÁCH NHÃN SANG PYTHON:
+// Đó chính là cách `linkkey.cjs` đã lệch — bản phone rút gọn còn tiếng Anh + tiếng Việt, và ô
+// "Chỉ lấy Original Sound" hỏng câm trên máy để ngôn ngữ khác. Danh sách nhãn chỉ có MỘT nguồn
+// là `uilabels.cjs`; Python nhận nó lúc khởi động chứ không giữ bản sao nào.
+//
+// Khớp TRỌN CHUỖI (`^...$`), không phải chứa — `uilabels.cjs:40-42` ghi rõ lý do: khớp kiểu
+// chứa thì "Followers 1.2M" cũng thành nút Follow và bị bấm.
+function _reTu(list) {
+  const phan = (list || [])
+    .filter((x) => typeof x === 'string' && x)
+    .map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return phan.length ? `(?i)^(${phan.join('|')})$` : '(?!)';   // rỗng = không khớp gì cả
+}
+// Viết thẳng mã ký tự thay vì dấu escape: khối này đã một lần bị công cụ sinh mã biến dấu
+// escape thành ký tự xuống dòng THẬT, làm hỏng cú pháp file. Cách này không thể hỏng như vậy.
+const NEWLINE = String.fromCharCode(10);
+
+// Ba tiền tố của giao thức. `askbridge.py` khớp đúng các chuỗi này — đổi một bên mà quên bên
+// kia thì kênh hỏi/đáp ngừng hoạt động trong im lặng.
+const ASK_PREFIX = '@@ASK@@';
+const ANS_PREFIX = '@@ANS@@';
+const EVENT_PREFIX = '@@EVENT@@';
 const _active = new Map(); // deviceId -> { proc, serial }
 
 // Dong app TikTok tren may + dua ve man hinh chinh (goi qua adb, khong dung uiautomator2
@@ -34,6 +63,7 @@ function isRunning(deviceId) {
 
 function startDevice(params, onData, onStatus) {
   const { deviceId, serial, minPosts, maxPosts, dwellMin, dwellMax, originalOnly, limit } = params;
+  const cfg = params.cfg || {};
   if (_active.has(deviceId)) {
     throw new Error('Thiết bị này đang chạy rồi.');
   }
@@ -62,6 +92,20 @@ function startDevice(params, onData, onStatus) {
     ORIGINAL_ONLY: originalOnly === false ? '0' : '1',
     LIMIT: String(limit || 0),
     PYTHONIOENCODING: 'utf-8',
+
+    // ── Những thứ Python TỰ quyết được vì chúng thuần số, không phải luật ──
+    // Luật (lọc ngôn ngữ, nhãn AI, hạn mức follow) ở lại Node và đi qua kênh hỏi/đáp.
+    PROTO_V: String(askproto.PROTO_VERSION),
+    ASK_ON: (cfg.niEnabled || cfg.niAi || cfg.followOn || cfg.likeOn || cfg.visitOn) ? '1' : '0',
+    CYCLE_ON: cfg.cycleOn ? '1' : '0',
+    CYCLE_SCAN_MIN: String(cfg.cycleScanMinutes ?? 30),
+    VISIT_SEC_MIN: String(cfg.visitSecMin ?? 4),
+    VISIT_SEC_MAX: String(cfg.visitSecMax ?? 8),
+
+    // Nhãn nút — dựng từ uilabels.cjs, Python KHÔNG giữ bản sao nào.
+    RE_FOLLOW: _reTu(uilabels.FOLLOW_LABELS),
+    RE_FOLLOWING: _reTu(uilabels.FOLLOWING_LABELS),
+    RE_NOT_INTERESTED: _reTu(uilabels.NOT_INTERESTED_LABELS),
     // Phía Python dùng ĐÚNG adb mà phía Node đã chọn. Hai bên tự dò riêng là có ngày mỗi bên
     // một binary khác phiên bản, và chúng sẽ thay nhau giết adb server của nhau.
     ADB_PATH,
@@ -83,12 +127,58 @@ function startDevice(params, onData, onStatus) {
   _active.set(deviceId, { proc, serial, stopping: false });
   onStatus(deviceId, { kind: 'status', state: 'running' });
 
+  // ── BỘ NÃO PHÁN XÉT, phía Node ──
+  // Mỗi máy một thư mục riêng: sổ kênh chất lượng và bộ đếm ngày là KHẨU VỊ CỦA MỘT TÀI KHOẢN
+  // TikTok cụ thể, trộn chung giữa các máy là sai.
+  const dir = getDeviceDir(deviceId);
+  const say = (line) => onStatus(deviceId, { kind: 'log', line });
+  const brain = askproto.makeBrain({ deviceId, dir, cfg, say });
+
+  // Ghi một dòng xuống stdin của tiến trình con.
+  //
+  // ⚠ PHẢI kiểm stream còn sống trước mỗi lần ghi. Ghi vào stdin của tiến trình vừa chết sẽ
+  // phát sự kiện 'error'; ở đây là tiến trình main của Electron nên một lỗi không ai bắt là
+  // **chết cả app và bỏ lại toàn bộ tiến trình Python mồ côi vẫn đang vuốt máy thật**. Lỗi này
+  // chỉ xảy ra trong khe đua giữa "con vừa thoát" và "cha vừa ghi" nên thử tay không gặp.
+  const guiXuong = (obj) => {
+    const st = proc.stdin;
+    if (!st || st.destroyed || !st.writable) return false;
+    try {
+      // ⚠ TIỀN TỐ `@@ANS@@` LÀ BẮT BUỘC. `askbridge.py` bỏ qua mọi dòng không mang tiền tố này
+      // (để dòng lạ trên stdin không bị hiểu nhầm là phán quyết). Thiếu nó thì Python KHÔNG BAO
+      // GIỜ nhận được câu trả lời: hết giờ 3 lần liên tiếp rồi tự tắt lọc & tương tác — im lặng,
+      // không lỗi, app vẫn quét bình thường nên nhìn ngoài không thấy gì sai.
+      // Phép thử ghép nối `tests/bridge.test.cjs` bắt được đúng lỗi này.
+      //
+      // Ký tự xuống dòng cũng bắt buộc: Python đọc bằng `readline()`.
+      st.write(ANS_PREFIX + JSON.stringify(obj) + NEWLINE);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
   const handleLine = (line, isErr) => {
     if (!line) return;
-    if (line.startsWith('@@EVENT@@')) {
+
+    // ── CÂU HỎI TỪ PYTHON ──
+    if (line.startsWith(ASK_PREFIX)) {
+      let ask = null;
+      try {
+        ask = JSON.parse(line.slice(ASK_PREFIX.length));
+      } catch (_) {
+        // JSON hỏng: vẫn PHẢI trả lời, nếu không Python đứng chờ hết giờ mới đi tiếp.
+        brain.noteAskFail();
+      }
+      const ans = ask ? brain.answer(ask) : askproto.safeAnswer(0);
+      guiXuong(ans);
+      return;
+    }
+
+    if (line.startsWith(EVENT_PREFIX)) {
       let payload;
       try {
-        payload = JSON.parse(line.slice('@@EVENT@@'.length));
+        payload = JSON.parse(line.slice(EVENT_PREFIX.length));
       } catch (_) {
         onStatus(deviceId, { kind: 'log', line });
         return;
@@ -97,6 +187,20 @@ function startDevice(params, onData, onStatus) {
         onStatus(deviceId, { kind: 'progress', checked: payload.checked, qualified: payload.qualified });
       } else if (payload.type === 'status') {
         onStatus(deviceId, { kind: 'status', state: payload.state, msg: payload.msg });
+      } else if (payload.type === 'acted') {
+        // Kết quả THẬT của từng cú bấm. Sổ chỉ được ghi ở đây, sau khi đã xác minh —
+        // channelstore.cjs:182-184 cảnh báo: ghi lúc BẤM thì kênh bị đánh dấu đã follow dù
+        // follow hỏng, và bị bỏ qua VĨNH VIỄN.
+        brain.noteActed(payload);
+        const phan = [];
+        if (payload.follow && payload.follow !== 'not_needed') phan.push(`follow=${payload.follow}`);
+        if (payload.like && payload.like !== 'not_needed') phan.push(`tym=${payload.like}`);
+        if (payload.visit && payload.visit !== 'not_needed') phan.push(`ghé=${payload.visit}`);
+        if (payload.ni && payload.ni !== 'skip') phan.push(`not-interested=${payload.ni}`);
+        if (phan.length) onStatus(deviceId, { kind: 'log', line: `[tương tác] ${phan.join(' ')}` });
+      } else if (payload.type === 'askfail') {
+        brain.noteAskFail();
+        onStatus(deviceId, { kind: 'log', line: `[hỏi/đáp] lượt ${payload.id} hỏng: ${payload.why} — bỏ qua, không bấm gì` });
       } else if (payload.type === 'result') {
         if (payload.verdict === 'DAT') {
           onData(deviceId, { name: payload.name, url: payload.url, posts: payload.posts });
@@ -124,6 +228,12 @@ function startDevice(params, onData, onStatus) {
     const entry = _active.get(deviceId);
     const wasStopping = !!(entry && entry.stopping);
     _active.delete(deviceId);
+    // Dòng tổng kết: bộ đếm về 0 là dấu hiệu THẤY NGAY rằng nhận diện đã trượt (TikTok đổi
+    // chữ trên nút, hoặc màn hình đổi cấu trúc). Không có dòng này thì hỏng cũng không ai biết.
+    try {
+      const tk = brain.summary();
+      if (tk) onStatus(deviceId, { kind: 'log', line: `── Tổng kết: ${tk}` });
+    } catch (_) {}
     const isError = !!code && !wasStopping;
     onStatus(deviceId, { kind: 'status', state: isError ? 'error' : 'stopped', msg: isError ? `exit code ${code}` : '' });
   });

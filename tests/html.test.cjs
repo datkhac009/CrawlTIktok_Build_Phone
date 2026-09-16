@@ -79,16 +79,24 @@ const sach = html
   check('2. Không có id trùng', trung.length === 0, trung.join(', '));
 }
 
-// ── 3. Mọi `$('id')` trong renderer.js phải có id tương ứng trong HTML ──
-// Đây là phép kiểm đã từng cứu dự án một lần: gỡ phần tử khỏi HTML mà quên renderer là
-// `$()` trả về null rồi ném lỗi lúc chạy, giữa chừng một hàm — nửa còn lại của hàm im lặng
-// không chạy (QĐ-24).
+// ── 3. Mọi id renderer ĐỌC phải có thật trong HTML ──
+// Đây là phép kiểm từng cứu bản PC một lần (QĐ-24): gỡ một phần tử khỏi HTML mà quên renderer
+// thì `getElementById` trả về null, rồi `.value` ném lỗi **giữa chừng một hàm** — nửa còn lại của
+// hàm im lặng không chạy. Với `saveSettings` thì hậu quả là **lưu thiếu một nửa cài đặt** mà
+// không báo gì.
+//
+// Bản phone dùng `document.getElementById('x')` chứ không phải `$('x')` như bản PC, nên phải bắt
+// cả hai dạng — nếu chỉ bắt `$()` thì phép thử này **luôn xanh và vô dụng** ở đây.
 {
   const rend = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
   const co = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]));
-  const dung = [...new Set([...rend.matchAll(/\$\('([A-Za-z0-9_]+)'\)/g)].map(m => m[1]))];
+  const dung = [...new Set([
+    ...[...rend.matchAll(/\$\('([A-Za-z0-9_]+)'\)/g)].map(m => m[1]),
+    ...[...rend.matchAll(/getElementById\(\s*'([A-Za-z0-9_]+)'\s*\)/g)].map(m => m[1]),
+  ])];
   const thieu = dung.filter(x => !co.has(x));
-  check('3. Mọi $(id) trong renderer đều có trong HTML', thieu.length === 0, thieu.join(', '));
+  check('3. Mọi id renderer đọc đều có trong HTML', thieu.length === 0, thieu.join(', '));
+  check('3b. Có bắt được id (phép thử không rỗng)', dung.length >= 20, `${dung.length} id`);
 }
 
 // ── 4. Các mục trong MỖI modal PHẢI nằm cùng cấp, không lồng vào nhau ──

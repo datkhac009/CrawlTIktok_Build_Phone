@@ -66,6 +66,8 @@
     "extraResources": [
       "scan_feed_sounds.py",
       "adb_helper.py",
+      "askbridge.py",
+      "phone_actions.py",
       "requirements.txt"
     ]
   }

@@ -60,7 +60,7 @@ Theo thứ tự, dừng ở cái đầu tiên thấy được:
 ```bash
 npm install
 npm start           # hoặc start.bat
-npm test            # 45 phép thử, ~2 giây
+npm test            # 180 phép thử, ~2 giây
 ```
 
 Trong app, bấm **🔌 Kiểm tra** ở dòng một máy. Nó kiểm từng mục và **mục nào đỏ thì in ra đúng
@@ -95,7 +95,7 @@ Phép thử chạy **trước** khi build: build xong mới biết hỏng là m�
 PC thì các máy PC sẽ tự tải bản phone về và tự cập nhật sang nhầm app. Script chặn cứng trường
 hợp đó.
 
-`scan_feed_sounds.py` và `adb_helper.py` đi **theo bản build** (`extraResources`), không còn
+Các file `.py` đi **theo bản build** (`extraResources`), không còn
 phải copy tay ra cạnh `.exe`. Cách cũ để chúng nằm rời: cập nhật app mà quên chép lại `.py` là
 nửa JavaScript mới nói chuyện với nửa Python cũ — **không báo lỗi, không cảnh báo**, chỉ là
 tính năng mới lặng lẽ không chạy.
@@ -107,8 +107,55 @@ là kết quả thu thập. Cả hai là trạng thái riêng của từng máy 
 
 ## Hiện trạng
 
-Đang ở mức: quét For You, lọc theo số post, lọc Original Sound, đẩy Google Sheet, chạy song
-song nhiều máy.
+**Có**: quét For You · lọc theo số post · lọc Original Sound (đa ngôn ngữ) · đẩy Google Sheet ·
+trần số máy chạy đồng thời + hàng đợi · chu kỳ quét/nghỉ · lọc theo ngôn ngữ · nhận nhãn
+AI-generated · bấm "Not interested" · **follow / thả tim / ghé thăm trang cá nhân** kèm hạn mức
+theo ngày.
 
-Chưa có: trần số máy chạy đồng thời, chu kỳ theo thời gian, lọc theo ngôn ngữ, nhận nhãn
-AI-generated, follow/tym, tự cập nhật.
+**Chưa có**: tự cập nhật.
+
+## Phán xét ở đâu
+
+Python **không chứa luật nào**. Nó đọc chữ trên màn hình, gửi lên app, rồi thi hành phán quyết:
+
+```
+Python ──@@ASK@@{author, handle, desc, badges}──> app  (gửi TRƯỚC khi bấm icon sound)
+Python <──@@ANS@@{ni, why, follow, like, visit}── app  (lấy SAU khi từ trang nhạc quay về)
+Python ──@@EVENT@@{type:"acted", ...}──────────> app  (kết quả THẬT của từng cú bấm)
+```
+
+Gửi trước / lấy sau là để quãng 5–9 giây mở trang nhạc che trọn thời gian đi về — đường bình
+thường không tốn thêm mili-giây nào.
+
+Mọi phán quyết dùng lại `langfilter.cjs`, `uilabels.cjs`, `channelstore.cjs` của bản PC, được
+`tests/srcsync.test.cjs` khoá từng byte để hai app không lệch nhau.
+
+**Mặc định an toàn**: hết giờ, EOF, JSON hỏng, lệch id, lệch phiên bản → *không bấm gì cả*,
+việc quét chạy tiếp y nguyên. Rút hẳn phía app ra thì script vẫn làm đúng việc nó vốn làm.
+
+## Về follow và thả tim
+
+Bản PC **không làm được hai việc này** — TikTok Web chặn follow với các nick đó và IP trung tâm
+dữ liệu chặn luôn cả tym ([crawler.cjs:1537-1539](https://github.com/datkhac009/Crawl_DataTiktok-releases)).
+Máy Android thật thì làm được.
+
+⚠ **Follow tác động lên tài khoản thật và không hoàn tác được bằng cách chạy lại chương trình.**
+Bốn hàng rào:
+
+| Hàng rào | Ở đâu |
+|---|---|
+| Trần ngày (mặc định 30) đếm từ **sổ trên đĩa** — tắt app mở lại KHÔNG reset | `followquota.cjs` |
+| Giãn cách 2–5 phút giữa hai lần follow | `followquota.cjs` |
+| Không follow trùng (`@Hira` và `@hira` là một) | `channelstore.isFollowed` |
+| Chỉ follow chủ kênh có **sound hợp lệ**, và không bao giờ follow chủ video vừa bị lọc | `askproto.cjs` |
+
+Ghi sổ **chỉ sau khi xác minh** nút đã đổi sang "Following". Ghi lúc bấm thì kênh bị đánh dấu
+đã follow dù follow hỏng, và bị bỏ qua vĩnh viễn.
+
+Mặc định **TẮT hết**. Nên thử một máy vài ngày trước khi mở cả farm.
+
+## Hạn chế đã biết
+
+Chưa dò được `resource-id` của caption và tên tác giả trên máy thật, nên `phone_actions.py` nhận
+chúng theo hình dạng (handle là chuỗi `@abc`, caption là chuỗi dài nhất). Khớp theo **tên hiển
+thị** của tác giả vì thế yếu hơn bản PC. Hướng sai ở đây là *bỏ sót*, không phải *bắt nhầm*.
