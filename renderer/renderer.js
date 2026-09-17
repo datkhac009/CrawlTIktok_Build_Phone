@@ -398,6 +398,7 @@ async function addDevice() {
     deviceState[dev.id] = { status: 'stop', checked: 0, qualified: 0, log: [] };
     document.getElementById('newDeviceName').value = '';
     document.getElementById('newDeviceSerial').value = '';
+    danhDauDaThem(serial);
     renderDeviceList();
     renderDeviceTable();
     toast(`Đã thêm ${dev.name}`);
@@ -419,6 +420,23 @@ async function deleteDeviceById(id) {
 // `ro.product.model` cho ra đúng chuỗi mà phần mềm soi in trên mỗi ô (GM1911, TECNO LC8...),
 // nên nhìn là khớp được. Hai máy CÙNG ĐỜI thì tên trùng nhau — lúc đó dùng nút 💡 để làm máy
 // tự lộ diện.
+// Đánh dấu một dòng trong danh sách quét là "đã thêm", thay vì quét lại adb.
+//
+// VÌ SAO PHẢI CÓ (2026-09-17): thêm máy xong, dòng đó trong danh sách quét vẫn hiện nút
+// "+ Thêm" y như cũ, vì danh sách chỉ dựng lại khi bấm "Quét ADB". Nhìn vào thì tưởng bấm hụt
+// nên bấm thêm lần nữa — và chính cú bấm thừa đó đẻ ra lỗi lệch tên/serial ở trên. Quét lại adb
+// cũng đúng nhưng đọc `ro.product.model` của 22 máy mất vài giây; sửa đúng một dòng thì tức thì.
+function danhDauDaThem(serial) {
+  const wrap = document.getElementById('adbScanList');
+  if (!wrap || !serial) return;
+  const btn = wrap.querySelector(`[data-act="quick-add"][data-serial="${CSS.escape(serial)}"]`);
+  if (!btn) return;
+  const nhan = document.createElement('span');
+  nhan.className = 'hint';
+  nhan.textContent = 'đã thêm';
+  btn.replaceWith(nhan);
+}
+
 async function scanAdb() {
   const wrap = document.getElementById('adbScanList');
   wrap.innerHTML = '<div class="hint">Đang quét và đọc tên máy…</div>';
@@ -757,8 +775,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('newDeviceSerial').value = btn.dataset.serial;
     // Tự điền tên máy đọc được. Vẫn để người dùng sửa trước khi bấm Thêm — 21 máy mà gõ tay
     // từng cái thì vừa lâu vừa dễ gõ nhầm.
+    //
+    // TÊN LUÔN GHI ĐÈ THEO SERIAL VỪA CHỌN (2026-09-17). Bản trước giữ tên cũ nếu ô tên đã có
+    // chữ, trong khi ô serial thì ghi đè vô điều kiện — nên bấm "+ Thêm" máy thứ hai là ô tên
+    // còn tên máy THỨ NHẤT còn serial đã là máy thứ hai. Chủ dự án bắt được đúng cảnh đó: ô tên
+    // "GM1911" mà serial là 192.168.5.110, vốn là GM1901. Thêm vào thì máy mang tên máy khác,
+    // và tên chính là thứ duy nhất để biết IP nào ứng với ô nào trên màn hình soi.
     const oTen = document.getElementById('newDeviceName');
-    if (btn.dataset.name && !oTen.value.trim()) oTen.value = btn.dataset.name;
+    oTen.value = btn.dataset.name || '';
     oTen.focus();
     oTen.select();
   });

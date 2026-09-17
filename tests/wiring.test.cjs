@@ -317,6 +317,53 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     && /"@@ASK@@"/.test(pyBridge));
 }
 
+// ── 11. Thêm máy từ danh sách quét: tên phải đi theo serial ──
+// SỰ CỐ THẬT (2026-09-17): chủ dự án bấm "+ Thêm" máy thứ hai, ô serial nhảy sang máy mới nhưng
+// ô tên vẫn giữ tên máy TRƯỚC — ảnh chụp cho thấy tên "GM1911" đứng cạnh serial 192.168.5.110,
+// vốn là GM1901. Thêm vào thì máy mang tên của máy khác. Tên là thứ DUY NHẤT để biết IP nào ứng
+// với ô nào trên màn hình soi, nên gán nhầm tên là hỏng đúng cái nó sinh ra để giải quyết —
+// càng nguy khi trong farm có hai SM-A920F và hai Redmi K20 Pro trùng đời.
+{
+  // Neo là lời gọi `closest('[data-act="quick-add"]')` — chuỗi trong template dựng HTML không có
+  // dấu `');` theo sau nên không khớp nhầm. Cửa sổ rộng 1600 vì khối này mang một đoạn chú thích
+  // dài giải thích chính sự cố nói trên; bóp hẹp lại là phép thử báo đỏ oan khi ai đó viết thêm.
+  const khoiQuickAdd = /quick-add"\]'\);[\s\S]{0,1600}?oTen\.select\(\);/.exec(rend);
+  check('11. Có xử lý bấm "+ Thêm" trong danh sách quét', !!khoiQuickAdd);
+
+  const kQA = khoiQuickAdd ? khoiQuickAdd[0] : '';
+  // Ô tên phải gán VÔ ĐIỀU KIỆN. Bản hỏng viết `if (... && !oTen.value.trim()) oTen.value = ...`
+  check('11b. Ô tên gán thẳng theo máy vừa chọn, không nấp sau điều kiện "ô tên còn trống"',
+    /oTen\.value = btn\.dataset\.name \|\| ''/.test(kQA) && !/!oTen\.value\.trim\(\)/.test(kQA));
+
+  // Ô serial và ô tên phải cùng lấy từ MỘT nút, nếu không lại lệch theo kiểu khác.
+  check('11c. Serial và tên cùng đọc từ nút vừa bấm',
+    /newDeviceSerial'\)\.value = btn\.dataset\.serial/.test(kQA));
+}
+
+// ── 12. Thêm máy xong phải dọn dấu vết, nếu không người dùng bấm lại ──
+// Cùng sự cố ngày 2026-09-17. Thêm xong, dòng trong danh sách quét vẫn hiện nút "+ Thêm" vì danh
+// sách chỉ dựng lại khi bấm "Quét ADB" — nhìn vào tưởng bấm hụt nên bấm nữa, và chính cú bấm
+// thừa đó đẻ ra lỗi lệch tên ở mục 11. Hai lỗi phải sửa cùng nhau mới hết.
+{
+  const khoiAdd = /async function addDevice\(\)[\s\S]*?\n}/.exec(rend);
+  check('12. Có hàm addDevice', !!khoiAdd);
+
+  const kA = khoiAdd ? khoiAdd[0] : '';
+  check('12b. Thêm xong thì xoá cả hai ô nhập',
+    /newDeviceName'\)\.value = ''/.test(kA) && /newDeviceSerial'\)\.value = ''/.test(kA));
+  check('12c. Thêm xong thì đánh dấu dòng đó là "đã thêm"', /danhDauDaThem\(serial\)/.test(kA));
+  check('12d. Có hàm đánh dấu, và nó đổi đúng nút của serial đó',
+    /function danhDauDaThem\(serial\)/.test(rend)
+    && /quick-add"\]\[data-serial="\$\{CSS\.escape\(serial\)\}"/.test(rend));
+
+  // Chỉ đánh dấu khi devicesAdd trả về ngon lành. Nằm sau `await` trong khối `try` là đủ: ném
+  // lỗi thì nhảy thẳng xuống `catch`, dòng vẫn còn nút "+ Thêm" để bấm lại.
+  const viTriAwait = kA.indexOf('await window.api.devicesAdd');
+  const viTriDanh = kA.indexOf('danhDauDaThem(serial)');
+  check('12e. Đánh dấu SAU khi thêm thành công, không phải trước',
+    viTriAwait >= 0 && viTriDanh > viTriAwait);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);
 if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));
