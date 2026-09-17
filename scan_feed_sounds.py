@@ -506,10 +506,24 @@ def _thi_hanh(d, bridge, aid, ans, info, res):
     # `like_profile` do phia Node cap trong CUNG mot cau tra loi (xem askproto.cjs): nhip hoi thu
     # hai se nam trong trang ca nhan, khong co gi che thoi gian cho nen ton wall-clock that.
     if ans.get("visit") and res:
+        # ── NHIP HOI THU HAI, NGAY TRONG TRANG CA NHAN ──
+        # Chong ghe trung qua ngay khoa theo `@handle`, ma feed KHONG bay `@handle` (do: 0/3
+        # mau). Nen phai mo trang, doc ten that, roi moi hoi so duoc. Phan xet van o phia Node —
+        # o day chi gui cau hoi va thi hanh cau tra loi, dung luat mo dau `askproto.cjs`.
+        #
+        # Hoi hong (het gio, lech phien ban) thi `take()` tra ve SAFE, tuc `visit=0`, tuc di ra
+        # ngay. Huong sai an toan: khong bam gi len tai khoan that.
+        def _o_lai(handle):
+            aid2 = bridge.ask(kind="visit_check", handle=handle)
+            if aid2 is None:
+                return True          # cau hoi/dap dang tat -> giu nguyen hanh vi cu
+            return bool(bridge.take(aid2).get("visit"))
+
         kq["visit"], kq["like_profile"] = PA.do_visit(
             d, tac_gia, VISIT_SEC_MIN, VISIT_SEC_MAX, log,
             like_video=bool(ans.get("like_profile")),
             vid_min=PROFILE_VID_MIN, vid_max=PROFILE_VID_MAX,
+            hoi_o_lai=_o_lai,
         )
 
     # Not interested SAU CUNG: no doi feed.

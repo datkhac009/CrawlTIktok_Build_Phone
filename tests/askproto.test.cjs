@@ -285,6 +285,137 @@ function hoi(extra = {}) {
 
 dọn.forEach((d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) {} });
 
+// ── 13. Chống ghé trùng qua ngày (nhịp hỏi `visit_check`) ──
+// SỰ CỐ THẬT: chống ghé trùng QUA NGÀY không tồn tại ở cả hai app — bản PC chỉ nhớ trong một
+// lượt chạy, sổ `quality_channels.txt` thì chỉ ghi chứ không đọc lại. Sai ở đây là cả farm ghé
+// lại đúng những kênh vừa ghé hôm qua, và chuyện đó không để lại dấu vết gì trong log.
+{
+  const vb = require(path.join(__dirname, '..', 'src', 'visitbook.cjs'));
+  const d = newDir();
+  fq._resetForTest();
+  const b = ap.makeBrain({ deviceId: 'm1', dir: d, cfg: { visitOn: true, visitSkipDays: 7 } });
+
+  const a1 = b.answer({ v: V, id: 10, kind: 'visit_check', handle: '@nguoi_la' });
+  check('13. Kênh chưa ghé -> cho ở lại', a1.visit === 1, JSON.stringify(a1));
+  check('13b. Cấp phép ở lại là GHI SỔ NGAY, không đợi lượt ghé xong',
+    vb.lastVisit(d, '@nguoi_la') === vb.today());
+
+  const a2 = b.answer({ v: V, id: 11, kind: 'visit_check', handle: '@nguoi_la' });
+  check('13c. Hỏi lại chính kênh đó -> bảo đi ra', a2.visit === 0 && a2.why === 'visited_recently',
+    JSON.stringify(a2));
+
+  // Hoa thường phải coi là một, nếu không thì ghé lại đúng người vừa ghé.
+  const a3 = b.answer({ v: V, id: 12, kind: 'visit_check', handle: '@NGUOI_LA' });
+  check('13d. Hoa thường vẫn là cùng một kênh', a3.visit === 0, JSON.stringify(a3));
+
+  // Không đọc được @handle: vẫn cho ở lại, nhưng KHÔNG ghi sổ — ghi mù là chặn oan kênh khác.
+  const a4 = b.answer({ v: V, id: 13, kind: 'visit_check', handle: '' });
+  check('13e. Không đọc được @handle -> vẫn ở lại, lý do no_handle',
+    a4.visit === 1 && a4.why === 'no_handle', JSON.stringify(a4));
+
+  // Hình dạng câu trả lời phải GIỐNG HỆT đường thường, thiếu một khoá là Python hiểu thành 0.
+  check('13f. Câu trả lời đủ khoá như mọi đường khác',
+    ['v', 'id', 'ni', 'why', 'follow', 'like', 'visit', 'like_profile'].every((k) => k in a1),
+    Object.keys(a1).join(','));
+}
+
+// ── 14. `visitSkipDays = 0` là TẮT LỌC, không phải "chặn tất" ──
+// ⚠ Quy ước NGƯỢC với trần follow/tym (ở đó 0 = không làm gì). Hiểu ngược là cả farm ngừng ghé
+// thăm mà không ai biết vì sao — đúng loại hỏng câm mà QĐ-38 nói tới.
+{
+  const d = newDir();
+  fq._resetForTest();
+  const b = ap.makeBrain({ deviceId: 'm1', dir: d, cfg: { visitOn: true, visitSkipDays: 0 } });
+  b.answer({ v: V, id: 20, kind: 'visit_check', handle: '@ai_do' });
+  const a = b.answer({ v: V, id: 21, kind: 'visit_check', handle: '@ai_do' });
+  check('14. Ngày = 0 -> vẫn cho ghé lại ngay', a.visit === 1, JSON.stringify(a));
+}
+
+// ── 15. Bỏ qua vì trùng thì KHÔNG ăn suất `visitMaxUsers` ──
+// Trần là "tối đa N kênh mỗi lượt chạy". Một lượt vào rồi ra ngay vì sổ bảo thôi thì chưa tương
+// tác gì với kênh đó — tính nó là tiêu một suất thì sổ chống trùng càng chạy tốt, ghé thăm càng
+// bị cắt ngắn.
+{
+  fq._resetForTest();
+  const b = ap.makeBrain({ deviceId: 'm1', dir: newDir(), cfg: { visitOn: true, visitMaxUsers: 2 } });
+  b.noteActed({ id: 1, visit: 'skip_trung' });
+  b.noteActed({ id: 2, visit: 'skip_trung' });
+  b.noteActed({ id: 3, visit: 'skip_trung' });
+  const a = b.answer(hoi({ id: 30 }));
+  check('15. Ba lượt bỏ qua vì trùng không tiêu suất nào', a.visit === 1, JSON.stringify(a));
+
+  b.noteActed({ id: 4, visit: 'ok' });
+  b.noteActed({ id: 5, visit: 'ok_no_grid' });
+  const a2 = b.answer(hoi({ id: 31 }));
+  check('15b. Nhưng ghé thật thì có — kể cả ok_no_grid (đã vào trang và lướt thật)',
+    a2.visit === 0, JSON.stringify(a2));
+}
+
+// ── 16. Ghé hỏng liên tiếp thì LÙI, và lùi tăng dần rồi về bậc đầu khi chạy lại được ──
+// Chép từ bản PC (crawler.cjs:2511-2513 + 997-1007). Bản PC từng làm "3 lần hỏng thì tắt cả
+// lượt chạy": người dùng bật một ô, chạy vài tiếng, mất tính năng vì ba lần tải chậm, mà giao
+// diện vẫn báo "đang bật".
+{
+  fq._resetForTest();
+  let t = 1_000_000;
+  const b = ap.makeBrain({
+    deviceId: 'm1', dir: newDir(),
+    cfg: { visitOn: true }, now: () => t,
+  });
+
+  check('16. Lúc đầu vẫn cấp quyền ghé', b.answer(hoi({ id: 40 })).visit === 1);
+
+  b.noteActed({ id: 1, visit: 'fail' });
+  b.noteActed({ id: 2, visit: 'fail' });
+  check('16b. Hai lượt hỏng CHƯA phạt', b.answer(hoi({ id: 41 })).visit === 1);
+
+  b.noteActed({ id: 3, visit: 'fail' });
+  check('16c. Lượt hỏng thứ ba -> ngừng cấp quyền ghé', b.answer(hoi({ id: 42 })).visit === 0);
+
+  t += 9 * 60 * 1000;
+  check('16d. Sau 9 phút vẫn chưa hết nghỉ (bậc đầu là 10 phút)',
+    b.answer(hoi({ id: 43 })).visit === 0);
+  t += 2 * 60 * 1000;
+  check('16e. Qua 10 phút thì ghé lại được', b.answer(hoi({ id: 44 })).visit === 1);
+
+  // Bậc hai phải dài gấp đôi.
+  b.noteActed({ id: 5, visit: 'fail' });
+  b.noteActed({ id: 6, visit: 'fail' });
+  b.noteActed({ id: 7, visit: 'fail' });
+  t += 11 * 60 * 1000;
+  check('16f. Bậc hai dài hơn bậc đầu — 11 phút chưa đủ', b.answer(hoi({ id: 45 })).visit === 0);
+  t += 10 * 60 * 1000;
+  check('16g. Qua 20 phút thì hết bậc hai', b.answer(hoi({ id: 46 })).visit === 1);
+
+  // Ghé được một lượt là XOÁ HẲN chuỗi, về bậc đầu.
+  b.noteActed({ id: 8, visit: 'ok' });
+  b.noteActed({ id: 9, visit: 'fail' });
+  b.noteActed({ id: 10, visit: 'fail' });
+  b.noteActed({ id: 11, visit: 'fail' });
+  t += 11 * 60 * 1000;
+  check('16h. Sau một lượt ghé được, lần phạt kế tiếp lại chỉ 10 phút',
+    b.answer(hoi({ id: 47 })).visit === 1);
+}
+
+// ── 17. Lùi vì ghé hỏng KHÔNG được đụng tới quét sound và tym ──
+// Điểm tinh tế chép từ bản PC: nó đẩy mốc chứ KHÔNG ngủ, vì ghé thăm nằm trong vòng quét — ngủ
+// là phạt nhầm việc đang chạy tốt vì một việc khác đang hỏng.
+{
+  fq._resetForTest();
+  let t = 1_000_000;
+  const b = ap.makeBrain({
+    deviceId: 'm1', dir: newDir(),
+    cfg: { visitOn: true, likeOn: true, likePerDay: 60, likeRateMin: 100, likeRateMax: 100 },
+    now: () => t, rng: () => 0,
+  });
+  b.noteActed({ id: 1, visit: 'fail' });
+  b.noteActed({ id: 2, visit: 'fail' });
+  b.noteActed({ id: 3, visit: 'fail' });
+  const a = b.answer(hoi({ id: 50 }));
+  check('17. Đang nghỉ ghé nhưng TYM vẫn chạy', a.visit === 0 && a.like === 1, JSON.stringify(a));
+  check('17b. Và không cấp tym-trong-trang khi không ghé', a.like_profile === 0, JSON.stringify(a));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);
 if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));

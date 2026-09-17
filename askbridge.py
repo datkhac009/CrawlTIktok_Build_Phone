@@ -43,7 +43,7 @@ import threading
 # rơi về "không bấm gì", im lặng, không lỗi. `tests/wiring.test.cjs:158` khoá hai bên bằng nhau.
 # v2 (2026-09-16): thêm `live` và nhịp hỏi `follow_confirm`.
 # v3 (2026-09-17): thêm `like_profile` — cú tym lên video mở trong trang cá nhân.
-PROTO_V = int(os.environ.get("PROTO_V", "3"))
+PROTO_V = int(os.environ.get("PROTO_V", "4"))
 TIMEOUT = float(os.environ.get("ASK_TIMEOUT", "3.0"))
 FAIL_STREAK_OFF = 3          # bấy nhiêu lượt hỏng liên tiếp thì tắt hẳn, khỏi phí thời gian
 

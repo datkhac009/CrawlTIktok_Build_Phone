@@ -24,6 +24,7 @@ const langfilter = require('./langfilter.cjs');
 const uilabels = require('./uilabels.cjs');
 const channelstore = require('./channelstore.cjs');
 const followquota = require('./followquota.cjs');
+const visitbook = require('./visitbook.cjs');
 const daycount = require('./daycount.cjs');
 const { normalizeHandle } = require('./followpolicy.cjs');
 
@@ -42,19 +43,27 @@ const { normalizeHandle } = require('./followpolicy.cjs');
 //     30 lượt/ngày khoá theo nó. Tên hiển thị không duy nhất và người ta đổi được; khoá sổ theo
 //     tên hiển thị là có ngày hai kênh khác nhau bị coi là một.
 // v3 (2026-09-17): thêm `like_profile` — cú tym thứ hai, lên video mở trong trang cá nhân.
+// v4 (2026-09-17): thêm nhịp hỏi `kind:'visit_check'` — chống ghé trùng qua ngày.
+//
+// VÌ SAO NHỊP NÀY PHẢI NẰM TRONG TRANG, không gộp vào nhịp 1:
+// Sổ chống ghé trùng khoá theo `@handle`, mà feed KHÔNG bày `@handle` (đo: 0/3 mẫu). Khoá theo
+// tên hiển thị là coi hai kênh trùng tên thành một rồi bỏ qua oan — mà bỏ qua oan thì không để
+// lại dấu vết gì để ai đó nhìn ra. Nên phải mở trang trước, đọc tên thật, rồi mới hỏi sổ.
+// Đổi lại là một nhịp hỏi không có gì che; chấp nhận được vì nó là MỘT lần cho cả lượt ghé
+// 10-20 giây, không phải mỗi video một lần như nhịp 1.
 //
 // VÌ SAO MỘT CÂU TRẢ LỜI MANG CẢ HAI CÚ TYM, thay vì thêm nhịp hỏi thứ ba:
 // Nhịp hỏi hiện tại gần như miễn phí vì nó nấp sau quãng 5-9 giây đi trang nhạc (xem ghi chú ở
 // đầu file). Một nhịp hỏi nằm TRONG trang cá nhân thì không có gì che — nó tốn wall-clock thật,
 // đúng thứ mà đợt này đang phải cắt.
-const PROTO_VERSION = 3;
+const PROTO_VERSION = 4;
 
 // Câu trả lời an toàn: không bấm gì cả. Dùng cho MỌI đường hỏng.
 function safeAnswer(id) {
   return { v: PROTO_VERSION, id: id | 0, ni: 0, why: '', follow: 0, like: 0, visit: 0, like_profile: 0 };
 }
 
-function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random }) {
+function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random, now = Date.now }) {
   // ── TỈ LỆ TYM: bốc MỘT lần cho cả lượt chạy ──
   //
   // VÌ SAO KHÔNG BỐC LẠI MỖI VIDEO: mỗi máy có một "tính cách" ổn định trong suốt ca — nhìn từ
@@ -87,7 +96,27 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random 
     ghe: 0,           // số lần ghé trang cá nhân để lấy @handle
     trungKenh: 0,     // số lần ghé xong mới biết đã follow người này rồi
     tymTrang: 0,      // số cú tym lên video mở trong trang cá nhân
+    gheTrung: 0,      // số lần vào trang rồi quay ra vì đã ghé gần đây
   };
+  // ── GHÉ HỎNG LIÊN TIẾP THÌ LÙI LẠI, KHÔNG ĐẬP MÃI ──
+  //
+  // Chép từ bản PC, nơi đã chạy thật: `VISIT_BLOCK_STREAK = 3` (crawler.cjs:2511-2513) và quy
+  // tắc lùi tăng dần của `makeFeedTrainer` (crawler.cjs:997-1007).
+  //
+  // ⚠ ĐIỂM TINH TẾ PHẢI CHÉP ĐÚNG: nó KHÔNG ngủ, chỉ đẩy mốc "lượt ghé kế tiếp" ra xa. Ghé thăm
+  // nằm trong vòng quét, nên ngủ ở đây là đứng luôn cả việc quét sound — tức phạt nhầm việc đang
+  // chạy tốt vì một việc khác đang hỏng.
+  //
+  // ⚠ LÙI DẦN, KHÔNG TẮT HẲN. Bản PC từng làm "3 lần hỏng thì tắt cả lượt chạy", và hậu quả ghi
+  // ngay trong mã: người dùng bật một ô, chạy vài tiếng, rồi mất tính năng vì ba lần tải chậm —
+  // mà giao diện vẫn báo "đang bật". Thành công một lượt là về lại bậc đầu.
+  const GHE_HONG_NGUONG = 3;
+  const GHE_NGHI_DAU_MS = 10 * 60 * 1000;
+  const GHE_NGHI_TRAN_MS = 60 * 60 * 1000;
+  let gheHongLienTiep = 0;
+  let gheBacNghi = 0;
+  let gheLaiSau = 0;        // mốc thời gian, trước mốc này thì không cấp quyền ghé
+
   const viDu = [];          // vài ví dụ kênh bị loại, để soi xem có khớp nhầm không
   let daBaoNhanLa = false;  // đường tự vá: chỉ in MỘT dòng mỗi lượt chạy
 
@@ -132,6 +161,38 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random 
         // Nhớ handle để `noteActed` ghi sổ đúng kênh, kể cả khi Python quên gửi lại.
         dangCho = { id, handle: h };
         return { v: PROTO_VERSION, id, ni: 0, why: q.reason || '', follow: 1, like: 0, visit: 0, like_profile: 0 };
+      }
+
+      // ── NHỊP 2b: CÓ NÊN Ở LẠI TRANG NÀY KHÔNG — chống ghé trùng qua ngày ──
+      //
+      // Python đã vuốt vào trang cá nhân và đọc được `@handle` thật. Nhịp 1 trên feed không trả
+      // lời được câu này: ở đó chưa ai biết kênh này là ai.
+      //
+      // ⚠ CÂU TRẢ LỜI DÙNG LẠI TRƯỜNG `visit`: 1 = ở lại lướt, 0 = về feed ngay. Không thêm
+      // trường mới, nên MỌI đường hỏng (`safeAnswer`) đã sẵn mang `visit: 0` — hỏng thì đi ra,
+      // đúng hướng an toàn là không bấm gì lên tài khoản thật.
+      //
+      // ⚠ Dựng câu trả lời bằng `...safeAnswer(id)` chứ không gõ lại từng khoá: đầu file này đã
+      // ghi rõ, thiếu một khoá là đường hỏng trả về một HÌNH DẠNG KHÁC đường thường, và Python
+      // đọc trúng khoá thiếu thì hiểu thành 0 mà không ai báo gì.
+      if (ask.kind === 'visit_check') {
+        const h = normalizeHandle(ask.handle);
+        if (!h) {
+          // Không đọc được @handle thì KHÔNG ghi sổ — ghi mù là chặn oan một kênh khác về sau.
+          // Nhưng vẫn cho ở lại: lướt một trang chưa biết của ai thì cũng không hại gì.
+          return { ...safeAnswer(id), visit: 1, why: 'no_handle' };
+        }
+        if (visitbook.visitedWithin(dir, h, cfg.visitSkipDays ?? 7)) {
+          dem.gheTrung++;
+          say(`bỏ qua ${h}: đã ghé trong ${cfg.visitSkipDays ?? 7} ngày gần đây`);
+          return { ...safeAnswer(id), visit: 0, why: 'visited_recently' };
+        }
+        // Ghi sổ NGAY khi cấp phép ở lại, không đợi lượt ghé chạy xong. Bản PC làm đúng thế
+        // (`visits.markVisited` gọi TRƯỚC khi ghé, crawler.cjs:2778), và ở đây lý do còn mạnh
+        // hơn: lượt ghé có thể chết giữa chừng (máy treo, app văng, lạc khỏi feed). Ghi sau thì
+        // một kênh hay làm ghé hỏng sẽ được thử đi thử lại mãi mãi.
+        visitbook.record(dir, h);
+        return { ...safeAnswer(id), visit: 1, why: '' };
       }
 
       // ── KIỂM HÌNH DẠNG CÂU HỎI TRƯỚC KHI CẤP BẤT KỲ QUYỀN NÀO ──
@@ -242,7 +303,7 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random 
 
       // ── Quyền GHÉ THĂM kênh ──
       let visit = 0;
-      if (cfg.visitOn && !biLoai && danhTinh) {
+      if (cfg.visitOn && !biLoai && danhTinh && now() >= gheLaiSau) {
         const tran = Math.max(0, parseInt(cfg.visitMaxUsers, 10) || 0);
         if (tran === 0 || dem.visit < tran) visit = 1;   // 0 = không giới hạn (khác với follow/tym)
       }
@@ -321,7 +382,27 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random 
       if (evt.like_profile === 'ok') { daycount.record(dir, 'like'); dem.like++; dem.tymTrang++; }
       else if (evt.like_profile === 'fail') { dem.likeFail++; }
 
-      if (evt.visit === 'ok') dem.visit++;
+      // ── KẾT QUẢ GHÉ: đếm, và điều chỉnh quãng lùi ──
+      // `skip_trung` KHÔNG phải hỏng: máy đã vào được trang và đọc được @handle, chỉ là sổ bảo
+      // thôi. Tính nó thành hỏng là sổ chống trùng càng chạy tốt thì ghé thăm càng bị phạt nặng.
+      // `ok_no_grid` VẪN ăn một suất `visitMaxUsers`: máy đã vào trang người ta và lướt 5-10
+      // giây thật, chỉ là không mở được video trong lưới. Không đếm nó là trần "tối đa N kênh
+      // mỗi lượt chạy" nói dối — một máy có lưới hỏng sẽ ghé vô hạn mà trần vẫn báo còn nguyên.
+      // `skip_trung` thì KHÔNG đếm: vào rồi ra ngay, chưa tương tác gì với kênh đó.
+      if (evt.visit === 'ok' || evt.visit === 'ok_no_grid' || evt.visit === 'skip_trung') {
+        if (evt.visit !== 'skip_trung') dem.visit++;
+        gheHongLienTiep = 0;
+        gheBacNghi = 0;
+      } else if (evt.visit === 'fail') {
+        if (++gheHongLienTiep >= GHE_HONG_NGUONG) {
+          gheHongLienTiep = 0;
+          const nghi = Math.min(GHE_NGHI_TRAN_MS, GHE_NGHI_DAU_MS * Math.pow(2, gheBacNghi));
+          gheBacNghi++;
+          gheLaiSau = now() + nghi;
+          say(`⚠ Ghé thăm hỏng ${GHE_HONG_NGUONG} lượt liên tiếp — nghỉ ghé ${Math.round(nghi / 60000)} phút. `
+            + 'Quét sound vẫn chạy bình thường.');
+        }
+      }
     } catch (_) { /* ghi sổ hỏng không được làm chết vòng quét */ }
   }
 
@@ -351,7 +432,12 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random 
       if (dem.tymTrang) phu.push(`${dem.tymTrang} trong trang`);
       p.push(`tym ${dem.like}${phu.length ? ` (${phu.join(', ')})` : ''}`);
     }
-    if (dem.visit) p.push(`ghé ${dem.visit} kênh`);
+    // `bỏ qua N đã ghé` là thước đo xem sổ chống trùng có đang chạy không. Số này bằng 0 suốt
+    // nhiều ca trong khi `ghé` vẫn tăng nghĩa là sổ không ghi được (thư mục máy sai quyền, hoặc
+    // @handle đọc trượt) — và hỏng kiểu đó không tự lộ ra ở đâu khác.
+    if (dem.visit || dem.gheTrung) {
+      p.push(`ghé ${dem.visit} kênh${dem.gheTrung ? `, bỏ qua ${dem.gheTrung} đã ghé gần đây` : ''}`);
+    }
     if (dem.askFail) p.push(`⚠ ${dem.askFail} lượt hỏi hỏng`);
     if (!p.length) return '';
     let s = p.join(' · ');

@@ -445,12 +445,43 @@ def _ve_feed(d, log=lambda s: None):
     return False
 
 
+def doc_handle_tren_trang(d, timeout=12.0):
+    """ĐANG Ở TRANG CÁ NHÂN: đọc `@handle` thật. Trả `'@abc'` hoặc `''`.
+
+    MỘT nơi định nghĩa, dùng chung cho `open_profile_read_handle` (lấy tên để follow) và
+    `do_visit` (lấy tên để tra sổ chống ghé trùng). Hai nơi tự đọc lấy là có ngày một nơi sửa
+    còn nơi kia quên — đúng bài học `adbpath.cjs` và `linkkey.cjs`.
+
+    Chờ theo ĐIỀU KIỆN chứ không theo đồng hồ: đo được 3,5 giây CHƯA đủ, 2/3 lần chụp sớm thì
+    trang chưa kịp bày `@handle`.
+    """
+    het = time.time() + timeout
+    while time.time() < het:
+        try:
+            xml = d.dump_hierarchy()
+        except Exception:
+            time.sleep(0.5)
+            continue
+        for t in _leaf_texts(xml):
+            if _RE_HANDLE.match(t):
+                return t
+        time.sleep(0.6)
+    return ""
+
+
 def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
-             like_video=False, vid_min=3.0, vid_max=7.0):
+             like_video=False, vid_min=3.0, vid_max=7.0, hoi_o_lai=None):
     """Ghe trang ca nhan -> luot vai giay -> mo MOT video NGAU NHIEN trong luoi -> xem vai giay
     -> (co the) tym -> ve feed.
 
-    Tra ve CAP: ("ok" | "ok_no_grid" | "fail",  "ok" | "fail" | "not_needed").
+    Tra ve CAP: ("ok" | "ok_no_grid" | "skip_trung" | "fail",  "ok" | "fail" | "not_needed").
+
+    `hoi_o_lai(handle) -> bool` la NHIP HOI THU HAI, hoi phia Node xem co nen o lai trang nay
+    khong (chong ghe trung qua ngay). Truyen None thi khong hoi, o lai nhu cu.
+
+    ⚠ VI SAO HOI O DAY MA KHONG HOI TU TREN FEED: so chong ghe trung khoa theo `@handle`, ma
+    feed KHONG bay `@handle` (do: 0/3 mau). Khoa theo ten hien thi la coi hai kenh trung ten
+    thanh mot roi bo qua oan — va bo qua oan thi khong de lai dau vet gi de ai do nhin ra.
 
     ⚠ ĐỔI CÁCH MỞ TRANG HAI LẦN TRONG NGÀY 2026-09-16, cả hai đều do đo trên máy thật:
       1. Bản gốc bấm `d(text=@handle)` trên feed. Feed TikTok v46.1.1 **không bày @handle ở đâu
@@ -466,16 +497,43 @@ def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
     """
     if not author:
         return ("fail", "not_needed")
+
+    # ⚠ DEM GIO THAT, KHONG DEM GIO DA HEN (2026-09-17).
+    # Chu du an nhin man hinh va bao "ghe tham chua duoc 2 giay da quay lai feed", trong khi log
+    # van bao `ghe=ok` va tran `visitMaxUsers` van tru mot suat. Mot luot ghe hong som ma tinh
+    # nhu mot luot ghe du la lam ca hai thu do noi doi cung mot luc. Ban PC hoc dung bai nay:
+    # `visitSpentMs += Date.now() - batDau` (crawler.cjs:2800-2802).
+    t_ghe = time.time()
+
+    def _xong(kq, kq_tym, vi_sao=""):
+        giay = time.time() - t_ghe
+        log("ghe tham: %s sau %.1fs%s" % (kq, giay, (" - " + vi_sao) if vi_sao else ""))
+        return (kq, kq_tym)
+
     if not _mo_trang_ca_nhan(d):
-        log("vuot sang trai de ghe tham loi")
-        return ("fail", "not_needed")
+        return _xong("fail", "not_needed", "vuot sang trai khong vao duoc trang")
 
     try:
         # Luoi thu hai cho phong LIVE, ngay khi vua vao.
         if dang_trong_phong_live(d):
             log("ghe tham roi vao phong LIVE -> thoat ra ngay")
             _ve_feed(d, log)
-            return ("fail", "not_needed")
+            return _xong("fail", "not_needed", "roi vao phong LIVE")
+
+        # ── HOI PHIA NODE: CO NEN O LAI KHONG ──
+        # Doc `@handle` truoc, vi so chong ghe trung khoa theo no. Tien mot viec: doc duoc
+        # `@handle` cung la bang chung trang da dung hinh, nen vong cho luoi ben duoi it phai cho.
+        if hoi_o_lai is not None:
+            # Tran 6 giay, ngan hon 12 giay cua duong follow. O do doc trat la HONG CA VIEC (khong
+            # co @handle thi khong follow duoc, va sai handle la ghi so sai vinh vien). O day doc
+            # trat chi mat mot lan chong trung — con luot ghe van chay binh thuong. Cho 12 giay
+            # cho mot thu "co thi tot" la lam moi luot ghe dai them gap ruoi khi mang cham.
+            h = doc_handle_tren_trang(d, 6.0)
+            if not h:
+                log("ghe trang nhung khong doc duoc @handle -> van o lai luot, khong ghi so")
+            elif not hoi_o_lai(h):
+                _ve_feed(d, log)
+                return _xong("skip_trung", "not_needed", "da ghe %s gan day" % h)
 
         # Cho luoi hien ra theo DIEU KIEN, khong ngu mu. Khong thay thi back MOT nhip roi do lai:
         # 1/3 lan ghe roi vao tam thong bao che trang, va no nuot dung mot `back`.
@@ -493,8 +551,7 @@ def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
             if o:
                 break
             if _o_tren_feed(d):
-                log("ghe trang: da roi ve feed truoc khi luoi kip hien -> bo luot nay")
-                return ("fail", "not_needed")
+                return _xong("fail", "not_needed", "roi ve feed truoc khi luoi kip hien")
             # Ba giay cuoi moi thu MOT nhip `back` de bo tam che (vd "Viewer history turned on").
             # ⚠ Chi `back`. TUYET DOI khong bam nut la tren tam do (vd "Save") — bam mu mot nut
             # khong biet la gi tren tai khoan that la dung QD-31.
@@ -515,9 +572,9 @@ def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
         # vi tri trong luoi chu khong chi trong hang dau.
         o = _o_luoi_video(d)
         if not o:
-            log("ghe trang: khong thay o luoi video nao (trang trong / bi chan / bo cuc khac)")
             _ve_feed(d, log)
-            return ("ok_no_grid", "not_needed")
+            return _xong("ok_no_grid", "not_needed",
+                         "khong thay o luoi (trang trong / bi chan / bo cuc khac)")
 
         cx, cy = random.choice(o)
         d.click(cx, cy)
@@ -534,20 +591,19 @@ def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
                 break
             time.sleep(0.5)
         if not mo_duoc:
-            log("bam o luoi nhung video khong mo -> KHONG tym (tranh bam mu)")
             _ve_feed(d, log)
-            return ("ok_no_grid", "not_needed")
+            return _xong("ok_no_grid", "not_needed",
+                         "bam o luoi nhung video khong mo, KHONG tym (tranh bam mu)")
 
         time.sleep(random.uniform(vid_min, vid_max))
         # Dung lai `do_like`, khong viet cu double-tap thu hai — dung loi cua `linkkey.cjs`.
         kq_tym = do_like(d, log) if like_video else "not_needed"
 
         _ve_feed(d, log)
-        return ("ok", kq_tym)
+        return _xong("ok", kq_tym)
     except Exception as e:
-        log("ghe tham loi: %s" % str(e)[:80])
         _ve_feed(d, log)
-        return ("fail", "not_needed")
+        return _xong("fail", "not_needed", "loi: %s" % str(e)[:80])
 
 
 def same_video(d, author):
@@ -706,19 +762,10 @@ def open_profile_read_handle(d, log=lambda s: None, timeout=12):
             log("lan %d: chua o feed hoac vuot loi" % lan)
             continue
 
-        # Chờ trang tải. Đo được: 3.5 giây CHƯA đủ — 2/3 lần chụp sớm chưa thấy @handle. Nên chờ
-        # theo ĐIỀU KIỆN chứ không chờ theo đồng hồ.
-        het = time.time() + timeout
-        while time.time() < het:
-            try:
-                attrs_xml = d.dump_hierarchy()
-            except Exception:
-                time.sleep(0.5)
-                continue
-            for t in _leaf_texts(attrs_xml):
-                if _RE_HANDLE.match(t):
-                    return t
-            time.sleep(0.6)
+        # Chờ trang tải theo ĐIỀU KIỆN, trong `doc_handle_tren_trang` — dùng chung với `do_visit`.
+        h = doc_handle_tren_trang(d, timeout)
+        if h:
+            return h
         log("lan %d: mo duoc man khac nhung khong thay @handle" % lan)
     # ── HỎNG THÌ PHẢI NÓI ĐANG Ở ĐÂU, ĐỪNG ĐỂ ĐOÁN ──
     # "Không đọc được @handle" có ít nhất ba nguyên nhân khác hẳn nhau: (a) bấm avatar không mở

@@ -54,6 +54,9 @@ const DEFAULT_SETTINGS = {
   profileVideoSecMin: 3,
   profileVideoSecMax: 7,
   visitMaxUsers: 0,
+  // Số ngày KHÔNG ghé lại một kênh đã ghé. ⚠ `0` ở đây là TẮT BỘ LỌC — ngược với trần
+  // follow/tym (0 = không làm gì). Đây là bộ lọc bỏ qua, tắt lọc thì mọi kênh đi qua.
+  visitSkipDays: 7,
 };
 
 // Nhóm ký tự cho bộ lọc ngôn ngữ. Danh sách này phải khớp SCRIPT_GROUPS trong
@@ -514,6 +517,7 @@ function openSettingsModal(ids) {
   $('cfgVisitSecMin').value = base.visitSecMin;
   $('cfgVisitSecMax').value = base.visitSecMax;
   $('cfgVisitMaxUsers').value = base.visitMaxUsers;
+  $('cfgVisitSkipDays').value = base.visitSkipDays;
 
   // Hai o toan app - khong theo tung may, nen doc tu globalSettings
   $('cfgDeviceConcurrency').value = globalSettings.deviceConcurrency;
@@ -571,6 +575,7 @@ async function saveSettings() {
     visitSecMin: numOf('cfgVisitSecMin', D.visitSecMin),
     visitSecMax: numOf('cfgVisitSecMax', D.visitSecMax),
     visitMaxUsers: numOf('cfgVisitMaxUsers', D.visitMaxUsers),
+    visitSkipDays: numOf('cfgVisitSkipDays', D.visitSkipDays),
   };
   settingsTargetIds.forEach((id) => { deviceSettings[id] = s; });
 

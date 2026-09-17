@@ -413,8 +413,10 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     && !/if not da_back:\s*\n\s*da_back = True\s*\n\s*#[\s\S]{0,200}?d\.press\("back"\)/.test(kV));
 
   // Thấy mình đang ở feed thì bỏ lượt, KHÔNG back thêm — back nữa là đi xa hơn khỏi chỗ cần đến.
+  // Từ 2026-09-17 mọi đường thoát đi qua `_xong` để in ra số giây THẬT của lượt ghé, nên phép
+  // thử khớp theo `_xong(...)` chứ không theo bộ đôi trần trụi nữa.
   check('14e. Rơi về feed giữa chừng thì bỏ lượt, không back tiếp',
-    /if _o_tren_feed\(d\):[\s\S]{0,220}?return \("fail", "not_needed"\)/.test(kV));
+    /if _o_tren_feed\(d\):[\s\S]{0,220}?return _xong\("fail", "not_needed"/.test(kV));
 
   // Vòng lướt trang phải kéo từng điểm. `d.swipe` đã đo được là TikTok không nhận ra là cử chỉ,
   // nên để nguyên thì 5-10 giây "lướt xem" là 5-10 giây trang đứng yên.
@@ -423,6 +425,52 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
   check('14g. _keo_doc bơm sự kiện từng điểm như _mo_trang_ca_nhan',
     /def _keo_doc\(/.test(pa)
     && /def _keo_doc\([\s\S]*?d\.touch\.down\([\s\S]*?d\.touch\.move\([\s\S]*?d\.touch\.up\(/.test(pa));
+}
+
+// ── 15. Ghé thăm: đo giờ thật, đọc @handle một chỗ, hỏi sổ trước khi lướt ──
+// SỰ CỐ THẬT (2026-09-17): log báo `ghé=ok` và trần `visitMaxUsers` trừ một suất, trong khi chủ
+// dự án nhìn màn hình thấy lượt ghé chưa được 2 giây. Cả hai thứ cùng nói dối một lúc, và không
+// có số nào trong log đủ để phát hiện — vì không chỗ nào đo thời gian thật.
+{
+  const pa = doc('phone_actions.py');
+  const py = doc('scan_feed_sounds.py');
+
+  const kV = (/def do_visit\([\s\S]*?\n(?=def )/.exec(pa) || [''])[0];
+
+  check('15. Lượt ghé bấm giờ từ trước khi vuốt', /t_ghe = time\.time\(\)/.test(kV));
+  check('15b. Mọi đường thoát in ra số giây thật',
+    /def _xong\(/.test(kV) && /time\.time\(\) - t_ghe/.test(kV));
+  // Nếu còn một `return ("...", "...")` trần trụi nào sau khi đã bấm giờ thì đường đó im lặng.
+  {
+    const sauKhiBamGio = kV.slice(kV.indexOf('t_ghe = time.time()'));
+    const tran = sauKhiBamGio.match(/\n\s+return \("[a-z_]+", "[a-z_]+"\)/g) || [];
+    check('15c. Không còn đường thoát nào bỏ qua phép đo', tran.length === 0,
+      tran.length ? tran.join(' | ') : 'sạch');
+  }
+
+  check('15d. Hỏi sổ TRƯỚC khi lướt trang',
+    kV.indexOf('hoi_o_lai(h)') > 0 && kV.indexOf('hoi_o_lai(h)') < kV.indexOf('_keo_doc(d)'));
+  check('15e. Bỏ qua vì trùng trả về mã riêng, không lẫn với ghé thật',
+    /return _xong\("skip_trung"/.test(kV));
+
+  // MỘT nơi đọc @handle. Hai nơi tự đọc lấy là có ngày một nơi sửa còn nơi kia quên — đúng bài
+  // học `linkkey.cjs`, thứ đã làm bộ lọc Original Sound hỏng câm ở bản phone.
+  //
+  // ⚠ 15g là hàng rào CHẶN TRƯỚC, không phải phép kiểm bản sửa: bản cũ cũng chỉ có một vòng dò.
+  // Nó đỏ vào đúng ngày ai đó (kể cả tôi) chép thêm một vòng thứ hai vào `do_visit` cho tiện.
+  check('15f. Có hàm đọc @handle dùng chung', /def doc_handle_tren_trang\(/.test(pa));
+  {
+    const soVongDoc = (pa.match(/if _RE_HANDLE\.match\(t\):/g) || []).length;
+    check('15g. Chỉ MỘT vòng dò @handle trong cả file', soVongDoc === 1, `thấy ${soVongDoc}`);
+  }
+  check('15h. open_profile_read_handle dùng lại đúng hàm đó',
+    /def open_profile_read_handle\([\s\S]*?doc_handle_tren_trang\(d, timeout\)/.test(pa));
+
+  // Phán xét nằm ở Node. Python chỉ gửi câu hỏi và thi hành — luật mở đầu `askproto.cjs`.
+  check('15i. Nhịp hỏi visit_check gửi từ Python, không tự quyết',
+    /bridge\.ask\(kind="visit_check", handle=handle\)/.test(py));
+  check('15j. Python KHÔNG giữ bản sao sổ ghé thăm',
+    !/visited_channels|visitbook|visitSkipDays/i.test(py + pa));
 }
 
 const failed = results.filter((r) => !r.pass);
