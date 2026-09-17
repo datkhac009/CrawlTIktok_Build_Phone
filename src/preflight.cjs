@@ -20,7 +20,7 @@
 'use strict';
 
 const { execFile } = require('child_process');
-const { findAdb, adbVersion } = require('./adbpath.cjs');
+const { findAdb, adbVersion, adbServerPort } = require('./adbpath.cjs');
 const { findPython, installCommand } = require('./pythonpath.cjs');
 
 const TIKTOK_PKGS = ['com.zhiliaoapp.musically', 'com.ss.android.ugc.trill'];
@@ -49,7 +49,12 @@ async function checkHost() {
       + 'Máy này đã có sẵn một bản ở D:\\xiaowei_android\\tools\\adb.exe (đi kèm 效卫).'));
   } else {
     const ver = adbVersion(adb.path);
-    items.push(_item('adb', 'adb.exe', true, `${ver || 'không đọc được phiên bản'} — ${adb.from}`));
+    // Nói luôn CỔNG SERVER, không chỉ đường dẫn. Ngày 2026-09-16 mục này báo xanh trong khi
+    // tiến trình quét chết vì "device not found" — nó kiểm trên server 5037 còn lượt chạy đi vào
+    // một server khác. Một chẩn đoán xanh mà sai còn tệ hơn không chẩn đoán (QĐ-29), nên cái
+    // phân biệt hai tình huống đó phải nằm ngay trên mặt.
+    items.push(_item('adb', 'adb.exe', true,
+      `${ver || 'không đọc được phiên bản'} — ${adb.from} · server cổng ${adbServerPort()}`));
   }
 
   const py = findPython({ fresh: true });

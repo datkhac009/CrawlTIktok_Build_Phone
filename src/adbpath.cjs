@@ -105,6 +105,36 @@ function adbVersion(p) {
   }
 }
 
+// ── CỔNG của ADB SERVER mà CẢ APP dùng chung ──
+//
+// VÌ SAO NẰM Ở ĐÂY, CẠNH `adbPath()` (2026-09-16):
+// `scan_feed_sounds.py` từng TỰ suy một cổng riêng cho mỗi máy (`5100 + crc32(serial) % 800`),
+// với lý do "nhiều tiến trình dồn lệnh vào một adb server thì nghẽn". Kết quả là hai phía nói
+// chuyện với hai server khác nhau: `preflight.cjs` hỏi 5037 thấy đủ máy nên báo XANH, còn tiến
+// trình quét hỏi 5112 thì `adb devices` RỖNG. Đo được trong một lần chạy thật: `adb connect`
+// treo trọn 60 giây, rồi mọi `adb shell` trả `device not found`, `setup_device` hỏng ba lần,
+// tiến trình thoát mã 1 — mà bảng kiểm tra vẫn xanh từ đầu tới cuối.
+//
+// Đây đúng bài học mà file này mở đầu bằng: ba bản sao của một quyết định = ba chỗ phải sửa và
+// chắc chắn quên một chỗ (QĐ-10). Đường dẫn adb đã học rồi; cổng server là cùng một bài.
+//
+// ⚠ VÌ SAO MẶC ĐỊNH 5037, KHÔNG PHẢI CHỌN BỪA:
+// Farm này nối qua MẠNG (`192.168.x.x:5555`), mà `adbd` trên điện thoại chỉ nhận ĐÚNG MỘT adb
+// server. 效卫 đã giữ cả 23 máy trên server mặc định rồi — bất kỳ server nào khác cũng vĩnh viễn
+// không thấy một máy nào. Không có lựa chọn thứ hai, chỉ có lựa chọn đúng và lựa chọn hỏng câm.
+const DEFAULT_ADB_SERVER_PORT = '5037';
+
+function adbServerPort() {
+  // Chỉ nhận chuỗi TOÀN CHỮ SỐ. Một giá trị rác lọt xuống tiến trình con thì adb bên đó dựng
+  // server ở nơi không ai biết, và triệu chứng lại đúng là "không thấy máy nào" — thứ vừa mất
+  // một buổi để tìm ra.
+  const v = String(process.env.ANDROID_ADB_SERVER_PORT || '').trim();
+  return /^\d+$/.test(v) ? v : DEFAULT_ADB_SERVER_PORT;
+}
+
 function _resetForTest() { _cache = null; }
 
-module.exports = { findAdb, adbPath, adbVersion, XIAOWEI_ADB, _resetForTest };
+module.exports = {
+  findAdb, adbPath, adbVersion, XIAOWEI_ADB, _resetForTest,
+  adbServerPort, DEFAULT_ADB_SERVER_PORT,
+};

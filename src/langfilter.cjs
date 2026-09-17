@@ -51,7 +51,22 @@ const SCRIPT_GROUPS = {
   arabic: {
     label: 'Toàn bộ chữ Ả Rập — RỘNG',
     note: '⚠ Chặn luôn Ả Rập Xê Út, Ai Cập, UAE, Iran... Chỉ bật nếu thực sự muốn cả nhóm đó.',
-    re: /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/,
+    // ⚠ VIẾT BẰNG \uXXXX, KHÔNG dán ký tự thật (sửa 2026-09-16).
+    // Bản cũ dán ký tự thật và biên trên là U+FEFF — mà U+FEFF KHÔNG phải chữ Ả Rập, nó là
+    // BOM / zero-width no-break space, một ký tự VÔ HÌNH lẫn vào text ở khắp nơi. Nó cũng vô
+    // hình luôn trong chính mã nguồn này nên không ai soi ra. Khối Arabic Presentation
+    // Forms-B dừng thật ở U+FEFC; U+FEFD/U+FEFE chưa gán.
+    // Khớp nhầm ở đây không chỉ mất một link: nếu bật ô bấm Not interested thì là DẠY VĨNH
+    // VIỄN cho tài khoản.
+    re: /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]/,
+  },
+  indic: {
+    label: 'Toàn bộ chữ Ấn Độ — RỘNG',
+    note: '⚠ Devanagari → Sinhala: Hindi, Marathi, Nepal, Punjab, Gujarat, Odia, Tamil, '
+      + 'Telugu, Kannada, Malayalam, Sri Lanka. Không tách được theo nước — cùng lý do như '
+      + 'chữ Ả Rập không tách được Iran khỏi Ai Cập. PHỦ CHỒNG nhóm Bengali (U+0980–09FF): '
+      + 'bật nhóm này là Bangladesh cũng bị chặn dù không tích ô Bengali.',
+    re: /[\u0900-\u0DFF]/,
   },
 };
 

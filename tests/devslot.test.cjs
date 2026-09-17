@@ -1,7 +1,7 @@
 // tests/devslot.test.cjs — khoá cổng chia khe cho 19 máy.
 //
-// VÌ SAO PHẢI CÓ (2026-09-15): chủ dự án có 19 máy Android, mỗi máy chạy = 1 tiến trình Python
-// + 1 ADB server riêng. Bật hết cùng lúc là máy điều khiển gánh không nổi.
+// VÌ SAO PHẢI CÓ (2026-09-15): chủ dự án có 19 máy Android, mỗi máy chạy = 1 tiến trình Python,
+// và cả 19 dồn lệnh qua CÙNG một ADB server. Bật hết cùng lúc là máy điều khiển gánh không nổi.
 //
 // Điều PHẢI khoá chặt nhất: **nhánh lỗi cũng nhả khe**. Bản PC học bài này ở `browser.cjs`
 // (dùng `.then(ok, err)` chứ không chỉ `.then(ok)`). Quên nhả một lần là hàng đợi kẹt VĨNH

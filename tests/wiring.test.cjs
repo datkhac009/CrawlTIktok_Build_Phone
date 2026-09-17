@@ -196,7 +196,90 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
   // Not interested làm feed nhảy sang video khác nên phải bấm SAU CÙNG.
   check('8c. Not interested nằm sau follow/tym/ghé thăm trong mã',
     py.indexOf('PA.tap_not_interested(') > py.indexOf('PA.do_follow('));
-  check('8d. Follow chỉ chạy khi sound HỢP LỆ', /if res:[\s\S]{0,80}kq\["follow"\]/.test(py));
+  // Follow chỉ được chạy khi sound HỢP LỆ (`res` khác None). Từ 2026-09-16 điều kiện này viết
+  // theo chiều ngược — `if not res: ... else: <ghé trang rồi follow>` — vì nhánh follow giờ dài
+  // hơn (ghé trang cá nhân lấy @handle thật rồi mới bấm). Vẫn là đúng một bảo đảm đó.
+  {
+    const i = py.indexOf('if ans.get("follow"):');
+    // Cửa sổ 1400: nhánh follow dài hẳn ra từ 2026-09-16 vì phải ghé trang cá nhân trước khi
+    // bấm. Đo được lúc viết: 975 ký tự từ `if ans.get("follow")` tới `PA.do_follow(`.
+    const khoi = i >= 0 ? py.slice(i, i + 2200) : '';
+    // `FOLLOW_ANY` là cờ THỬ NGHIỆM, mặc định tắt — nên điều kiện thật vẫn là "sound hợp lệ".
+    const iRes = khoi.indexOf('if not res and not FOLLOW_ANY:');
+    const iBam = khoi.indexOf('PA.do_follow(');
+    check('8d. Follow chỉ chạy khi sound HỢP LỆ',
+      i >= 0 && iRes >= 0 && iBam > iRes,
+      i < 0 ? 'không thấy khối follow' : `if-not-res@${iRes} do_follow@${iBam}`);
+    // Cờ thử nghiệm PHẢI mặc định tắt, nếu không app thật sẽ follow cả khi sound không đạt.
+    check('8d2. Cờ FOLLOW_ANY mặc định TẮT',
+      /FOLLOW_ANY = os\.environ\.get\("FOLLOW_ANY"\) == "1"/.test(py)
+      && /FOLLOW_ANY:\s*cfg\.followAnySound \? '1' : '0'/.test(runner));
+  }
+  // Follow PHẢI đi qua trang cá nhân: @handle không tồn tại trên feed (đo 2026-09-16), mà sổ
+  // chống trùng + trần 30/ngày đều khoá theo @handle. Bấm follow thẳng ở feed là bỏ qua cả hai.
+  check('8e. Follow đi qua trang cá nhân để lấy @handle thật',
+    /PA\.open_profile_read_handle\(/.test(py) && /follow_confirm/.test(py));
+  check('8f. Ghé trang xong LUÔN quay về feed', /PA\.close_profile\(/.test(py));
+  // Follow xong phải NẠP LẠI trang rồi đọc lại nút: TikTok bật lại cú follow vài giây sau là
+  // chuyện có thật, mà sổ thì ghi vĩnh viễn — tin phép xác minh tại chỗ là ghi một cú follow
+  // không hề tồn tại, và kênh đó không bao giờ được thử lại.
+  check('8i. Follow xong có nạp lại trang để kiểm còn không',
+    /PA\.verify_follow_after_reload\(/.test(py) && /"reverted"/.test(py));
+  // Kiểm PHẢI xảy ra TRƯỚC khi rời trang: rời đi rồi quay lại là có thể mở nhầm trang người khác.
+  {
+    const i = py.indexOf('PA.verify_follow_after_reload(');
+    const j = py.indexOf('PA.close_profile(', py.indexOf('if ans.get("follow"):'));
+    check('8j. Nạp lại NGAY trên trang đang mở, trước khi quay về feed',
+      i > 0 && j > 0 && i < j, `reload@${i} close@${j}`);
+  }
+  // ⚠ BẪY ĐÃ SẬP MỘT LẦN (2026-09-16), đo trên máy thật:
+  // Trang cá nhân có nhãn thống kê "Following / Followers" — `text` đúng bằng "Following", nên
+  // khớp trọn chuỗi vẫn dính. `do_follow` tưởng đã theo dõi rồi, trả 'not_needed' NGAY, và
+  // không follow được ai. Tệ hơn: bước XÁC MINH sau khi bấm cũng thấy nhãn đó nên luôn báo
+  // 'ok', tức ghi sổ một cú follow chưa từng xảy ra. Thứ phân biệt là `clickable`.
+  {
+    const pa = doc('phone_actions.py');
+    // Mọi lần hỏi "có nút Follow/Following không" PHẢI đi qua `tim_nut_follow` — nơi duy nhất
+    // biết phân biệt nút thật với ô thống kê. Gọi thẳng `_find_by_regex` là mở lại cửa cho bọ.
+    const thangThuong = (pa.match(/_find_by_regex\([^)]*RE_FOLLOW(?:ING)?\b[^)]*\)/g) || [])
+      .filter((s) => !/RE_NOT_INTERESTED/.test(s));
+    check('8h. Không nơi nào tìm nút Follow bằng _find_by_regex trần',
+      thangThuong.length === 0,
+      thangThuong.length ? `còn: ${thangThuong.join(' | ')}` : '');
+    // Hai luật loại ô thống kê, cả hai đều do đo trên máy thật mà có.
+    check('8h2. tim_nut_follow loại ô thống kê bằng "Followers" VÀ bằng con số',
+      /def tim_nut_follow\(/.test(pa) && /\^followers\$/i.test(pa)
+      && /re_so\s*=\s*re\.compile/.test(pa));
+  }
+  // Livestream: bỏ qua hẳn, không hỏi không bấm (yêu cầu chủ dự án 2026-09-16).
+  check('8g. Bỏ qua video đang LIVE', /info\.get\("live"\)/.test(py));
+  // ⚠ BỎ QUA Ở ĐẦU VÒNG LÀ CHƯA ĐỦ, và đây là lỗi đã XẢY RA THẬT:
+  // chủ dự án bắt được máy đang đứng TRONG một phòng phát trực tiếp. Vuốt sang trái trên video
+  // LIVE không mở trang cá nhân mà đi thẳng vào phòng live. Giữa lúc đọc màn hình và lúc vuốt
+  // còn cả vòng đi trang nhạc, feed kịp trôi sang một video LIVE khác.
+  {
+    const pa = doc('phone_actions.py');
+    const i = pa.indexOf('def _mo_trang_ca_nhan');
+    // Cửa sổ rộng vì hàm này mang một docstring dài — nó chép lại ba cách mở trang cá nhân đã
+    // thử và vì sao từng cách hỏng. Đo lúc viết: thân hàm bắt đầu quanh ký tự thứ 2800.
+    const than = i >= 0 ? pa.slice(i, i + 4200) : '';
+    // Chốt chặn LIVE phải nằm TRƯỚC thao tác mở trang, dù thao tác đó là vuốt hay bấm — đã đổi
+    // từ vuốt sang bấm avatar ngày 2026-09-16 vì vuốt không điều hướng trên bản TikTok này.
+    const iLive = than.indexOf('_dang_live(attrs)');
+    // ⚠ Chỉ tính THÂN HÀM. Docstring của hàm này có nhắc chuỗi `d.swipe(` khi kể lại ba cách mở
+    // trang đã thử — lấy cả docstring thì phép so vị trí đo nhầm vào một dòng chú thích.
+    const iThan = than.indexOf('    try:');
+    const thanThat = iThan >= 0 ? than.slice(iThan) : than;
+    const iMo = Math.min(...['d.touch.down(', 'el.click()', 'd.swipe(']
+      .map((x) => thanThat.indexOf(x)).filter((x) => x >= 0)
+      .map((x) => x + iThan).concat([1e9]));
+    check('8g2. Không mở trang cá nhân khi video đang LIVE',
+      i >= 0 && iLive >= 0 && iMo < 1e9 && iLive < iMo,
+      i < 0 ? 'không thấy hàm' : `live@${iLive} mở@${iMo}`);
+    // Lưới thứ hai: lỡ lọt vào phòng live thì phải tự thoát.
+    check('8g3. Có đường thoát nếu lỡ lọt vào phòng LIVE',
+      /def dang_trong_phong_live\(/.test(pa) && /dang_trong_phong_live\(d\)/.test(pa));
+  }
 }
 
 // ── 9. Luồng đọc stdin phải là daemon ──

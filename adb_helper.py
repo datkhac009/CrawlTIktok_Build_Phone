@@ -59,9 +59,14 @@ def adb(*args, serial=None, timeout=60):
     return out.stdout.strip()
 
 
-def list_devices():
-    """Danh sách serial các thiết bị đang ở trạng thái 'device'."""
-    out = adb("devices")
+def list_devices(timeout=20):
+    """Danh sách serial các thiết bị đang ở trạng thái 'device'.
+
+    `timeout` ngắn hơn mặc định của adb(): lệnh này chỉ hỏi adb server tại chỗ nên bình thường
+    xong dưới một giây. Nếu nó mất tới 20 giây thì server đang có vấn đề, và biết sớm vẫn tốt
+    hơn đứng im 60 giây — đúng cái bẫy mà `adb connect` mù đã mắc suốt (xem scan_feed_sounds.py).
+    """
+    out = adb("devices", timeout=timeout)
     serials = []
     for line in out.splitlines()[1:]:
         if "\tdevice" in line:

@@ -1,10 +1,16 @@
 // src/devslot.cjs — Trần số máy chạy đồng thời. Máy thứ N+1 xếp hàng chờ.
 //
 // VÌ SAO PHẢI CÓ (2026-09-15):
-// Chủ dự án có 19 máy Android. Mỗi máy đang chạy = **một tiến trình Python + một ADB server
-// riêng** (cổng suy từ serial bằng crc32, xem scan_feed_sounds.py). Bật cả 19 cùng lúc là
-// ~19 cặp tiến trình trên máy điều khiển, chưa kể phần mềm soi màn hình 效卫 cũng đang mở 19
-// khung hình. Máy tính gánh không nổi và adb bắt đầu treo.
+// Chủ dự án có 19 máy Android. Mỗi máy đang chạy = **một tiến trình Python** điều khiển một máy,
+// và cả 19 dồn lệnh qua **CÙNG một ADB server** (cổng do phía Node quyết, xem `adbpath.cjs`).
+// Bật cả 19 cùng lúc là 19 tiến trình trên máy điều khiển, 19 luồng lệnh qua đúng một adb server
+// và qua Wi-Fi, chưa kể phần mềm soi màn hình 效卫 cũng đang mở 19 khung hình. Máy tính gánh
+// không nổi và adb bắt đầu treo.
+//
+// ⚠ Trần này KHÔNG mất giá trị sau khi bỏ "mỗi máy một ADB server riêng" (2026-09-16) — ngược
+// lại. Cách cũ không hề chia tải (nửa RPC vẫn đi chung một server vì `adbutils` đọc cổng ngay lúc
+// import), còn giờ thì mọi thứ đi chung một cách minh bạch: thứ phải chia nhau là băng thông của
+// đúng một adb server.
 //
 // ⚠ VÌ SAO KHÔNG BÊ `_enqueueLaunch` CỦA BẢN PC:
 // Cổng bên `browser.cjs` là **tuần tự, mỗi lúc đúng MỘT lượt** — hợp với việc mở Chromium rồi

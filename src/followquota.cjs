@@ -94,12 +94,23 @@ function noteFollowed(deviceId, dir, opts = {}, now = Date.now(), rnd = Math.ran
   invalidate(dir);            // ta vừa ghi sổ, đệm cũ không còn đúng
 }
 
-// Quyết định. Trả { ok, reason } — `reason` là chuỗi tiếng Việt để ghi log cho người đọc.
-// KHÔNG bao giờ ném: nơi gọi nằm trên đường xử lý sự kiện, ném ở đây là chết cả vòng quét.
-function canFollow({ deviceId, dir, handle, opts = {}, now = Date.now() }) {
+// ── HÀNG RÀO 1 + 2: GIÃN CÁCH và TRẦN NGÀY. Chưa cần biết @handle ──
+//
+// VÌ SAO TÁCH RA (2026-09-16):
+// `@handle` **không tồn tại trên feed** — đo trên máy thật, TikTok v46.1.1: 0/3 mẫu. Nó chỉ hiện
+// trên TRANG CÁ NHÂN. Mà ghé trang cá nhân là việc tốn thời gian, nên không thể ghé mọi video
+// rồi mới hỏi "có được follow không" — phải hỏi ngược lại: **còn ngân sách thì mới ghé**.
+//
+// Nên quyết định follow giờ đi hai nhịp:
+//   1. Trên feed, chưa có @handle: hỏi `canFollowBudget` — còn lượt trong ngày và đã qua giãn
+//      cách chưa? Không còn thì khỏi ghé, khỏi tốn gì.
+//   2. Ghé trang, đọc được @handle thật: hỏi `canFollow` — đủ cả ba hàng rào, kể cả chống trùng.
+//
+// ⚠ Nhịp 1 KHÔNG được coi là đã cấp phép. Nó chỉ nói "đáng để đi xem", và hàng rào chống trùng
+// vẫn nguyên vẹn ở nhịp 2. Bỏ nhịp 2 đi là follow lại người đã follow — vừa phí trần ngày vừa
+// là hành vi lạ.
+function canFollowBudget({ deviceId, dir, opts = {}, now = Date.now() }) {
   const o = { ...DEFAULTS, ...(opts || {}) };
-  const h = normalizeHandle(handle);
-  if (!h) return { ok: false, reason: 'không đọc được @handle' };
 
   const next = _nextAt.get(deviceId) || 0;
   if (now < next) {
@@ -115,6 +126,22 @@ function canFollow({ deviceId, dir, handle, opts = {}, now = Date.now() }) {
   if (daLam >= tran) {
     return { ok: false, reason: `đã đạt trần ngày (${daLam}/${tran})` };
   }
+
+  return { ok: true, reason: `còn ${tran - daLam}/${tran} lượt hôm nay`, used: daLam, cap: tran };
+}
+
+// Quyết định ĐẦY ĐỦ, dùng khi đã đọc được @handle thật trên trang cá nhân.
+// Trả { ok, reason } — `reason` là chuỗi tiếng Việt để ghi log cho người đọc.
+// KHÔNG bao giờ ném: nơi gọi nằm trên đường xử lý sự kiện, ném ở đây là chết cả vòng quét.
+function canFollow({ deviceId, dir, handle, opts = {}, now = Date.now() }) {
+  const h = normalizeHandle(handle);
+  if (!h) return { ok: false, reason: 'không đọc được @handle' };
+
+  // Ngân sách trước: cùng một luật, một nơi viết. Chép lại ở đây là có ngày hai nhịp lệch nhau.
+  const ns = canFollowBudget({ deviceId, dir, opts, now });
+  if (!ns.ok) return ns;
+  const tran = ns.cap;
+  const daLam = ns.used;
 
   let daFollow = false;
   try {
@@ -133,4 +160,7 @@ function _resetForTest() {
   _nextAt.clear();
 }
 
-module.exports = { DEFAULTS, canFollow, followedToday, noteFollowed, invalidate, today, _resetForTest };
+module.exports = {
+  DEFAULTS, canFollow, canFollowBudget, followedToday, noteFollowed, invalidate, today,
+  _resetForTest,
+};

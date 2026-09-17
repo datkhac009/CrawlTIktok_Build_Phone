@@ -25,9 +25,18 @@ renderer/ ──IPC──> main.js
 
 Tiến trình Python nói chuyện với Node qua **stdout** bằng dòng `@@EVENT@@<json>`.
 
-Mỗi tiến trình dùng **một ADB server riêng** (cổng suy ra từ serial bằng crc32). Đây là bản vá
-cho triệu chứng "một máy chạy một máy đứng": nhiều tiến trình cùng dồn lệnh vào một adb server
-thì server nghẽn và một tiến trình treo cứng.
+Cả Node lẫn Python dùng **chung một ADB server** (mặc định cổng 5037 — đúng cái mà phần mềm soi
+màn hình 效卫 đang giữ). Cổng do phía Node quyết trong `src/adbpath.cjs` rồi truyền xuống bằng biến
+môi trường `ANDROID_ADB_SERVER_PORT`, y hệt cách nó truyền `ADB_PATH`, và vì đúng một lý do: hai
+bên tự quyết riêng thì có ngày mỗi bên một server.
+
+> ⚠ Bản trước cho **mỗi tiến trình một ADB server riêng** (cổng suy từ serial bằng crc32) để chữa
+> triệu chứng "một máy chạy một máy đứng". Cách đó sai với farm nối qua **mạng**: `adbd` trên điện
+> thoại chỉ nhận ĐÚNG MỘT adb server, mà 23 máy đã nằm trên server mặc định của 效卫 rồi — server
+> riêng vĩnh viễn không thấy máy nào. Ngày 2026-09-16 cả farm chết vì đúng chỗ này: `adb connect`
+> treo 60 giây, rồi mọi lệnh `adb shell` trả `device not found`, còn bảng kiểm tra thì vẫn XANH vì
+> nó hỏi server mặc định. Nó cũng chưa từng chữa được gì: `adbutils` đọc cổng NGAY LÚC IMPORT, mà
+> `uiautomator2` được import trước khi cổng riêng kịp đặt — toàn bộ lệnh RPC vẫn đi cổng 5037.
 
 ## Cần gì để chạy
 

@@ -121,11 +121,17 @@ function hoi(extra = {}) {
   check('6c. Số lần hỏng được đếm riêng, không im lặng', b._dem.followFail === 1, `${b._dem.followFail}`);
 }
 
-// ── 7. TYM đếm trên đĩa, và trần 0 = TẮT ──
+// ── 7. TYM đếm trên đĩa, trần 0 = TẮT, và TỈ LỆ BỐC ──
+//
+// ⚠ Từ 2026-09-17 tym KHÔNG còn tất định: nó phải qua một phép bốc 40-60% (xem askproto.cjs).
+// Nên mọi phép thử ở đây tiêm `rng` để chạy tất định — thiếu nó thì test đỏ ngẫu nhiên, và một
+// test đỏ ngẫu nhiên dạy người ta bỏ qua màu đỏ.
 {
   fq._resetForTest();
   const d = newDir();
-  const b = ap.makeBrain({ deviceId: 'm1', dir: d, cfg: { likeOn: true, likePerDay: 2 } });
+  // rng cố định 0 + tỉ lệ 100% = luôn trúng, nên phần còn lại của phép thử vẫn đo đúng hạn mức.
+  const luon = { likeOn: true, likePerDay: 2, likeRateMin: 100, likeRateMax: 100 };
+  const b = ap.makeBrain({ deviceId: 'm1', dir: d, cfg: luon, rng: () => 0 });
   const a1 = b.answer(hoi({ id: 1 }));
   check('7. Còn hạn mức -> cấp quyền tym', a1.like === 1);
   b.noteActed({ id: 1, like: 'ok' });
@@ -135,6 +141,79 @@ function hoi(extra = {}) {
 
   const tat = ap.makeBrain({ deviceId: 'm1', dir: newDir(), cfg: { likeOn: true, likePerDay: 0 } });
   check('7c. Trần tym 0 = TẮT, không phải vô hạn', tat.answer(hoi()).like === 0);
+
+  // ── Phép bốc ──
+  // Chủ dự án nhìn màn hình thấy video nào cũng bị tym. Một phần là thiếu điều kiện "sound hợp
+  // lệ" bên Python, phần còn lại là tym 100% số video đạt — vẫn là hành vi máy móc.
+  const rate0 = ap.makeBrain({
+    deviceId: 'm1', dir: newDir(),
+    cfg: { likeOn: true, likePerDay: 60, likeRateMin: 0, likeRateMax: 0 }, rng: () => 0,
+  });
+  const a0 = rate0.answer(hoi());
+  check('7d. Tỉ lệ 0% = KHÔNG tym (0 không phải "dùng mặc định")',
+    a0.like === 0 && a0.like_profile === 0, JSON.stringify(a0));
+
+  // Tỉ lệ 50%: rng trả 0.9 -> 90 > 50 -> trượt. Cùng cấu hình, rng 0.1 -> trúng.
+  const nua = { likeOn: true, likePerDay: 60, likeRateMin: 50, likeRateMax: 50 };
+  check('7e. Bốc trượt thì KHÔNG tym',
+    ap.makeBrain({ deviceId: 'm1', dir: newDir(), cfg: nua, rng: () => 0.9 }).answer(hoi()).like === 0);
+  check('7f. Bốc trúng thì tym',
+    ap.makeBrain({ deviceId: 'm1', dir: newDir(), cfg: nua, rng: () => 0.1 }).answer(hoi()).like === 1);
+
+  // Tỉ lệ bốc MỘT lần cho cả lượt: rng chạy dần từ 0 lên, nhưng tỉ lệ đã chốt từ lần gọi đầu.
+  // Nếu bốc lại mỗi video thì mười câu trả lời sẽ không thể giống nhau.
+  let n = 0;
+  const motLan = ap.makeBrain({
+    deviceId: 'm1', dir: newDir(),
+    cfg: { likeOn: true, likePerDay: 60, likeRateMin: 100, likeRateMax: 100 },
+    rng: () => { n += 1; return 0; },
+  });
+  const muoi = Array.from({ length: 10 }, (_, i) => motLan.answer(hoi({ id: i + 1 })).like);
+  check('7g. Tỉ lệ bốc MỘT lần cho cả lượt chạy', muoi.every((x) => x === 1), muoi.join(''));
+
+  // ── Tym trong trang cá nhân ──
+  const cfgGhe = {
+    likeOn: true, likePerDay: 60, visitOn: true,
+    likeRateMin: 100, likeRateMax: 100,
+  };
+  const ghe = ap.makeBrain({ deviceId: 'm1', dir: newDir(), cfg: cfgGhe, rng: () => 0 });
+  const ag = ghe.answer(hoi());
+  check('7h. Có ghé trang -> cấp thêm quyền tym trong trang',
+    ag.visit === 1 && ag.like_profile === 1, JSON.stringify(ag));
+
+  // Không ghé thì không có video nào để tym — cấp quyền cho một cú bấm không có đối tượng là
+  // để Python bấm lên bất cứ thứ gì đang ở trên màn hình.
+  const khongGhe = ap.makeBrain({
+    deviceId: 'm1', dir: newDir(),
+    cfg: { ...cfgGhe, visitOn: false }, rng: () => 0,
+  });
+  check('7i. KHÔNG ghé trang -> KHÔNG cấp tym trong trang',
+    khongGhe.answer(hoi()).like_profile === 0);
+
+  // Hai cú tym ăn chung trần ngày: còn đúng 1 lượt thì chỉ được cấp MỘT.
+  const con1 = ap.makeBrain({
+    deviceId: 'm1', dir: newDir(),
+    cfg: { ...cfgGhe, likePerDay: 1 }, rng: () => 0,
+  });
+  const a1c = con1.answer(hoi());
+  check('7j. Còn 1 lượt trong ngày -> chỉ cấp MỘT cú tym',
+    (a1c.like + a1c.like_profile) === 1, JSON.stringify(a1c));
+
+  // Công tắc tổng phải át tỉ lệ.
+  const tatHan = ap.makeBrain({
+    deviceId: 'm1', dir: newDir(),
+    cfg: { ...cfgGhe, likeOn: false }, rng: () => 0,
+  });
+  const at = tatHan.answer(hoi());
+  check('7k. likeOn=false át cả tỉ lệ lẫn ghé trang',
+    at.like === 0 && at.like_profile === 0);
+
+  // Tym trong trang ăn vào trần ngày — nếu không thì nó là cú bấm MIỄN PHÍ, không giới hạn.
+  const soSach = newDir();
+  const ghiSo = ap.makeBrain({ deviceId: 'm1', dir: soSach, cfg: cfgGhe, rng: () => 0 });
+  ghiSo.noteActed({ id: 1, like_profile: 'ok' });
+  check('7l. Tym trong trang ĐƯỢC ghi vào trần ngày', dc.count(soSach, 'like') === 1,
+    `đếm=${dc.count(soSach, 'like')}`);
 }
 
 // ── 8. MẶC ĐỊNH AN TOÀN cho mọi đầu vào hỏng ──

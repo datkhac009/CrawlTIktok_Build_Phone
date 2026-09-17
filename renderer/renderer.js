@@ -15,6 +15,9 @@ const DEFAULT_SETTINGS = {
   maxPosts: 100000,
   delayMin: 3,
   delayMax: 6,
+  // Trần chờ, không phải giấc ngủ — Python dò thấy rồi là đi tiếp ngay.
+  musicWaitSec: 8,
+  settleSec: 1.2,
   originalOnly: true,
   limit: 0,
 
@@ -41,9 +44,15 @@ const DEFAULT_SETTINGS = {
   followGapMax: 300,
   likeOn: false,
   likePerDay: 60,
+  // Tỉ lệ tym: KHÔNG tym mọi video. Bốc một lần cho cả lượt chạy (xem askproto.cjs).
+  likeRateMin: 40,
+  likeRateMax: 60,
   visitOn: false,
-  visitSecMin: 4,
-  visitSecMax: 8,
+  visitSecMin: 5,
+  visitSecMax: 10,
+  // Xem video mở trong trang cá nhân bao lâu trước khi tym.
+  profileVideoSecMin: 3,
+  profileVideoSecMax: 7,
   visitMaxUsers: 0,
 };
 
@@ -55,6 +64,7 @@ const NI_SCRIPTS = [
   { key: 'pashto', label: 'Pashto' },
   { key: 'perso', label: 'Perso-Arabic' },
   { key: 'arabic', label: 'Arabic' },
+  { key: 'indic', label: 'Indic' },
 ];
 
 // Cài đặt TOÀN APP, không theo từng máy.
@@ -476,6 +486,12 @@ function openSettingsModal(ids) {
   $('cfgFollowGapMax').value = base.followGapMax;
   $('cfgLikeOn').checked = !!base.likeOn;
   $('cfgLikePerDay').value = base.likePerDay;
+  $('cfgLikeRateMin').value = base.likeRateMin;
+  $('cfgLikeRateMax').value = base.likeRateMax;
+  $('cfgMusicWaitSec').value = base.musicWaitSec;
+  $('cfgSettleSec').value = base.settleSec;
+  $('cfgProfileVideoSecMin').value = base.profileVideoSecMin;
+  $('cfgProfileVideoSecMax').value = base.profileVideoSecMax;
   $('cfgVisitOn').checked = !!base.visitOn;
   $('cfgVisitSecMin').value = base.visitSecMin;
   $('cfgVisitSecMax').value = base.visitSecMax;
@@ -508,6 +524,12 @@ async function saveSettings() {
     maxPosts: numOf('cfgMaxPosts', D.maxPosts),
     delayMin: numOf('cfgDelayMin', D.delayMin),
     delayMax: numOf('cfgDelayMax', D.delayMax),
+    musicWaitSec: numOf('cfgMusicWaitSec', D.musicWaitSec),
+    settleSec: numOf('cfgSettleSec', D.settleSec),
+    likeRateMin: numOf('cfgLikeRateMin', D.likeRateMin),
+    likeRateMax: numOf('cfgLikeRateMax', D.likeRateMax),
+    profileVideoSecMin: numOf('cfgProfileVideoSecMin', D.profileVideoSecMin),
+    profileVideoSecMax: numOf('cfgProfileVideoSecMax', D.profileVideoSecMax),
     originalOnly: document.getElementById('cfgOriginalOnly').checked,
     limit: numOf('cfgLimit', 0),
 

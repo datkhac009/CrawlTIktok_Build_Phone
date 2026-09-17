@@ -61,7 +61,19 @@ const KICH_BAN = [
   'a3 = b.ask(author="Nguoi Binh Thuong @binh_thuong", handle="@binh_thuong", desc="mot caption hoan toan binh thuong", badges=[])',
   'r3 = b.take(a3)',
   'print("R3" + json.dumps(r3), flush=True)',
-  'b.acted(a3, follow="ok")',
+  '',
+  '# 3b. NHIP HAI (giao thuc v2): da ghe trang ca nhan, doc duoc @handle that -> xin phep',
+  '#     Day moi la noi cap phep follow. Nhip 1 o tren chi noi "con ngan sach, dang de ghe".',
+  'a3b = b.ask(kind="follow_confirm", handle="@binh_thuong", author="Nguoi Binh Thuong")',
+  'r3b = b.take(a3b)',
+  'print("R3B" + json.dumps(r3b), flush=True)',
+  '# Gui kem @handle that: khong co no thi Node KHONG ghi so duoc, va tran ngay dem hut.',
+  'b.acted(a3b, follow="ok", handle="@binh_thuong")',
+  '',
+  '# 4. video LIVE -> phai bi bo qua sach, khong cap quyen gi',
+  'a4 = b.ask(author="Ai Do", handle="", desc="dang live ban oi", badges=[], live=True)',
+  'r4 = b.take(a4)',
+  'print("R4" + json.dumps(r4), flush=True)',
   'print("XONG", flush=True)',
 ].join('\n');
 
@@ -118,7 +130,8 @@ const hetGio = setTimeout(() => { try { proc.kill(); } catch (_) {} }, 30000);
 proc.on('close', () => {
   clearTimeout(hetGio);
 
-  check('1. Python gửi được câu hỏi qua đường ống', soAsk === 3, `${soAsk} câu hỏi`);
+  // 5 câu: 3 video thường + 1 nhịp xác nhận follow + 1 video LIVE (giao thức v2).
+  check('1. Python gửi được câu hỏi qua đường ống', soAsk === 5, `${soAsk} câu hỏi`);
   check('1b. Python chạy tới cuối', ra.includes('XONG'),
     ra.join(' | ').slice(0, 120) + (loiPy ? ` | stderr: ${loiPy.slice(0, 150)}` : ''));
 
@@ -130,8 +143,11 @@ proc.on('close', () => {
   const r1 = lay('R1');
   const r2 = lay('R2');
   const r3 = lay('R3');
+  const r3b = lay('R3B');
+  const r4 = lay('R4');
 
-  check('2. Python nhận được đủ 3 câu trả lời', !!r1 && !!r2 && !!r3);
+  check('2. Python nhận được đủ 5 câu trả lời',
+    !!r1 && !!r2 && !!r3 && !!r3b && !!r4);
 
   if (r1) {
     check('3. Video dính ngôn ngữ: Python nhận ni=1, why="lang"',
@@ -152,6 +168,20 @@ proc.on('close', () => {
   // (`ensure_ascii`), nên phía Node phải giải mã lại đúng.
   check('6. Caption tiếng Việt có dấu đi qua đường ống không hỏng',
     brain._dem.lang >= 1, `đếm lang=${brain._dem.lang}`);
+
+  // ── NHỊP HAI: nơi DUY NHẤT cấp phép follow (v2, 2026-09-16) ──
+  // @handle không có trên feed, nên nhịp 1 chỉ kiểm ngân sách; chống trùng kênh nằm ở đây.
+  if (r3b) {
+    check('6b. Ghé trang xong, có @handle thật -> ĐƯỢC cấp phép follow',
+      r3b.follow === 1, JSON.stringify(r3b));
+  }
+  // Livestream: bỏ qua sạch, không cấp quyền nào. Màn LIVE khác cấu trúc nên mọi cú bấm
+  // lên nó đều là bấm mù.
+  if (r4) {
+    check('6c. Video LIVE -> không bấm gì cả',
+      r4.ni === 0 && r4.follow === 0 && r4.like === 0 && r4.visit === 0 && r4.why === 'live',
+      JSON.stringify(r4));
+  }
 
   // Sổ chỉ được ghi khi Python báo 'ok' — chặng cuối của vòng khép kín.
   const cs = require(path.join(R, 'src', 'channelstore.cjs'));

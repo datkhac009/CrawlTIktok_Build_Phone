@@ -37,12 +37,20 @@ import queue
 import sys
 import threading
 
-PROTO_V = int(os.environ.get("PROTO_V", "1"))
+# ⚠ SỐ NÀY PHẢI KHỚP `askproto.cjs:PROTO_VERSION`. Lúc chạy trong app thì `runner.cjs` truyền
+# xuống qua biến môi trường, nên giá trị mặc định ở đây chỉ dùng khi chạy tay ngoài app
+# (`start_scan_feed_sound.bat`) — nhưng nó vẫn phải đúng, vì lệch phiên bản làm MỌI phán quyết
+# rơi về "không bấm gì", im lặng, không lỗi. `tests/wiring.test.cjs:158` khoá hai bên bằng nhau.
+# v2 (2026-09-16): thêm `live` và nhịp hỏi `follow_confirm`.
+# v3 (2026-09-17): thêm `like_profile` — cú tym lên video mở trong trang cá nhân.
+PROTO_V = int(os.environ.get("PROTO_V", "3"))
 TIMEOUT = float(os.environ.get("ASK_TIMEOUT", "3.0"))
 FAIL_STREAK_OFF = 3          # bấy nhiêu lượt hỏng liên tiếp thì tắt hẳn, khỏi phí thời gian
 
 # Câu trả lời khi mọi thứ hỏng: không bấm gì.
-SAFE = {"ni": 0, "why": "", "follow": 0, "like": 0, "visit": 0}
+# ⚠ PHAI DU KHOA nhu cau tra loi that. Thieu mot khoa la duong HONG tra ve mot hinh
+# dang KHAC duong thuong, va noi goi doc phai `None` thay vi 0 — im lang va kho tim.
+SAFE = {"ni": 0, "why": "", "follow": 0, "like": 0, "visit": 0, "like_profile": 0}
 
 
 class AskBridge:
@@ -85,10 +93,16 @@ class AskBridge:
         return self._eof
 
     # ---- gửi câu hỏi ----
-    def ask(self, *, author="", handle="", desc="", badges=None):
+    def ask(self, *, author="", handle="", desc="", badges=None, live=False, kind=""):
         """Gửi câu hỏi rồi trả về id. KHÔNG chờ ở đây — chờ ở `take()` sau khi đã đi một vòng
         trang nhạc, nhờ vậy thời gian đi về được che trọn và đường bình thường không tốn thêm
-        mili-giây nào."""
+        mili-giây nào.
+
+        `kind="follow_confirm"` là NHỊP HỎI THỨ HAI (giao thức v2, 2026-09-16): gửi sau khi đã
+        ghé trang cá nhân và đọc được @handle thật. Nhịp này thì KHÔNG che được thời gian chờ —
+        nó nằm giữa lúc mở trang và lúc bấm Follow — nhưng chỉ chạy đúng lúc sắp follow, tức vài
+        lần mỗi ca, nên không đáng kể.
+        """
         if not self.enabled or self._eof:
             return None
         aid = self._next_id
@@ -100,7 +114,10 @@ class AskBridge:
             "handle": (handle or "")[:120],
             "desc": (desc or "")[:500],
             "badges": [str(b)[:120] for b in (badges or [])][:10],
+            "live": bool(live),
         }
+        if kind:
+            payload["kind"] = str(kind)[:40]
         try:
             # ensure_ascii=True (mặc định) là CỐ Ý: dòng ra thuần ASCII nên miễn nhiễm với mọi
             # tai nạn bảng mã trên đường ra quyết định. Log cho người đọc vẫn để nguyên tiếng Việt.
@@ -150,6 +167,7 @@ class AskBridge:
                     "follow": 1 if ans.get("follow") else 0,
                     "like": 1 if ans.get("like") else 0,
                     "visit": 1 if ans.get("visit") else 0,
+                    "like_profile": 1 if ans.get("like_profile") else 0,
                 }
         except Exception:
             return self._fail(aid, "error")

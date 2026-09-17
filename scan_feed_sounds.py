@@ -25,7 +25,7 @@ import random
 import re
 import sys
 import time
-from adb_helper import connect, adb
+from adb_helper import connect, adb, list_devices
 from askbridge import AskBridge
 import phone_actions as PA
 
@@ -57,10 +57,18 @@ REJECT_KEYWORDS = ["contains:", "bao gồm"]
 HERE = os.path.dirname(__file__)
 OUTPUT_FILE = os.path.join(HERE, "sound_links.txt")
 
-WAIT_MUSIC_PAGE = 15     # giây, chờ trang nhạc mở sau khi bấm icon
-SETTLE = 2.5             # giây, chờ số liệu (used_count) tải xong sau khi trang mở (tránh đọc "0 posts")
+# Cho trang nhac mo sau khi bam icon. Chinh duoc trong app (o "Chờ trang nhạc").
+# ⚠ Gia tri nay tung la 15 VA `find_first` duyet ca hai goi TikTok -> mot lan lo trang nhac dot
+# tron 30 giay. Gio `find_first` chi cho MOT goi (xem ACTIVE_PKG) nen 8 giay la du rong.
+WAIT_MUSIC_PAGE = float(os.environ.get("MUSIC_WAIT_SEC", "8") or 8)
+
+# Tran cho so lieu (used_count) tai xong sau khi trang nhac mo.
+# ⚠ Ban cu la `time.sleep(2.5)` MU — ngu du 2,5 giay ke ca khi so da hien ra tu lau. Gio do theo
+# DIEU KIEN (thay so thi di tiep), con day chi la tran tren. Tiet kiem ~1,3-2,2s MOI trang nhac.
+SETTLE = float(os.environ.get("SETTLE_SEC", "1.2") or 1.2)
+
 WAIT_SHARE_SHEET = 2
-REST_AFTER_BACK = 1.5
+REST_AFTER_BACK = 0.8
 
 # TikTok coi lướt quá nhanh (dwell time ~0) la hanh vi bot va nhoi lai cung 1
 # video/quang cao lien tuc. Dwell ngau nhien de giong hanh vi nguoi that hon.
@@ -76,12 +84,20 @@ GUI_MODE = os.environ.get("GUI_MODE") == "1"
 # ban than kenh hoi/dap.
 ASK_ON = os.environ.get("ASK_ON") == "1"
 
+# FOLLOW_ANY=1: co THU NGHIEM. Bo tam dieu kien "sound hop le" o nhanh follow, de do xem duong
+# follow co bam duoc that khong. Mac dinh TAT -> app chay y nguyen nhu truoc.
+FOLLOW_ANY = os.environ.get("FOLLOW_ANY") == "1"
+
 # Chu ky: quet bao nhieu phut roi tu dung, NHA KHE cho may dang xep hang.
 # Khong co chu ky thi voi "Gioi han video = 0" may chay mai va 13 may con lai cho vinh vien.
 CYCLE_ON = os.environ.get("CYCLE_ON") == "1"
 CYCLE_SCAN_MIN = float(os.environ.get("CYCLE_SCAN_MIN", "30") or 30)
-VISIT_SEC_MIN = float(os.environ.get("VISIT_SEC_MIN", "4") or 4)
-VISIT_SEC_MAX = float(os.environ.get("VISIT_SEC_MAX", "8") or 8)
+VISIT_SEC_MIN = float(os.environ.get("VISIT_SEC_MIN", "5") or 5)
+VISIT_SEC_MAX = float(os.environ.get("VISIT_SEC_MAX", "10") or 10)
+
+# Xem video mo trong trang ca nhan bao lau truoc khi tym.
+PROFILE_VID_MIN = float(os.environ.get("PROFILE_VID_SEC_MIN", "3") or 3)
+PROFILE_VID_MAX = float(os.environ.get("PROFILE_VID_SEC_MAX", "7") or 7)
 
 
 def log(msg):
@@ -119,7 +135,27 @@ def parse_count(text):
     return int(num)
 
 
+# Goi TikTok THAT SU dang chay tren may nay. Dat MOT LAN sau `setup_device`.
+ACTIVE_PKG = None
+
+
+def set_active_pkg(pkg):
+    """Ghi nho goi TikTok dang chay, de `find_first` khoi phai doan lai."""
+    global ACTIVE_PKG
+    ACTIVE_PKG = pkg or None
+    if ACTIVE_PKG:
+        log(f"goi TikTok dang dung: {ACTIVE_PKG}")
+
+
 def find_first(d, ids, timeout=0):
+    # ⚠ CHI CHO MOT GOI (2026-09-17).
+    # Ban cu duyet CA HAI muc cua PKGS va cho TRON timeout o moi muc, trong khi may chi cai MOT
+    # goi. Do duoc: video khong co icon sound dot 2 x 3 = 6 giay CHAC CHAN, va mot lan lo trang
+    # nhac dot 2 x 15 = 30 giay. `ensure_tiktok_open` da biet goi nao dang chay roi — khong co ly
+    # do gi de doan lai o day.
+    # Loc rong het thi ROI VE danh sach cu: goi la thi cham nhu truoc, con hon khong tim thay gi.
+    if ACTIVE_PKG:
+        ids = [i for i in ids if i.startswith(ACTIVE_PKG + ":")] or ids
     for rid_ in ids:
         el = d(resourceId=rid_)
         if timeout:
@@ -291,10 +327,26 @@ def check_current_video(d):
             time.sleep(REST_AFTER_BACK)
         return None
 
-    time.sleep(SETTLE)
     desc = (title_el.info.get("contentDescription") or title_el.get_text() or "").strip()
-    count_el = find_first(d, COUNT_IDS)
-    posts = parse_count(count_el.get_text()) if count_el else None
+
+    # ── CHO SO POST THEO DIEU KIEN, KHONG NGU MU ──
+    # Ban cu `time.sleep(SETTLE)` voi SETTLE=2,5: ngu du 2,5 giay KE CA khi so da hien tu lau.
+    # Nhan voi moi trang nhac cua moi video, ca ngay, la rat nhieu thoi gian chet.
+    # Gio do theo dieu kien: thay so thi di tiep ngay, con SETTLE chi la TRAN TREN.
+    #
+    # ⚠ `posts` bang 0 hay None deu coi la "chua tai xong" — dung cai ly do ma ban cu ngu mu:
+    # doc som thi thay "0 posts" va sound bi loai oan. Het tran ma van 0/None thi de nguyen, buoc
+    # loc ben duoi se loai — do la huong sai AN TOAN (bo sot, khong phai lay nham).
+    het_settle = time.time() + SETTLE
+    posts = None
+    while True:
+        count_el = find_first(d, COUNT_IDS)
+        posts = parse_count(count_el.get_text()) if count_el else None
+        if posts:
+            break
+        if time.time() >= het_settle:
+            break
+        time.sleep(0.2)
     is_original = not any(kw in desc.lower() for kw in REJECT_KEYWORDS)
     name = extract_sound_name(desc)
 
@@ -355,30 +407,91 @@ def _thi_hanh(d, bridge, aid, ans, info, res):
     """
     if not ans:
         return
-    handle = (info or {}).get("handle", "")
+    tac_gia = (info or {}).get("author", "")
     kq = {}
 
     # Video da doi thi DUNG HET. Mac dinh an toan la khong bam.
     if (ans.get("ni") or ans.get("follow") or ans.get("like") or ans.get("visit")):
-        if not PA.same_video(d, handle):
+        if not PA.same_video(d, tac_gia):
             log("video da doi sau khi quay lai feed -> KHONG bam gi (tranh bam nham nguoi)")
             bridge.acted(aid, ni="skip_changed_video", follow="skip_changed_video",
-                         like="skip_changed_video", visit="skip_changed_video")
+                         like="skip_changed_video", visit="skip_changed_video",
+                         like_profile="skip_changed_video")
             return
 
-    # FOLLOW chi khi sound HOP LE. Node cap quyen truoc, nhung dieu kien "sound hop le" thi
-    # chi o day moi biet — `res` khac None nghia la sound da dat nguong.
+    # ── FOLLOW: GHE TRANG CA NHAN LAY @handle THAT ROI MOI BAM ──
+    #
+    # `ans["follow"]` o day CHUA phai giay phep. No chi noi "con ngan sach trong ngay, dang de
+    # ghe". Giay phep that do nhip hoi thu hai cap, sau khi doc duoc @handle tren trang ca nhan —
+    # vi so chong trung va tran 30 luot/ngay deu khoa theo @handle, ma feed thi KHONG bay @handle
+    # (do duoc 2026-09-16: 0/3 mau).
+    #
+    # Van giu dieu kien "sound HOP LE" (`res`): khong ghe bua, chi ghe nguoi co sound dang lay.
     if ans.get("follow"):
-        if res:
-            kq["follow"] = PA.do_follow(d, log)
-        else:
+        # FOLLOW_ANY=1: CO THU NGHIEM, bo tam dieu kien "sound hop le" de CHUNG MINH duong follow
+        # bam duoc that. Mac dinh TAT, nen hanh vi cua app khong doi.
+        #
+        # Vi sao can: dieu kien "sound hop le" doi mot vong di trang nhac roi quay ve, ma chinh
+        # trong quang do feed hay TROI sang video khac -> `same_video` chan lai -> nhanh follow
+        # gan nhu khong bao gio chay. Do duoc 2026-09-16: `ghe trang: 0` suot mot luot 9 video.
+        # Tat co nay di thi moi biet do_follow co bam duoc hay khong, thay vi doan.
+        if not res and not FOLLOW_ANY:
             kq["follow"] = "not_needed"
+        else:
+            handle_that = PA.open_profile_read_handle(d, log)
+            try:
+                if not handle_that:
+                    kq["follow"] = "fail"
+                else:
+                    log(f"ghe trang: {handle_that} -> hoi lai phia app xem co duoc follow khong")
+                    xn = bridge.ask(kind="follow_confirm", handle=handle_that,
+                                    author=tac_gia, desc="", badges=[])
+                    quyet = bridge.take(xn) if xn is not None else None
+                    if quyet and quyet.get("follow"):
+                        # Bam NGAY TREN TRANG CA NHAN: o day nut co `text` dung bang "Follow" nen
+                        # khop duoc RE_FOLLOW. Nut tren feed co `text` rong (chi co content-desc
+                        # "Follow <Ten>") nen bam o feed luon bao "khong thay nut Follow".
+                        kq["follow"] = PA.do_follow(d, log)
+                        kq["handle"] = handle_that      # de phia Node ghi so DUNG kenh
 
-    if ans.get("like"):
+                        # ── NAP LAI TRANG ROI DOC LAI NUT ──
+                        # Yeu cau chu du an: "follow xong reload lai la biet no con follow hay
+                        # khong". TikTok co the BAT LAI cu follow vai giay sau; tin phep xac minh
+                        # tai cho thi so ghi mot cu follow khong he ton tai, va ghi VINH VIEN.
+                        # Lam ngay tai trang dang mo, chua quay ve feed - khong the nham nguoi.
+                        if kq["follow"] == "ok":
+                            con = PA.verify_follow_after_reload(d, log)
+                            if con == "reverted":
+                                log(f"follow {handle_that} da bi TikTok bat lai -> KHONG ghi so")
+                                kq["follow"] = "reverted"
+                            elif con == "unknown":
+                                # Bam duoc va nut da doi, chi la nap lai khong ket luan duoc.
+                                # Van ghi so: dem THUA an toan hon dem thieu, vi dem thieu la
+                                # follow qua tay tren tai khoan that.
+                                kq["follow"] = "ok_unverified"
+                    else:
+                        kq["follow"] = "not_needed"
+            finally:
+                # LUON quay ve feed. Bo lai may o trang ca nhan thi vong quet ke tiep vuot tren
+                # trang do, va moi phep nhan dien sau deu sai cho.
+                PA.close_profile(d, log)
+
+    # ── TYM TREN FEED: CHI khi sound HOP LE ──
+    # ⚠ Truoc 2026-09-17 dong nay la `if ans.get("like"):` — KHONG co `res`, trong khi follow
+    # (:389) va ghe tham (:433) deu co. Hau qua: MOI video deu bi tym, ke ca video vua bi bo loc
+    # loai. Chu du an nhin man hinh bat duoc. Mot dieu kien thieu, khong mot dong log nao bao.
+    if ans.get("like") and res:
         kq["like"] = PA.do_like(d, log)
 
+    # ── GHE TRANG: luot vai giay -> mo MOT video ngau nhien -> xem -> (co the) tym -> ve feed ──
+    # `like_profile` do phia Node cap trong CUNG mot cau tra loi (xem askproto.cjs): nhip hoi thu
+    # hai se nam trong trang ca nhan, khong co gi che thoi gian cho nen ton wall-clock that.
     if ans.get("visit") and res:
-        kq["visit"] = PA.do_visit(d, handle, VISIT_SEC_MIN, VISIT_SEC_MAX, log)
+        kq["visit"], kq["like_profile"] = PA.do_visit(
+            d, tac_gia, VISIT_SEC_MIN, VISIT_SEC_MAX, log,
+            like_video=bool(ans.get("like_profile")),
+            vid_min=PROFILE_VID_MIN, vid_max=PROFILE_VID_MAX,
+        )
 
     # Not interested SAU CUNG: no doi feed.
     if ans.get("ni"):
@@ -393,36 +506,82 @@ def _thi_hanh(d, bridge, aid, ans, info, res):
 def main():
     serial = sys.argv[1] if len(sys.argv) > 1 else None
 
-    # NGUYEN NHAN "1 may chay 1 may dung": nhieu tien trinh cung don lenh vao MOT adb server
-    # (port mac dinh 5037) -> server nghen -> 1 tien trinh treo cung (khong phai cu jsonrpc
-    # nen HTTP timeout khong cuu duoc). FIX: moi tien trinh dung 1 ADB SERVER RIENG (port
-    # khac nhau, suy ra tu serial bang crc32 -> on dinh & rieng biet tung may).
-    if serial and not os.environ.get("ANDROID_ADB_SERVER_PORT"):
-        import zlib
-        os.environ["ANDROID_ADB_SERVER_PORT"] = str(5100 + zlib.crc32(serial.encode()) % 800)
+    # ── MOT ADB SERVER DUNG CHUNG, KHONG PHAI MOI MAY MOT CAI ──
+    #
+    # Ban cu o day tu dat ANDROID_ADB_SERVER_PORT = 5100 + crc32(serial) % 800, voi ly do
+    # "1 may chay 1 may dung la vi nhieu tien trinh don lenh vao MOT adb server". Doan do sai o
+    # HAI cho, va ngay 2026-09-16 no lam chet ca farm:
+    #
+    #   1. Nua RPC cua uiautomator2 KHONG BAO GIO di theo cong rieng do. `adbutils` giu mot
+    #      client cap module (`adbutils.adb = AdbClient()`) doc bien moi truong NGAY LUC IMPORT,
+    #      ma `import uiautomator2.base` o file nay nam tren dau file (dong 35-39) nen chay
+    #      TRUOC main(). Nghia la moi lenh d(...) van di cong 5037; chi cac lenh adb goi bang
+    #      subprocess trong adb_helper.py moi nhay sang cong rieng. Mot tien trinh, hai server —
+    #      va cai cong rieng do chua bao gio ganh cai tai ma no duoc sinh ra de chia.
+    #   2. Farm nay noi qua MANG (192.168.x.y:5555). `adbd` tren dien thoai chi nhan DUNG MOT
+    #      ket noi tu mot adb server, ma phan mem soi man hinh 效卫 da giu ca 23 may tren server
+    #      mac dinh roi. Do duoc: `adb devices` tren 5037 ra 23 may, tren 5112 ra RONG, va
+    #      `adb connect` toi 5112 treo mai khong ve.
+    #
+    # Hau qua: `adb shell pm list packages` -> `device not found` -> setup_device hong 3 lan ->
+    # RuntimeError("Khong the mo TikTok sau 3 lan thu") -> thoat ma 1, trong khi bang kiem tra
+    # ben Node van bao XANH vi no hoi server mac dinh. Cung lan chay do, ep
+    # ANDROID_ADB_SERVER_PORT=5037 thi quet 20/20 video khong mot loi.
+    #
+    # Nen: o day KHONG con tu chon cong nua. Phia Node (runner.cjs) chon va truyen xuong, y het
+    # cach no truyen ADB_PATH, va bang cung mot ly do: hai ben tu quyet rieng thi co ngay moi
+    # ben mot server, phia Node bao XANH con may thi khong ai dieu khien duoc.
+    # Chay tay ngoai app (start_scan_feed_sound.bat) thi khong co bien -> roi ve 5037, dung cai
+    # server ma `adb devices` go trong cmd nhin thay.
     adb_port = os.environ.get("ANDROID_ADB_SERVER_PORT", "5037")
     try:
         import uiautomator2.base as _b
-        log(f"ADB server rieng port {adb_port}, HTTP_TIMEOUT={_b.HTTP_TIMEOUT}")
+        log(f"ADB server cong {adb_port} (dung chung voi app), HTTP_TIMEOUT={_b.HTTP_TIMEOUT}")
     except Exception:
-        log(f"ADB server rieng port {adb_port}")
-    if serial:
+        log(f"ADB server cong {adb_port} (dung chung voi app)")
+
+    # ── CHI `connect` KHI THAT SU CHUA CO MAY ──
+    #
+    # Ban cu goi `adb connect` MU, moi lan khoi dong. Do duoc: lenh do ton tron 60 giay
+    # (adb_helper.adb() mac dinh timeout=60) NGAY CA tren server da co san may — nhan voi 19 may
+    # la 19 phut moi ca, dot khong doi lay gi. Va voi may cam USB thi `connect` con vo nghia:
+    # no doi dia chi ip:port, serial USB truyen vao chi to them mot dong loi.
+    #
+    # Hoi `adb devices` truoc: mot lenh, xong trong nua giay, va tra loi dung cau hoi can hoi.
+    if serial and ":" in serial:
         try:
-            adb("connect", serial)   # ket noi device tren adb server rieng nay
+            if serial in list_devices():
+                log(f"{serial} da co san tren adb server {adb_port} -> bo qua buoc connect")
+            else:
+                log(f"{serial} chua co tren adb server {adb_port} -> dang connect...")
+                # Timeout NGAN co chu y: da biet may khong nam trong danh sach thi `connect`
+                # hoac an ngay, hoac treo vi mot host khac dang giu `adbd` cua may — cho them
+                # 50 giay nua khong doi duoc ket qua, chi lam nguoi dung tuong app da treo.
+                out = adb("connect", serial, timeout=10)
+                log(f"adb connect: {out or '(khong noi gi)'}")
         except Exception as e:
-            log(f"adb connect loi: {str(e)[:80]}")
+            # KHONG dung o day: connect hong chua chac la khong dieu khien duoc may. De
+            # connect(serial) ben duoi bao loi that, va bao dung cai loi that.
+            log(f"adb connect loi: {str(e)[:80]} (van thu ket noi tiep)")
 
     d = connect(serial)
     log(f"Ket noi: {d.serial}")
     emit_event("status", state="connected", serial=d.serial)
     reset_service(d)
     pkg = setup_device(d)
+    # Ghi nho goi dang chay -> `find_first` chi cho MOT goi thay vi ca hai (xem chu thich o do).
+    set_active_pkg(pkg)
     emit_event("status", state="app_open", pkg=pkg)
 
     limit = int(os.environ.get("LIMIT", "0"))
     count = 0
     qualified = 0
     consecutive_fail = 0
+    # Dem so lan phai phuc hoi. Xem cho in ra o cuoi vong lap: day la van tay cua trieu chung
+    # "1 may chay 1 may dung", va tu 2026-09-16 ca farm dung chung mot adb server nen no phai
+    # do duoc, khong phai doan.
+    recover_count = 0
+    live_bo_qua = 0     # so video livestream da bo qua (yeu cau 2026-09-16)
 
     # Cay cau hoi/dap voi phia Node. Tat thi moi thu chay y het truoc khi co tinh nang nay.
     bridge = AskBridge(enabled=ASK_ON, log=log)
@@ -448,6 +607,7 @@ def main():
                 log("tien trinh cha da dong -> thoat")
                 break
             count += 1
+            t_video = time.time()
             try:
                 if dismiss_popups(d):
                     log("da bo qua 1 popup")
@@ -458,6 +618,25 @@ def main():
                 # giay mo trang nhac che tron thoi gian di ve, nen duong binh thuong khong ton
                 # them mili-giay nao.
                 info = PA.read_video_info(d) if bridge.enabled else None
+
+                # ── BO QUA LIVESTREAM ──
+                # Yeu cau cua chu du an (2026-09-16), va ky thuat cung dong y: man LIVE khong co
+                # icon sound, khong co nut Follow o cho quen thuoc, `long_press_layout` mang chu
+                # "LIVE" thay vi "Video" -> moi phep nhan dien sau do deu truot. Vuot qua luon,
+                # khong hoi, khong bam gi.
+                #
+                # Khi TAT tuong tac (`bridge.enabled` false) thi `info` la None nen khong biet
+                # LIVE hay khong — van quet nhu cu, va `check_current_video` tu bo qua vi khong
+                # co icon sound. Khong con duong nao khac ma cung khong hai gi.
+                if info and info.get("live"):
+                    live_bo_qua += 1
+                    log("video dang LIVE -> bo qua, khong hoi khong bam")
+                    emit_event("progress", checked=count, qualified=qualified)
+                    time.sleep(random.uniform(1.0, 2.0))
+                    d.swipe(0.5, 0.85, 0.5, 0.15, random.uniform(0.15, 0.3))
+                    time.sleep(random.uniform(0.8, 1.4))
+                    continue
+
                 aid = bridge.ask(**info) if info else None
 
                 res = check_current_video(d)
@@ -474,8 +653,9 @@ def main():
                 # Loi lien tiep -> service co the wedged: reset + mo lai TikTok (main thread,
                 # hieu qua vi khong con cu RPC nao dang treo o day).
                 if consecutive_fail >= 3:
-                    log("phuc hoi: reset service + mo lai TikTok...")
-                    emit_event("status", state="recover")
+                    recover_count += 1
+                    log(f"phuc hoi lan {recover_count}: reset service + mo lai TikTok...")
+                    emit_event("status", state="recover", n=recover_count)
                     reset_service(d)
                     try:
                         setup_device(d)
@@ -496,11 +676,25 @@ def main():
             try:
                 time.sleep(random.uniform(DWELL_MIN, DWELL_MAX))
                 d.swipe(0.5, 0.85, 0.5, 0.15, random.uniform(0.15, 0.3))
-                time.sleep(random.uniform(1.5, 2.5))
+                time.sleep(random.uniform(0.8, 1.4))
             except Exception as e:
                 log(f"loi swipe #{count}: {str(e)[:100]} (bo qua, thu tiep)")
 
-    log(f"XONG. Da check {count} video, DAT {qualified}. Ket qua: {OUTPUT_FILE}")
+            # ── DAU HIEU NGHEN, PHAI THAY DUOC NGAY ──
+            # Mot vong binh thuong ~10-20 giay (dwell 3-6s + mo trang nhac + back). Vuot 90 giay
+            # nghia la co lenh nao do dang CHO adb/RPC chu khong phai dang lam viec. Day chinh la
+            # "1 may chay 1 may dung" luc no moi chom, truoc khi may dung han.
+            #
+            # Vi sao can dong nay tu 2026-09-16: bo "moi may mot adb server" nghia la ca farm dung
+            # chung mot server. Neu trieu chung cu quay lai that thi dong nay bao truoc — con hon
+            # doi den luc may dung han roi ngoi doan, nhu lan truoc.
+            _mat = time.time() - t_video
+            if _mat > 60:
+                log(f"CHAM BAT THUONG: video #{count} mat {_mat:.0f}s (binh thuong ~5-20s) "
+                    f"- adb server cong {adb_port} co the dang nghen")
+
+    log(f"XONG. Da check {count} video, DAT {qualified}, bo qua {live_bo_qua} LIVE, "
+        f"phuc hoi {recover_count} lan. Ket qua: {OUTPUT_FILE}")
     emit_event("status", state="done", checked=count, qualified=qualified)
 
 

@@ -5,7 +5,7 @@
 const readline = require('readline');
 const { spawn, execFile } = require('child_process');
 const { getBaseDir, getPythonScriptPath } = require('./paths.cjs');
-const { adbPath } = require('./adbpath.cjs');
+const { adbPath, adbServerPort } = require('./adbpath.cjs');
 const { findPython } = require('./pythonpath.cjs');
 const askproto = require('./askproto.cjs');
 const { getDeviceDir } = require('./paths.cjs');
@@ -98,9 +98,25 @@ function startDevice(params, onData, onStatus) {
     PROTO_V: String(askproto.PROTO_VERSION),
     ASK_ON: (cfg.niEnabled || cfg.niAi || cfg.followOn || cfg.likeOn || cfg.visitOn) ? '1' : '0',
     CYCLE_ON: cfg.cycleOn ? '1' : '0',
+
+    // Cờ THỬ NGHIỆM, không có ô nào trong giao diện bật được: bỏ tạm điều kiện "sound hợp lệ" ở
+    // nhánh follow để đo xem đường follow có bấm được thật không. Chỉ `tools/run-one.cjs --follow-test`
+    // bật nó. Mặc định tắt nên app chạy y nguyên.
+    FOLLOW_ANY: cfg.followAnySound ? '1' : '0',
     CYCLE_SCAN_MIN: String(cfg.cycleScanMinutes ?? 30),
-    VISIT_SEC_MIN: String(cfg.visitSecMin ?? 4),
-    VISIT_SEC_MAX: String(cfg.visitSecMax ?? 8),
+    VISIT_SEC_MIN: String(cfg.visitSecMin ?? 5),
+    VISIT_SEC_MAX: String(cfg.visitSecMax ?? 10),
+
+    // Xem video mở trong trang cá nhân bao lâu trước khi tym.
+    PROFILE_VID_SEC_MIN: String(cfg.profileVideoSecMin ?? 3),
+    PROFILE_VID_SEC_MAX: String(cfg.profileVideoSecMax ?? 7),
+
+    // Nhịp quét. Hai ô này để chỉnh được TỐC ĐỘ mà không phải sửa code:
+    //  - `MUSIC_WAIT_SEC` từng là 15 và `find_first` duyệt cả hai gói TikTok -> một lần lỡ trang
+    //    nhạc đốt trọn 30 giây. Giờ Python chỉ chờ một gói nên 8 là đủ rộng.
+    //  - `SETTLE_SEC` là TRẦN TRÊN, không phải giấc ngủ: Python dò tới khi thấy số post.
+    MUSIC_WAIT_SEC: String(cfg.musicWaitSec ?? 8),
+    SETTLE_SEC: String(cfg.settleSec ?? 1.2),
 
     // Nhãn nút — dựng từ uilabels.cjs, Python KHÔNG giữ bản sao nào.
     RE_FOLLOW: _reTu(uilabels.FOLLOW_LABELS),
@@ -109,6 +125,20 @@ function startDevice(params, onData, onStatus) {
     // Phía Python dùng ĐÚNG adb mà phía Node đã chọn. Hai bên tự dò riêng là có ngày mỗi bên
     // một binary khác phiên bản, và chúng sẽ thay nhau giết adb server của nhau.
     ADB_PATH,
+
+    // …VÀ ĐÚNG CÁI ADB SERVER ĐÓ NỮA (2026-09-16).
+    //
+    // Cùng một bài học như `ADB_PATH` ngay trên, chỉ khác chỗ nó rơi. `scan_feed_sounds.py` từng
+    // tự suy một cổng server RIÊNG cho mỗi máy bằng `crc32(serial)`. Hậu quả đo được trong một
+    // lần chạy thật: `preflight.cjs`, `devices.cjs` và `cleanupDevice()` bên này đều hỏi server
+    // mặc định (5037) và báo XANH, còn tiến trình quét hỏi server 5112 — nơi `adb devices` rỗng,
+    // vì máy nối qua MẠNG và `adbd` chỉ nhận đúng một adb server (23 máy đã nằm trên server của
+    // 效卫). `adb connect` treo trọn 60 giây, mọi `adb shell` trả `device not found`,
+    // `setup_device` hỏng ba lần, tiến trình thoát mã 1. Ép cổng 5037 cho đúng lần chạy đó:
+    // 20/20 video, không một lỗi.
+    //
+    // Nên cổng server cũng chỉ có MỘT nguồn là `adbpath.cjs`, và Python chỉ được ĐỌC, không suy.
+    ANDROID_ADB_SERVER_PORT: adbServerPort(),
   });
 
   const proc = spawn(py.cmd, [...py.args, SCRIPT_PATH, serial], {
@@ -195,6 +225,7 @@ function startDevice(params, onData, onStatus) {
         const phan = [];
         if (payload.follow && payload.follow !== 'not_needed') phan.push(`follow=${payload.follow}`);
         if (payload.like && payload.like !== 'not_needed') phan.push(`tym=${payload.like}`);
+        if (payload.like_profile && payload.like_profile !== 'not_needed') phan.push(`tym-trang=${payload.like_profile}`);
         if (payload.visit && payload.visit !== 'not_needed') phan.push(`ghé=${payload.visit}`);
         if (payload.ni && payload.ni !== 'skip') phan.push(`not-interested=${payload.ni}`);
         if (phan.length) onStatus(deviceId, { kind: 'log', line: `[tương tác] ${phan.join(' ')}` });

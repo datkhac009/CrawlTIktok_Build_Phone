@@ -27,14 +27,52 @@ const followquota = require('./followquota.cjs');
 const daycount = require('./daycount.cjs');
 const { normalizeHandle } = require('./followpolicy.cjs');
 
-const PROTO_VERSION = 1;
+// v2 (2026-09-16): thêm `live` (bỏ qua livestream) và nhịp hỏi thứ hai `kind:'follow_confirm'`.
+//
+// VÌ SAO PHẢI SANG v2 — đo được trên máy thật, TikTok v46.1.1:
+// `@handle` **KHÔNG hề xuất hiện trên feed** (0/3 mẫu, grep thẳng XML không có chuỗi `text="@..."`
+// nào). Nó chỉ nằm trên TRANG CÁ NHÂN. Mà bản v1 đòi `handle` khác rỗng cho cả follow, tym lẫn
+// ghé trang — nên phán quyết luôn là `0 0 0` cho MỌI video, im lặng, không một dòng lỗi. Đó là
+// lý do thật của "bật follow mà không thấy bấm gì".
+//
+// v2 tách danh tính làm hai mức:
+//   - TÊN HIỂN THỊ (đọc được ngay trên feed, từ `user_avatar`) — đủ để lọc ngôn ngữ, tym, và để
+//     biết "có đáng ghé không".
+//   - @handle THẬT (chỉ có trên trang cá nhân) — bắt buộc cho follow, vì sổ chống trùng và trần
+//     30 lượt/ngày khoá theo nó. Tên hiển thị không duy nhất và người ta đổi được; khoá sổ theo
+//     tên hiển thị là có ngày hai kênh khác nhau bị coi là một.
+// v3 (2026-09-17): thêm `like_profile` — cú tym thứ hai, lên video mở trong trang cá nhân.
+//
+// VÌ SAO MỘT CÂU TRẢ LỜI MANG CẢ HAI CÚ TYM, thay vì thêm nhịp hỏi thứ ba:
+// Nhịp hỏi hiện tại gần như miễn phí vì nó nấp sau quãng 5-9 giây đi trang nhạc (xem ghi chú ở
+// đầu file). Một nhịp hỏi nằm TRONG trang cá nhân thì không có gì che — nó tốn wall-clock thật,
+// đúng thứ mà đợt này đang phải cắt.
+const PROTO_VERSION = 3;
 
 // Câu trả lời an toàn: không bấm gì cả. Dùng cho MỌI đường hỏng.
 function safeAnswer(id) {
-  return { v: PROTO_VERSION, id: id | 0, ni: 0, why: '', follow: 0, like: 0, visit: 0 };
+  return { v: PROTO_VERSION, id: id | 0, ni: 0, why: '', follow: 0, like: 0, visit: 0, like_profile: 0 };
 }
 
-function makeBrain({ deviceId, dir, cfg = {}, say = () => {} }) {
+function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random }) {
+  // ── TỈ LỆ TYM: bốc MỘT lần cho cả lượt chạy ──
+  //
+  // VÌ SAO KHÔNG BỐC LẠI MỖI VIDEO: mỗi máy có một "tính cách" ổn định trong suốt ca — nhìn từ
+  // phía TikTok thì giống một người hơn là giống bộ sinh số. Và bốc một lần thì in ra được một
+  // dòng, nên đọc log là biết ngay máy đó đang chạy ở tỉ lệ nào.
+  //
+  // ⚠ `0` nghĩa là KHÔNG TYM, không phải "dùng mặc định" — cùng quy ước với trần follow
+  // (`followquota.cjs`: trần 0 = tắt hẳn). Người gõ 0 là muốn ngừng, không phải muốn vô hạn.
+  //
+  // `rng` chỉ để phép thử chạy tất định; `runner.cjs` không bao giờ truyền nó.
+  const _pt = (v, mac) => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : mac;
+  };
+  const _lo = _pt(cfg.likeRateMin, 40);
+  const _hi = _pt(cfg.likeRateMax, 60);
+  const tiLeTym = Math.min(_lo, _hi) + rng() * Math.abs(_hi - _lo);
+  let daBaoTiLe = false;
   // Dựng bộ khớp ngôn ngữ MỘT LẦN cho cả lượt chạy: `makeMatcher` biên dịch regex và chuẩn hoá
   // danh sách từ khoá, gọi lại mỗi video là phí.
   const matcher = (cfg.niEnabled || cfg.followOn || cfg.likeOn)
@@ -45,6 +83,10 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {} }) {
     asked: 0, lang: 0, ai: 0, ni: 0,
     follow: 0, followFail: 0, like: 0, likeFail: 0, visit: 0,
     askFail: 0,
+    live: 0,          // số video livestream đã bỏ qua
+    ghe: 0,           // số lần ghé trang cá nhân để lấy @handle
+    trungKenh: 0,     // số lần ghé xong mới biết đã follow người này rồi
+    tymTrang: 0,      // số cú tym lên video mở trong trang cá nhân
   };
   const viDu = [];          // vài ví dụ kênh bị loại, để soi xem có khớp nhầm không
   let daBaoNhanLa = false;  // đường tự vá: chỉ in MỘT dòng mỗi lượt chạy
@@ -67,6 +109,31 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {} }) {
         }
         return safeAnswer(id);
       }
+      // ── NHỊP 2: XÁC NHẬN FOLLOW, khi Python đã ghé trang và đọc được @handle THẬT ──
+      //
+      // Đây là nơi DUY NHẤT cấp phép follow. Nhịp 1 trên feed chỉ nói "còn ngân sách, đáng ghé";
+      // hàng rào chống trùng nằm ở đây, vì trước khi ghé thì chưa ai biết kênh này là ai.
+      if (ask.kind === 'follow_confirm') {
+        const h = normalizeHandle(ask.handle);
+        dem.ghe++;
+        if (!h) {
+          say('⚠ Ghé trang xong vẫn không đọc được @handle — không follow (mặc định an toàn).');
+          return { v: PROTO_VERSION, id, ni: 0, why: 'no_handle', follow: 0, like: 0, visit: 0, like_profile: 0 };
+        }
+        const q = followquota.canFollow({
+          deviceId, dir, handle: h,
+          opts: { perDay: cfg.followPerDay, gapMinSec: cfg.followGapMin, gapMaxSec: cfg.followGapMax },
+        });
+        if (!q.ok) {
+          if (/đã follow/.test(q.reason || '')) dem.trungKenh++;
+          say(`bỏ follow ${h}: ${q.reason}`);
+          return { v: PROTO_VERSION, id, ni: 0, why: q.reason || '', follow: 0, like: 0, visit: 0, like_profile: 0 };
+        }
+        // Nhớ handle để `noteActed` ghi sổ đúng kênh, kể cả khi Python quên gửi lại.
+        dangCho = { id, handle: h };
+        return { v: PROTO_VERSION, id, ni: 0, why: q.reason || '', follow: 1, like: 0, visit: 0, like_profile: 0 };
+      }
+
       // ── KIỂM HÌNH DẠNG CÂU HỎI TRƯỚC KHI CẤP BẤT KỲ QUYỀN NÀO ──
       //
       // Bài học từ chính phép thử của file này (2026-09-15): câu hỏi thiếu `id`, hoặc có
@@ -122,37 +189,72 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {} }) {
       // là tự phá mục tiêu.
       const biLoai = !!khop || laAi;
 
-      // ── Quyền FOLLOW: cấp trước, Python chỉ dùng nếu sound hoá ra hợp lệ ──
+      // ── BỎ QUA LIVESTREAM ──
+      // Yêu cầu của chủ dự án (2026-09-16). Lý do kỹ thuật cũng trùng: màn LIVE không có icon
+      // sound, không có nút Follow ở chỗ quen thuộc, và `long_press_layout` mang chữ "LIVE" thay
+      // vì "Video" — mọi phép nhận diện sau đó đều trượt. Bấm mù lên một màn khác cấu trúc đúng
+      // là cách bản PC từng bấm nhầm 5/10 lần (QĐ-31).
+      //
+      // Trả về SỚM, trước cả Not interested: LIVE không phải nội dung xấu, chỉ là không dùng
+      // được. Dạy feed ghét nó là sai mục tiêu.
+      if (ask.live) {
+        dem.live++;
+        return { v: PROTO_VERSION, id, ni: 0, why: 'live', follow: 0, like: 0, visit: 0, like_profile: 0 };
+      }
+
+      // ── DANH TÍNH ĐỌC ĐƯỢC TRÊN FEED ──
+      // `author` giờ là TÊN HIỂN THỊ (từ `user_avatar`), không phải @handle — vì feed không bày
+      // @handle (đo được: 0/3 mẫu). Đủ dùng cho lọc ngôn ngữ, tym, và để biết có đáng ghé không.
+      // Follow thì KHÔNG đủ: nó cần @handle thật, lấy ở nhịp 2 (`kind:'follow_confirm'`).
+      const danhTinh = handle || author;
+
+      // ── Quyền GHÉ TRANG ĐỂ FOLLOW: mới là "đáng đi xem", CHƯA phải cấp phép ──
+      // Chỉ kiểm ngân sách (giãn cách + trần ngày). Chống trùng kênh nằm ở nhịp 2, vì lúc này
+      // chưa ai biết kênh này là ai. Hết ngân sách thì khỏi ghé — tiết kiệm đúng chỗ tốn nhất.
       let follow = 0;
       dangCho = null;
-      if (cfg.followOn && !biLoai && handle) {
-        const q = followquota.canFollow({
-          deviceId, dir, handle,
+      if (cfg.followOn && !biLoai && danhTinh) {
+        const q = followquota.canFollowBudget({
+          deviceId, dir,
           opts: {
             perDay: cfg.followPerDay,
             gapMinSec: cfg.followGapMin,
             gapMaxSec: cfg.followGapMax,
           },
         });
-        if (q.ok) { follow = 1; dangCho = { id, handle }; }
+        if (q.ok) follow = 1;
       }
 
-      // ── Quyền TYM ──
-      // Cũng đòi có `handle`: tym là một cú bấm lên video của MỘT người cụ thể. Không đọc được
+      // ── Quyền TYM trên FEED ──
+      // Đòi đọc được chủ video: tym là một cú bấm lên video của MỘT người cụ thể. Không đọc được
       // chủ video nghĩa là màn hình chưa đọc xong hoặc đang ở đâu đó khác — bấm lúc đó là bấm mù.
-      let like = 0;
-      if (cfg.likeOn && !biLoai && handle) {
-        if (daycount.remaining(dir, 'like', cfg.likePerDay) > 0) like = 1;
+      //
+      // ⚠ Từ 2026-09-17 tym còn phải QUA PHÉP BỐC: chủ dự án nhìn màn hình thấy video nào cũng
+      // bị tym. Thủ phạm là `scan_feed_sounds.py` thiếu điều kiện "sound hợp lệ" — đã sửa ở đó —
+      // nhưng tym 100% số video đạt vẫn là hành vi máy móc. Tỉ lệ 40-60% làm nó giống người.
+      if (!daBaoTiLe) {
+        daBaoTiLe = true;
+        say(`tym ngẫu nhiên ${tiLeTym.toFixed(0)}% lượt này`);
       }
+      const conTym = daycount.remaining(dir, 'like', cfg.likePerDay);
+      let like = 0;
+      if (cfg.likeOn && !biLoai && danhTinh && conTym > 0 && rng() * 100 < tiLeTym) like = 1;
 
       // ── Quyền GHÉ THĂM kênh ──
       let visit = 0;
-      if (cfg.visitOn && !biLoai && handle) {
+      if (cfg.visitOn && !biLoai && danhTinh) {
         const tran = Math.max(0, parseInt(cfg.visitMaxUsers, 10) || 0);
         if (tran === 0 || dem.visit < tran) visit = 1;   // 0 = không giới hạn (khác với follow/tym)
       }
 
-      return { v: PROTO_VERSION, id, ni, why, follow, like, visit };
+      // ── Quyền TYM VIDEO MỞ TRONG TRANG CÁ NHÂN ──
+      // Đòi `visit`: không ghé thì không có video nào để tym, mà cấp quyền cho một cú bấm không
+      // có đối tượng là để Python bấm lên bất cứ thứ gì đang ở trên màn hình.
+      // Đòi `conTym > 1` khi feed đã được cấp: HAI cú tym ăn CHUNG trần ngày, không được vượt.
+      let like_profile = 0;
+      if (cfg.likeOn && visit && conTym > (like ? 1 : 0) && rng() * 100 < tiLeTym) like_profile = 1;
+
+      return { v: PROTO_VERSION, id, ni, why, follow, like, visit, like_profile };
     } catch (e) {
       // Không bao giờ để lỗi ở đây làm chết tiến trình chính — 8 máy đang phụ thuộc vào nó.
       dem.askFail++;
@@ -168,14 +270,43 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {} }) {
   function noteActed(evt) {
     try {
       if (!evt) return;
-      if (evt.follow === 'ok') {
-        const h = (dangCho && dangCho.id === (evt.id | 0)) ? dangCho.handle : normalizeHandle(evt.handle);
+      // ── TIKTOK BẬT LẠI CÚ FOLLOW ──
+      // Máy đã mở lại trang cá nhân sau khi về feed và thấy nút quay về "Follow". Cú follow
+      // KHÔNG tồn tại, nên tuyệt đối không ghi sổ: ghi vào là kênh đó bị đánh dấu đã follow
+      // vĩnh viễn và không bao giờ được thử lại, trong khi thực tế chưa follow ai.
+      // Nói to, vì nhiều lần liên tiếp nghĩa là tài khoản đang bị TikTok chặn hành vi.
+      if (evt.follow === 'reverted') {
+        dem.followFail++;
+        dem.batLai = (dem.batLai || 0) + 1;
+        say(`⚠ TikTok đã bật lại cú follow ${evt.handle || ''} — không ghi sổ. `
+          + 'Nhiều lần liên tiếp nghĩa là tài khoản đang bị chặn hành vi tự động.');
+        return;
+      }
+
+      // 'ok_unverified': đã bấm và nút đã đổi, nhưng không kiểm lại được sau khi về feed (feed
+      // đã trôi sang video khác). VẪN GHI SỔ — đếm thừa an toàn hơn đếm thiếu: đếm thiếu là
+      // follow quá tay trên tài khoản thật, còn đếm thừa chỉ mất một suất trong ngày.
+      if (evt.follow === 'ok' || evt.follow === 'ok_unverified') {
+        // Ưu tiên @handle Python gửi kèm (nó vừa đọc trên trang cá nhân), rồi mới tới cái đã
+        // ghi nhớ lúc cấp phép. Hai đường cùng chỉ một kênh; giữ cả hai để mất một đường vẫn ghi
+        // được sổ.
+        const h = normalizeHandle(evt.handle)
+          || ((dangCho && dangCho.id === (evt.id | 0)) ? dangCho.handle : '');
         if (h) {
           channelstore.recordFollow(dir, h);
           followquota.noteFollowed(deviceId, dir, {
             perDay: cfg.followPerDay, gapMinSec: cfg.followGapMin, gapMaxSec: cfg.followGapMax,
           });
           dem.follow++;
+        } else {
+          // ⚠ ĐÃ FOLLOW MỘT NGƯỜI MÀ KHÔNG BIẾT LÀ AI.
+          // Bản cũ bỏ qua trong im lặng, và đó là chỗ hỏng nguy hiểm nhất có thể có ở đây: cú
+          // follow ĐÃ xảy ra trên tài khoản thật, nhưng sổ không ghi — nên trần 30/ngày đếm hụt
+          // và lần sau có thể follow lại đúng người đó. Hướng sai duy nhất chấp nhận được là
+          // đếm THỪA, không bao giờ là đếm thiếu.
+          dem.followFail++;
+          say('⚠ Máy báo follow thành công nhưng KHÔNG kèm @handle — không ghi sổ được. '
+            + 'Trần ngày sẽ đếm thiếu. Kiểm lại bước ghé trang cá nhân.');
         }
       } else if (evt.follow === 'fail') {
         dem.followFail++;
@@ -183,6 +314,12 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {} }) {
 
       if (evt.like === 'ok') { daycount.record(dir, 'like'); dem.like++; }
       else if (evt.like === 'fail') { dem.likeFail++; }
+
+      // Tym trong trang cá nhân ăn CHUNG trần ngày với tym trên feed — nó cũng là một cú bấm lên
+      // một video thật. Đếm riêng `tymTrang` để đọc log biết nhánh nào đang chạy: `ghé N kênh`
+      // cao mà `tym trong trang` bằng 0 nghĩa là đường mở video trong lưới đang hỏng.
+      if (evt.like_profile === 'ok') { daycount.record(dir, 'like'); dem.like++; dem.tymTrang++; }
+      else if (evt.like_profile === 'fail') { dem.likeFail++; }
 
       if (evt.visit === 'ok') dem.visit++;
     } catch (_) { /* ghi sổ hỏng không được làm chết vòng quét */ }
@@ -196,9 +333,24 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {} }) {
     if (dem.asked) p.push(`hỏi ${dem.asked} video`);
     if (dem.lang) p.push(`loại ${dem.lang} vì ngôn ngữ`);
     if (dem.ai) p.push(`loại ${dem.ai} gắn nhãn AI`);
+    if (dem.live) p.push(`bỏ qua ${dem.live} livestream`);
     if (dem.ni) p.push(`bấm Not interested ${dem.ni}`);
-    if (dem.follow || dem.followFail) p.push(`follow ${dem.follow}${dem.followFail ? ` (hỏng ${dem.followFail})` : ''}`);
-    if (dem.like || dem.likeFail) p.push(`tym ${dem.like}${dem.likeFail ? ` (hỏng ${dem.likeFail})` : ''}`);
+    // Ghé mà không follow được cái nào là dấu hiệu THẤY NGAY rằng đọc @handle trên trang cá nhân
+    // đang trượt — nếu không có số này thì hỏng cũng chỉ hiện ra dưới dạng "follow 0", lẫn với
+    // trường hợp hết trần ngày.
+    if (dem.ghe) p.push(`ghé trang lấy @handle ${dem.ghe} lần${dem.trungKenh ? `, ${dem.trungKenh} kênh đã follow từ trước` : ''}`);
+    if (dem.follow || dem.followFail) {
+      const phu = [];
+      if (dem.followFail) phu.push(`hỏng ${dem.followFail}`);
+      if (dem.batLai) phu.push(`${dem.batLai} bị TikTok bật lại`);
+      p.push(`follow ${dem.follow}${phu.length ? ` (${phu.join(', ')})` : ''}`);
+    }
+    if (dem.like || dem.likeFail) {
+      const phu = [];
+      if (dem.likeFail) phu.push(`hỏng ${dem.likeFail}`);
+      if (dem.tymTrang) phu.push(`${dem.tymTrang} trong trang`);
+      p.push(`tym ${dem.like}${phu.length ? ` (${phu.join(', ')})` : ''}`);
+    }
     if (dem.visit) p.push(`ghé ${dem.visit} kênh`);
     if (dem.askFail) p.push(`⚠ ${dem.askFail} lượt hỏi hỏng`);
     if (!p.length) return '';

@@ -136,7 +136,7 @@ async function chayMot(params) {
       startReseedTimer(cfg);
     }
     // ── XẾP HÀNG NẾU ĐÃ CHẠM TRẦN SỐ MÁY ĐỒNG THỜI ──
-    // 19 máy bật cùng lúc là ~19 tiến trình Python + 19 ADB server trên máy điều khiển.
+    // 19 máy bật cùng lúc là 19 tiến trình Python cùng dồn lệnh qua MỘT adb server dùng chung.
     const khe = await devslot.acquire(params.deviceId, (pos) => {
       sendToRenderer('crawl-status', {
         deviceId: params.deviceId, kind: 'status', state: 'queued',
