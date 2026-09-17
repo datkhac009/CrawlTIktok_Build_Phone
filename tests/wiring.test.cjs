@@ -384,6 +384,47 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     /TRUOT vi het gio/.test(py) && /tren tong \{count\} video/.test(py));
 }
 
+// ── 14. Ghé thăm phải THẬT SỰ vào trang, không phải vuốt một cái rồi về ──
+// SỰ CỐ THẬT (2026-09-17): chủ dự án nhìn màn hình và báo "ghé thăm chưa được 2 giây, vừa kéo
+// sang một cái là nó đã quay lại feed". Hai lỗi nối nhau:
+//   1. `_mo_trang_ca_nhan` trả True NGAY khi vừa nhả tay, không kiểm gì. Trang cá nhân mất gần
+//      một giây mới dựng xong.
+//   2. `do_visit` dò lưới hụt lần đầu là bấm `back` luôn — mà lần dò đó rơi đúng lúc trang còn
+//      đang mở, nên cú `back` không bỏ tấm che nào cả, nó đưa máy VỀ FEED.
+// Từ đó mọi thao tác sau đều sai chỗ: vòng "lướt xem trang" cuộn chính cái feed, và kết quả
+// luôn là `ok_no_grid`. Hai lỗi phải sửa cùng nhau.
+{
+  const pa = doc('phone_actions.py');
+
+  const khoiMo = /def _mo_trang_ca_nhan\(d\)[\s\S]*?\n(?=def )/.exec(pa);
+  check('14. Có _mo_trang_ca_nhan', !!khoiMo);
+  const kM = khoiMo ? khoiMo[0] : '';
+  check('14b. Mở trang xong phải xác nhận đã rời feed, không trả True suông',
+    /if not _o_tren_feed\(d\):\s*\n\s*return True/.test(kM)
+    && !/d\.touch\.up\(x2, y\)\s*\n\s*return True/.test(kM));
+
+  const khoiVisit = /def do_visit\([\s\S]*?\n(?=def )/.exec(pa);
+  check('14c. Có do_visit', !!khoiVisit);
+  const kV = khoiVisit ? khoiVisit[0] : '';
+
+  // Cú `back` phải nấp sau MỐC THỜI GIAN, không bắn ở lần dò hụt đầu tiên.
+  check('14d. Chỉ back khi đã chờ gần hết giờ, không back ngay lần dò hụt đầu',
+    /if not da_back and time\.time\(\) > het - 3\.0:/.test(kV)
+    && !/if not da_back:\s*\n\s*da_back = True\s*\n\s*#[\s\S]{0,200}?d\.press\("back"\)/.test(kV));
+
+  // Thấy mình đang ở feed thì bỏ lượt, KHÔNG back thêm — back nữa là đi xa hơn khỏi chỗ cần đến.
+  check('14e. Rơi về feed giữa chừng thì bỏ lượt, không back tiếp',
+    /if _o_tren_feed\(d\):[\s\S]{0,220}?return \("fail", "not_needed"\)/.test(kV));
+
+  // Vòng lướt trang phải kéo từng điểm. `d.swipe` đã đo được là TikTok không nhận ra là cử chỉ,
+  // nên để nguyên thì 5-10 giây "lướt xem" là 5-10 giây trang đứng yên.
+  check('14f. Lướt trang kéo từng điểm, không dùng d.swipe', /_keo_doc\(d\)/.test(kV)
+    && !/d\.swipe\(0\.5, 0\.75/.test(kV));
+  check('14g. _keo_doc bơm sự kiện từng điểm như _mo_trang_ca_nhan',
+    /def _keo_doc\(/.test(pa)
+    && /def _keo_doc\([\s\S]*?d\.touch\.down\([\s\S]*?d\.touch\.move\([\s\S]*?d\.touch\.up\(/.test(pa));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);
 if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));

@@ -479,26 +479,36 @@ def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
 
         # Cho luoi hien ra theo DIEU KIEN, khong ngu mu. Khong thay thi back MOT nhip roi do lai:
         # 1/3 lan ghe roi vao tam thong bao che trang, va no nuot dung mot `back`.
+        # ⚠ BAN TRUOC BAM `back` NGAY O LAN DO HUT DAU TIEN (sua 2026-09-17). Lan do do roi
+        # dung vao luc trang ca nhan con dang mo, nen cu `back` khong bo tam che nao ca — no dua
+        # may VE FEED. Tu do tro di moi thao tac deu sai cho: vong "luot xem trang" cuon chinh
+        # cai feed, roi ket qua luon la `ok_no_grid`.
+        # Gio: chi `back` khi da cho GAN HET gio ma van khong thay luoi, va phai chac la KHONG o
+        # feed. O feed ma back nua la di xa hon nua khoi cho can den.
         o = []
-        het = time.time() + 6.0
+        het = time.time() + 8.0
         da_back = False
         while time.time() < het:
             o = _o_luoi_video(d)
             if o:
                 break
-            if not da_back:
+            if _o_tren_feed(d):
+                log("ghe trang: da roi ve feed truoc khi luoi kip hien -> bo luot nay")
+                return ("fail", "not_needed")
+            # Ba giay cuoi moi thu MOT nhip `back` de bo tam che (vd "Viewer history turned on").
+            # ⚠ Chi `back`. TUYET DOI khong bam nut la tren tam do (vd "Save") — bam mu mot nut
+            # khong biet la gi tren tai khoan that la dung QD-31.
+            if not da_back and time.time() > het - 3.0:
                 da_back = True
-                # ⚠ Chi `back` de bo tam che. TUYET DOI khong bam nut la tren tam do (vd "Save")
-                # — bam mu mot nut khong biet la gi tren tai khoan that la dung QD-31.
                 d.press("back")
-                time.sleep(1.2)
+                time.sleep(1.0)
             else:
                 time.sleep(0.5)
 
-        # Luot xem trang.
+        # Luot xem trang. Keo tung diem chu khong `d.swipe` — xem `_keo_doc`.
         han = time.time() + random.uniform(sec_min, sec_max)
         while time.time() < han:
-            d.swipe(0.5, 0.75, 0.5, 0.35, random.uniform(0.2, 0.35))
+            _keo_doc(d)
             time.sleep(random.uniform(0.8, 1.4))
 
         # Doc lai luoi SAU khi cuon: o hien tren man da khac, nen lua chon cung ngau nhien theo
@@ -624,6 +634,44 @@ def _mo_trang_ca_nhan(d):
             d.touch.move(int(x1 + (x2 - x1) * i / 8), y)
             time.sleep(0.045)
         d.touch.up(x2, y)
+
+        # ── XAC NHAN DA RA KHOI FEED, KHONG BAO THANH CONG SUONG ──
+        # ⚠ SU CO 2026-09-17: ban truoc tra True ngay khi vua nha tay, khong kiem gi ca. Trang ca
+        # nhan mat gan mot giay moi dung hinh, nen `do_visit` do luoi NGAY trong luc trang con
+        # dang mo, khong thay o nao, roi bam `back` — va cu `back` do dua may VE FEED. Chu du an
+        # nhin thay dung canh do: "vua keo sang mot cai la no da quay lai feed roi", chua duoc 2
+        # giay. Phan con lai cua ham van chay, nhung da chay tren sai man hinh.
+        #
+        # Cho o DAY chu khong o noi goi: ham nay la mot nơi duy nhat dinh nghia cu mo trang, nen
+        # hai nguoi goi (`do_visit` va `open_profile_read_handle`) cung duoc bao ve mot the.
+        het = time.time() + 4.0
+        while time.time() < het:
+            if not _o_tren_feed(d):
+                return True
+            time.sleep(0.3)
+        return False
+    except Exception:
+        return False
+
+
+def _keo_doc(d, tu=0.75, den=0.35, buoc=8):
+    """Cuon doc bang cach keo TUNG DIEM, khong dung `d.swipe`.
+
+    Cung mot ly do da do duoc o `_mo_trang_ca_nhan`: `d.swipe()` bom su kien qua thua nen TikTok
+    khong nhan ra do la cu chi. Cu cuon doc trong trang ca nhan di qua cung bo nhan cu chi ay,
+    nen dung `d.swipe` o do thi rat co the trang DUNG YEN suot 5-10 giay goi la "luot xem" —
+    nhin log thi thay co ghe tham, nhin man hinh thi khong cuon duoc dong nao.
+    """
+    try:
+        w, h = d.window_size()
+        x = int(w * 0.5)
+        y1, y2 = int(h * tu), int(h * den)
+        d.touch.down(x, y1)
+        time.sleep(0.05)
+        for i in range(1, buoc + 1):
+            d.touch.move(x, int(y1 + (y2 - y1) * i / buoc))
+            time.sleep(0.03)
+        d.touch.up(x, y2)
         return True
     except Exception:
         return False
