@@ -310,18 +310,31 @@ def get_link(d):
     return canonical_from_url(raw) or resolve_shortlink(raw) or raw
 
 
+# Dem cu TRUOT VI HET TRAN CHO, de tra loi duoc cau "quet nhanh the co dang tin khong".
+#
+# VI SAO PHAI CO (2026-09-17): dot ha nhip 16/09 cat WAIT_MUSIC_PAGE 15 -> 8s va doi SETTLE tu
+# ngu mu 2,5s sang do dieu kien voi tran 1,2s. Ca hai deu CO THE danh roi sound that: trang nhac
+# mo cham hon 8s, hoac so post hien cham hon 1,2s. Huong sai la an toan (bo sot chu khong lay
+# nham) nhung truoc do KHONG DE LAI DAU VET NAO - cu truot vi het gio doc so post trong y het
+# mot sound bi loc loai. Khong dem duoc thi khong biet nhip dang dat hay qua tay, va "nhanh" voi
+# "nhanh den muc bo sot" nhin tu log la mot.
+TRUOT = {"khong_icon": 0, "khong_vao_trang_nhac": 0, "het_gio_doc_so_post": 0}
+
+
 def check_current_video(d):
     """App đang ở feed, đứng tại 1 video. Trả về (link, posts) nếu ĐẠT, None nếu không.
     Luôn back về feed trước khi return (trừ khi không tìm thấy icon sound -> vẫn ở feed)."""
     icon = find_first(d, SOUND_ICON_IDS, timeout=3)
     if icon is None:
+        TRUOT["khong_icon"] += 1
         log("khong co icon sound tren video nay (bo qua)")
         return None
     icon.click()
 
     title_el = find_first(d, TITLE_IDS, timeout=WAIT_MUSIC_PAGE)
     if title_el is None:
-        log("khong vao duoc trang nhac (bo qua video nay)")
+        TRUOT["khong_vao_trang_nhac"] += 1
+        log(f"khong vao duoc trang nhac trong {WAIT_MUSIC_PAGE:.0f}s (bo qua video nay)")
         if MUSIC_ACTIVITY in d.app_current().get("activity", ""):
             d.press("back")
             time.sleep(REST_AFTER_BACK)
@@ -345,6 +358,12 @@ def check_current_video(d):
         if posts:
             break
         if time.time() >= het_settle:
+            # Het tran ma van chua doc duoc so post. Buoc loc ben duoi se loai video nay, va
+            # nhin vao log thi no giong het mot sound bi loai vi khong dat nguong - nen phai noi
+            # ra o day, khong thi cu truot nay vo hinh.
+            TRUOT["het_gio_doc_so_post"] += 1
+            log(f"het {SETTLE:.1f}s ma chua doc duoc so post -> video nay bi loai, CO THE la "
+                f"truot oan (noi rong o 'Cho so post hien ra toi da' neu dong nay nhieu)")
             break
         time.sleep(0.2)
     is_original = not any(kw in desc.lower() for kw in REJECT_KEYWORDS)
@@ -695,6 +714,15 @@ def main():
 
     log(f"XONG. Da check {count} video, DAT {qualified}, bo qua {live_bo_qua} LIVE, "
         f"phuc hoi {recover_count} lan. Ket qua: {OUTPUT_FILE}")
+
+    # Hai so sau cung la thuoc do cua cau hoi "nhip quet da qua tay chua". `khong_icon` thi vo
+    # hai (quang cao, anh - von khong co sound), nhung hai so con lai la sound CO THAT ma may
+    # khong kip doc. Chung deo bam theo `count`: vai phan tram thi binh thuong, hai chu so tro
+    # len la nhip dang an vao ket qua.
+    log(f"TRUOT vi het gio: khong icon sound {TRUOT['khong_icon']}"
+        f" | khong vao duoc trang nhac {TRUOT['khong_vao_trang_nhac']}"
+        f" | khong kip doc so post {TRUOT['het_gio_doc_so_post']}"
+        f"  (tren tong {count} video)")
     emit_event("status", state="done", checked=count, qualified=qualified)
 
 

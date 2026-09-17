@@ -364,6 +364,26 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     viTriAwait >= 0 && viTriDanh > viTriAwait);
 }
 
+// ── 13. Cú trượt vì hết trần chờ phải ĐẾM ĐƯỢC ──
+// Chủ dự án nhìn app quét và hỏi thẳng: "nhanh thế liệu đã ổn chưa". Trước 2026-09-17 câu đó
+// KHÔNG trả lời được bằng log: hạ `WAIT_MUSIC_PAGE` 15→8s và đổi `SETTLE` sang trần 1,2s đều có
+// thể đánh rơi sound thật, mà cú trượt vì hết giờ đọc số post trông y hệt một sound bị lọc loại.
+// Hướng sai là an toàn (bỏ sót chứ không lấy nhầm) nhưng vô hình thì không ai chỉnh được nhịp.
+{
+  const py = doc('scan_feed_sounds.py');
+  check('13. Có bộ đếm cú trượt vì hết trần chờ', /TRUOT = \{/.test(py));
+  check('13b. Đếm đủ ba chỗ trượt',
+    /TRUOT\["khong_icon"\] \+= 1/.test(py)
+    && /TRUOT\["khong_vao_trang_nhac"\] \+= 1/.test(py)
+    && /TRUOT\["het_gio_doc_so_post"\] \+= 1/.test(py));
+
+  // Đây là cái vô hình nhất trong ba: hết trần đọc số post thì video bị loại y như bị lọc.
+  check('13c. Hết giờ đọc số post có nói ra, không im lặng',
+    /het \{SETTLE:\.1f\}s ma chua doc duoc so post/.test(py));
+  check('13d. Tổng kết in ba số đó ra cùng tổng số video',
+    /TRUOT vi het gio/.test(py) && /tren tong \{count\} video/.test(py));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);
 if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));
