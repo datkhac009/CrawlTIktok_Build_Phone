@@ -131,7 +131,9 @@ async function init() {
 function onCrawlData(payload) {
   const { deviceId, name, url, posts } = payload;
   const dev = devices.find((d) => d.id === deviceId);
-  const row = { name, url, posts, deviceId, deviceName: dev ? dev.name : deviceId };
+  // Không thấy tên = máy đã bị xoá mà kết quả vẫn chảy về. Ghi thẳng ra thay vì để mã `d_…`
+  // trần — chính mã trần đã khiến lỗi "máy ma" nằm im không ai nhận ra.
+  const row = { name, url, posts, deviceId, deviceName: dev ? dev.name : `máy đã xoá (${deviceId})` };
   crawlResults.push(row);
   addResultRow(row, crawlResults.length);
   renderResultCount();
@@ -149,6 +151,8 @@ function onCrawlStatus(payload) {
 
   if (kind === 'status') {
     if (payload.state === 'running') st.status = 'run';
+    else if (payload.state === 'queued') { st.status = 'queue'; st.queuePos = payload.pos || 0; }
+    else if (payload.state === 'resting') { st.status = 'rest'; st.restUntil = payload.until || 0; }
     else if (payload.state === 'stopped') st.status = 'stop';
     else if (payload.state === 'error') { st.status = 'err'; toast(`Thiết bị lỗi: ${payload.msg || ''}`, false); }
     else if (payload.state === 'done') st.status = 'stop';
@@ -197,19 +201,40 @@ function buildDeviceRow(d) {
   return tr;
 }
 
+// ── MÁY "ĐANG BẬN" (2026-09-18) ──
+// Đang chạy, đang XẾP HÀNG chờ khe, hoặc đang NGHỈ giữa hai ca chờ tự chạy lại — cả ba đều đang
+// có một lượt chạy dính líu, nên cả ba phải hiện nút Dừng. Bản cũ vẽ hai trạng thái sau thành
+// "Đã dừng": người dùng bấm Chạy lần nữa (sinh lượt thứ hai tranh khe), hoặc bấm Xoá tưởng an
+// toàn (sinh "máy ma" chạy tiếp dưới mã `d_…` sau giờ nghỉ).
+const TRANG_THAI_BAN = new Set(['run', 'queue', 'rest']);
+function dangBan(id) {
+  const st = deviceState[id];
+  return !!st && TRANG_THAI_BAN.has(st.status);
+}
+
+function nhanTrangThai(st) {
+  if (st.status === 'queue') return `Xếp hàng (${st.queuePos || '…'})`;
+  if (st.status === 'rest') {
+    const luc = st.restUntil
+      ? new Date(st.restUntil).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+      : '…';
+    return `Nghỉ → ${luc}`;
+  }
+  return { run: 'Đang chạy', stop: 'Đã dừng', err: 'Lỗi' }[st.status] || 'Đã dừng';
+}
+
 function deviceRowHtml(d) {
   const st = deviceState[d.id] || { status: 'stop', checked: 0, qualified: 0 };
-  const running = st.status === 'run';
-  const label = { run: 'Đang chạy', stop: 'Đã dừng', err: 'Lỗi' }[st.status] || 'Đã dừng';
+  const ban = TRANG_THAI_BAN.has(st.status);
   return `
     <td><input type="checkbox" class="row-check" data-id="${d.id}"></td>
     <td class="pname">${esc(d.name)}</td>
     <td class="pserial">${esc(d.serial)}</td>
-    <td><span class="pstat-badge ${st.status}">${label}</span></td>
+    <td><span class="pstat-badge ${st.status}">${esc(nhanTrangThai(st))}</span></td>
     <td class="pchecked">${st.checked || 0}</td>
     <td class="pvalid">${st.qualified || 0}</td>
     <td class="prow-actions">
-      <button class="btn btn-sm" data-act="toggle" data-id="${d.id}">${running ? '■ Dừng' : '▶ Chạy'}</button>
+      <button class="btn btn-sm" data-act="toggle" data-id="${d.id}">${ban ? '■ Dừng' : '▶ Chạy'}</button>
       <button class="btn-icon" data-act="settings" data-id="${d.id}" title="Cài đặt riêng">⚙️</button>
       <button class="btn-icon" data-act="log" data-id="${d.id}" title="Xem log">📄</button>
       <button class="btn-icon" data-act="check" data-id="${d.id}" title="Kiểm tra kết nối">🔌</button>
@@ -231,8 +256,10 @@ function renderResultCount() {
   document.getElementById('crawlCount').textContent = `${crawlResults.length} sound`;
 }
 
+// Máy đang nghỉ giữa ca hay đang xếp hàng CŨNG tính là phiên còn sống — không thì bấm Chạy một
+// máy khác lúc cả farm đang nghỉ sẽ xoá sạch bảng kết quả của cả phiên.
 function anyDeviceRunning() {
-  return Object.values(deviceState).some((s) => s.status === 'run');
+  return Object.values(deviceState).some((s) => TRANG_THAI_BAN.has(s.status));
 }
 
 // Lam moi bang "Du lieu thu thap" khi BAT DAU 1 phien chay moi (khong con may nao dang chay).
@@ -283,6 +310,8 @@ async function startDeviceById(id) {
     toast(res.msg || 'Không chạy được', false);
     return;
   }
+  // Lời gọi trên có thể treo rất lâu (máy xếp hàng chờ khe), và trong lúc đó máy có thể đã bị xoá.
+  if (!deviceState[id]) return;
   deviceState[id].status = 'run';
   renderDeviceRow(id);
 }
@@ -723,7 +752,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('runSelectedBtn').addEventListener('click', () => {
     const ids = getSelectedIds();
     if (!ids.length) { toast('Chưa chọn thiết bị nào', false); return; }
-    ids.forEach(startDeviceById);
+    // Bỏ qua máy đang bận: bấm Chạy cho máy đang xếp hàng là sinh lượt thứ hai tranh khe.
+    ids.filter((id) => !dangBan(id)).forEach(startDeviceById);
   });
   document.getElementById('stopSelectedBtn').addEventListener('click', () => {
     const ids = getSelectedIds();
@@ -743,7 +773,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const id = btn.dataset.id;
     const act = btn.dataset.act;
     if (act === 'toggle') {
-      deviceState[id].status === 'run' ? stopDeviceById(id) : startDeviceById(id);
+      dangBan(id) ? stopDeviceById(id) : startDeviceById(id);
     } else if (act === 'settings') {
       openSettingsModal([id]);
     } else if (act === 'log') {

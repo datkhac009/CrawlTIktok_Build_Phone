@@ -658,8 +658,10 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
   }
 
   // Không được nấp sau `sheets.isEnabled()` — tắt Sheet thì vẫn phải lọc.
+  // (2026-09-18: khối lọc dời ra hàm riêng `quaCongLocTrung` để kết quả về lúc đang nạp Sheet
+  // được giữ lại rồi mới cho qua — xem mục 19.)
   {
-    const khoiData = /\(deviceId, data\) => \{[\s\S]*?\n      \},/.exec(mj);
+    const khoiData = /function quaCongLocTrung\(deviceId, data\) \{[\s\S]*?\n\}/.exec(mj);
     const kD = khoiData ? khoiData[0] : '';
     const viTriLoc = kD.indexOf('linkstore.load().has(khoa)');
     const viTriSheet = kD.indexOf('sheets.isEnabled()');
@@ -680,6 +682,52 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
   // `linkstore.cjs` là module DÙNG CHUNG với bản PC — `srcsync` khoá nó từng byte.
   check('18h. linkstore nằm trong danh sách module dùng chung',
     /'linkstore\.cjs'/.test(doc('tests/srcsync.test.cjs')));
+}
+
+// ── 19. Máy ma + đọc Sheet (2026-09-18) ──
+// Phần HÀNH VI (xoá lúc nghỉ, giữ kết quả lúc nạp Sheet, bấm Chạy hai lần, Dừng tất cả, dừng lúc
+// chờ giãn cách) được `tests/mainflow.test.cjs` chạy thật. Ở đây chỉ canh những chỗ phép thử đó
+// không với tới: runner THẬT, vòng đồng bộ 5 phút, và giao diện.
+{
+  const mj = doc('main.js');
+  const rn = doc('src/runner.cjs');
+  const rj = doc('renderer/renderer.js');
+
+  // Chặn theo id không đủ: xoá rồi thêm lại một máy là hai id cho cùng một serial.
+  check('19a. Runner từ chối tiến trình thứ hai trên cùng một điện thoại',
+    /for \(const \[khac, e\] of _active\)[\s\S]{0,80}e\.serial === serial[\s\S]{0,40}throw/.test(rn));
+
+  const khoiDong = /_reseedTimer = setInterval\(async \(\) => \{[\s\S]*?\n  \}, phut \* 60 \* 1000\);/.exec(mj);
+  const dongBo = khoiDong ? khoiDong[0] : '';
+  // Gốc của "call data từ Google Sheet lên chưa tốt": vòng đồng bộ cũ chỉ ghi cổng đẩy, còn cổng
+  // hiển thị hỏi kho cục bộ — link máy khác vừa đẩy lên không bao giờ tới được cổng hiển thị.
+  check('19b. Vòng đồng bộ Sheet ghi vào KHO LINK (cổng hiển thị hỏi kho này)',
+    /napVaoBoLoc\(links\)/.test(dongBo)
+    && /function napVaoBoLoc[\s\S]{0,200}linkstore\.addUrls\(links\)/.test(mj));
+  check('19c. Vòng đồng bộ đọc TĂNG DẦN (Sheet lớn không bị tải trọn mỗi 5 phút)',
+    /readLinks\([^)]*\{ fromRow: from \}\)/.test(dongBo) && /_sheetNextRow = links\.nextRow/.test(dongBo));
+  check('19d. Lỗi đồng bộ Sheet được BÁO RA, không nuốt im lặng',
+    /catch \(e\) \{[\s\S]{0,400}sendToRenderer\('crawl-status'[\s\S]{0,80}sheet-error/.test(dongBo)
+    && !/catch \(_\) \{ \/\* thử lại vòng sau \*\/ \}/.test(mj));
+  check('19e. Link đẩy lên Sheet xong được ghi ngược vào kho (setOnPushed)',
+    /sheets\.setOnPushed\(\(urls\) => \{[^}]*linkstore\.addUrls\(urls\)/.test(mj));
+  check('19f. Nạp Sheet KHÔNG chặn máy khởi động (bài học QĐ-09)',
+    /if \(sheets\.isEnabled\(\)\) napSheetDauPhien\(cfg\);/.test(mj)
+    && !/await (seedKnownLinks|napSheetDauPhien)/.test(mj));
+  check('19g. Nút Xoá đi qua cùng đường dọn dẹp với nút Dừng',
+    /'devices-delete'[\s\S]{0,700}dungHan\(data\.id\)/.test(mj)
+    && /function dungHan[\s\S]{0,200}huyNghi\(deviceId\)[\s\S]{0,60}_lastParams\.delete\(deviceId\)[\s\S]{0,60}devslot\.cancel\(deviceId\)/.test(mj));
+
+  // Giao diện: hai trạng thái bản cũ vẽ thành "Đã dừng".
+  check('19h. Giao diện nhận trạng thái XẾP HÀNG và NGHỈ',
+    /state === 'queued'\) \{ st\.status = 'queue'/.test(rj) && /state === 'resting'\) \{ st\.status = 'rest'/.test(rj));
+  check('19i. Máy xếp hàng / đang nghỉ hiện nút Dừng, không hiện nút Chạy',
+    /TRANG_THAI_BAN = new Set\(\['run', 'queue', 'rest'\]\)/.test(rj)
+    && /dangBan\(id\) \? stopDeviceById\(id\) : startDeviceById\(id\)/.test(rj));
+  check('19j. "Chạy đã chọn" bỏ qua máy đang bận',
+    /ids\.filter\(\(id\) => !dangBan\(id\)\)\.forEach\(startDeviceById\)/.test(rj));
+  check('19k. Kết quả của máy đã xoá ghi rõ "máy đã xoá", không để mã trần',
+    /máy đã xoá \(\$\{deviceId\}\)/.test(rj) && /máy đã xoá \(\$\{deviceId\}\)/.test(mj));
 }
 
 const failed = results.filter((r) => !r.pass);

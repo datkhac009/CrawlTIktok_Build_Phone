@@ -42,6 +42,11 @@ const DUNG_CHUNG = [
   'phaseplan.cjs',     // chia pha theo thời gian
   'linkkey.cjs',       // chuẩn hoá link sound + nhận Original Sound đa ngôn ngữ
   'linkstore.cjs',     // kho link cục bộ để lọc trùng, sống qua lần tắt app
+  // Đọc/ghi Google Sheet (thêm 2026-09-18). Bản phone từng dùng một bản rẽ nhánh cũ, 277 dòng:
+  // mỗi 5 phút đọc TRỌN cột B (bản PC đo: 172.000 dòng = 4,5 phút / 13 MB), timeout chặt nên
+  // hỏng trong im lặng, và không có `setOnPushed` để ghi ngược vào kho link. Bản PC đã vá cả ba
+  // qua sự cố thật (QĐ-09/21), nên chép nguyên về thay vì vá lại lần thứ hai.
+  'sheets.cjs',
 ];
 
 function bam(p) {
@@ -105,6 +110,8 @@ if (coPC) {
     'textset.cjs': ['appendLines', 'readLines', 'rewriteAll'],
     'phaseplan.cjs': ['buildPhasePlan', 'isPhasedMode'],
     'linkkey.cjs': ['canonicalSoundUrl', 'normalizeKey', 'isOriginalSound'],
+    'sheets.cjs': ['configure', 'isEnabled', 'enqueue', 'flush', 'flushAll', 'readLinks',
+      'updateKnownLinks', 'setOnPushed', 'testConnection', 'pushDedup', 'dropFromBuffer'],
   };
   const loi = [];
   for (const [f, ten] of Object.entries(CAN)) {

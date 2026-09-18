@@ -121,6 +121,18 @@ function startDevice(params, onData, onStatus) {
   if (_active.has(deviceId)) {
     throw new Error('Thiết bị này đang chạy rồi.');
   }
+  // ── MỘT ĐIỆN THOẠI, MỘT TIẾN TRÌNH (2026-09-18) ──
+  // Chặn theo id thôi là KHÔNG đủ. Xoá một máy lúc nó đang nghỉ giữa ca rồi thêm lại đúng điện
+  // thoại đó là ra hai id cho cùng một serial — và hai tiến trình Python cùng lái một màn hình:
+  // cùng vuốt, cùng bấm, cùng thấy một video nên cùng báo về MỘT sound hai lần. Đó chính là hai
+  // dòng "thật huy" trùng nhau chủ dự án chụp màn hình gửi (một dòng ghi tên máy, một dòng ghi
+  // mã `d_…` của máy đã xoá).
+  for (const [khac, e] of _active) {
+    if (e.serial === serial) {
+      throw new Error(`Điện thoại ${serial} đang được một lượt chạy khác điều khiển (${khac}). `
+        + 'Bấm Dừng lượt đó trước.');
+    }
+  }
 
   // Kiểm TRƯỚC khi spawn, và ném ra câu người đọc hiểu được. Bản cũ `spawn('python', ...)` với
   // python 3.14 trong PATH thì tiến trình chết ngay vì thiếu uiautomator2, và tất cả những gì

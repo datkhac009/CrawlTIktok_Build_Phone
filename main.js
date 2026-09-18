@@ -17,7 +17,23 @@ const store = new Store({ name: 'settings' });
 
 let mainWindow = null;
 let _reseedTimer = null;
-let _seededThisSession = false;
+let _reseedBusy = false;
+// Lỗi đồng bộ Sheet gần nhất. Chỉ báo lên màn hình khi lỗi ĐỔI hoặc khi đọc lại được — lỗi mạng
+// kéo dài mà báo mỗi 5 phút thì người dùng quen mắt và bỏ qua luôn cả lỗi thật.
+let _reseedLoi = '';
+// ĐỌC TĂNG DẦN (clone PC QĐ-09/21): lần đồng bộ sau chỉ đọc từ dòng chưa đọc trở đi.
+let _sheetNextRow = 1;
+
+// ── NẠP SHEET ĐẦU PHIÊN ──
+// Một lời hứa DÙNG CHUNG cho cả phiên. Máy thứ nhất tạo, mọi máy sau dùng lại — không đọc Sheet
+// hai lần song song.
+//
+// ⚠ KHÔNG bắt máy đứng chờ nó. Bản PC từng `await` việc đọc Sheet trước khi khởi động và giao
+// diện treo vô hạn ở "Đang khởi động..." với Sheet 172.000 dòng (QĐ-09). Ở đây máy chạy ngay;
+// chỉ những KẾT QUẢ về sớm, lúc bộ lọc chưa biết link của máy khác, là bị giữ lại chờ — xem
+// `nhanKetQua`.
+let _seedPromise = null;
+let _seedDone = false;
 
 // ── NGHỈ GIỮA HAI CHU KỲ ──
 // Máy chạy hết ca thì tiến trình Python thoát và NHẢ KHE cho máy đang xếp hàng. Sau khoảng
@@ -31,6 +47,18 @@ function huyNghi(deviceId) {
   const t = _restTimers.get(deviceId);
   if (t) { clearTimeout(t); _restTimers.delete(deviceId); }
   _cycleDone.delete(deviceId);
+}
+
+// Dừng HẲN một máy, ở BẤT KỲ trạng thái nào: đang chạy, đang xếp hàng, hay đang nghỉ giữa ca.
+// Nút Dừng và nút Xoá cùng đi qua đây — hai đường dọn dẹp viết riêng là có ngày một đường quên
+// một bước (đúng chuyện đã xảy ra: nút Xoá quên huỷ lịch chạy lại).
+// Trả `'queue'` nếu máy chỉ đang xếp hàng, `'run'` nếu có tiến trình để giết, `''` nếu không.
+function dungHan(deviceId) {
+  huyNghi(deviceId);
+  _lastParams.delete(deviceId);
+  if (devslot.cancel(deviceId)) return 'queue';
+  devslot.release(deviceId);
+  return runner.stopDevice(deviceId).ok ? 'run' : '';
 }
 
 function sendToRenderer(channel, payload) {
@@ -72,6 +100,9 @@ app.whenReady().then(() => {
   } catch (e) {
     console.error('[linkstore] không nạp được kho link:', e.message);
   }
+  // Link đẩy lên Sheet thành công → ghi LUÔN vào kho cục bộ, không đợi vòng đồng bộ sau đọc
+  // ngược về: app tắt trước vòng đó là mất (clone bản PC, main.js:435).
+  sheets.setOnPushed((urls) => { try { linkstore.addUrls(urls); } catch (_) {} });
   createWindow();
 });
 
@@ -98,41 +129,131 @@ function applySheetsConfig() {
   return cfg;
 }
 
+// Nạp link từ Sheet vào CẢ HAI bộ lọc: cổng đẩy (`sheets._knownLinks`) và kho cục bộ
+// (`linkstore`) — cổng hiển thị hỏi kho cục bộ. Bản cũ lúc nạp thì ghi cả hai, nhưng vòng đồng bộ
+// 5 phút lại chỉ ghi cổng đẩy: link máy khác vừa đẩy lên KHÔNG BAO GIỜ tới được cổng hiển thị.
+function napVaoBoLoc(links) {
+  sheets.updateKnownLinks(links);
+  try { return linkstore.addUrls(links); } catch (_) { return 0; }
+}
+
 async function seedKnownLinks(cfg) {
   if (!cfg.enabled || !cfg.spreadsheetId || !cfg.sa) return;
   try {
+    // Lần đầu đọc TRỌN từ dòng 1, giống bản PC — bắt kịp mọi thứ máy khác đã đẩy lên.
     const links = await sheets.readLinks(cfg.spreadsheetId, cfg.tab || 'Data', cfg.sa);
-    sheets.updateKnownLinks(links);
-    // Ghi luôn vào kho cục bộ: lần mở app sau không phải chờ đọc Sheet mới có bộ lọc.
-    let them = 0;
-    try { them = linkstore.addUrls(links); } catch (_) { them = 0; }
+    const them = napVaoBoLoc(links);
+    if (links.nextRow) _sheetNextRow = links.nextRow;
     sendToRenderer('crawl-status', {
       deviceId: null, kind: 'sheet-info',
       msg: `Đã nạp ${links.length} link từ Sheet để lọc trùng`
         + (them ? ` (${them} link mới, kho cục bộ nay có ${linkstore.count()})` : ''),
     });
   } catch (e) {
-    sendToRenderer('crawl-status', { deviceId: null, kind: 'sheet-error', msg: `Đọc Sheet lỗi: ${e.message}` });
+    sendToRenderer('crawl-status', {
+      deviceId: null, kind: 'sheet-error',
+      msg: `Đọc Sheet lỗi: ${e.message} — vẫn quét, nhưng chỉ lọc trùng được với kho link trên máy này.`,
+    });
   }
+}
+
+function napSheetDauPhien(cfg) {
+  if (!_seedPromise) {
+    _seedDone = false;
+    _seedPromise = seedKnownLinks(cfg).finally(() => {
+      _seedDone = true;
+      startReseedTimer(cfg);
+    });
+  }
+  return _seedPromise;
 }
 
 function startReseedTimer(cfg) {
   if (_reseedTimer) { clearInterval(_reseedTimer); _reseedTimer = null; }
   if (!cfg.enabled || !cfg.spreadsheetId || !cfg.sa) return;
-  const everyMs = Math.max(1, parseFloat(cfg.reseedMinutes) || 5) * 60 * 1000;
+  const phut = Math.max(1, parseFloat(cfg.reseedMinutes) || 5);
   _reseedTimer = setInterval(async () => {
-    if (!runner.runningIds().length) return;
+    if (_reseedBusy || !runner.runningIds().length) return;
+    _reseedBusy = true;
     try {
-      const links = await sheets.readLinks(cfg.spreadsheetId, cfg.tab || 'Data', cfg.sa);
-      sheets.updateKnownLinks(links);
-    } catch (_) { /* thử lại vòng sau */ }
-  }, everyMs);
+      // ĐỌC TĂNG DẦN, TỰ THÍCH ỨNG THEO CỠ SHEET — chép nguyên cách bản PC làm (QĐ-09/21):
+      //   • Sheet nhỏ → đọc trọn từ dòng 1: vài giây, và tự khỏi cái bẫy "xoá dòng giữa bảng".
+      //   • Sheet lớn → chỉ đọc từ dòng chưa đọc. Đọc trọn 172.000 dòng mất 4,5 phút / 13 MB mà
+      //     chu kỳ đồng bộ chỉ 5 phút: app tự bóp nghẹt mạng của chính nó.
+      const SMALL_SHEET_ROWS = 5000;
+      const from = _sheetNextRow > SMALL_SHEET_ROWS ? _sheetNextRow : 1;
+      const links = await sheets.readLinks(cfg.spreadsheetId, cfg.tab || 'Data', cfg.sa, { fromRow: from });
+      const them = napVaoBoLoc(links);
+      if (links.nextRow) _sheetNextRow = links.nextRow;
+      if (_reseedLoi) {
+        _reseedLoi = '';
+        sendToRenderer('crawl-status', { deviceId: null, kind: 'sheet-info', msg: 'Đồng bộ Sheet chạy lại được rồi.' });
+      }
+      if (them) console.log(`[reseed] Sheet từ dòng ${from}: +${them} link mới vào kho (lần sau đọc từ ${_sheetNextRow})`);
+    } catch (e) {
+      // Bản cũ nuốt lỗi ở đây trong im lặng: Sheet hỏng bao lâu thì bộ lọc liên máy chết bấy lâu
+      // mà không ai biết (QĐ-29/30).
+      const m = String((e && e.message) || e);
+      if (m !== _reseedLoi) {
+        _reseedLoi = m;
+        sendToRenderer('crawl-status', {
+          deviceId: null, kind: 'sheet-error',
+          msg: `Đồng bộ Sheet lỗi, thử lại sau ${phut} phút: ${m}`,
+        });
+      }
+    } finally {
+      _reseedBusy = false;
+    }
+  }, phut * 60 * 1000);
 }
 
 function onDevicesAllStopped() {
   if (!runner.runningIds().length) {
-    _seededThisSession = false;
+    // Phiên sau nạp lại Sheet từ đầu. `_sheetNextRow` thì GIỮ: nó vẫn đúng cho Sheet này.
+    _seedPromise = null;
+    _seedDone = false;
     if (_reseedTimer) { clearInterval(_reseedTimer); _reseedTimer = null; }
+  }
+}
+
+// ── CỔNG NHẬN KẾT QUẢ: lọc trùng rồi mới gửi lên màn hình và Sheet ──
+//
+// Đây là chỗ DUY NHẤT mọi máy đi qua, nên cũng là chỗ duy nhất biết được máy khác đã thu link
+// này chưa. Khoá so trùng dùng `normalizeKey` — ĐÚNG hàm mà kho link và đường đẩy Sheet dùng. Ba
+// nơi tự chuẩn hoá theo cách riêng là có ngày lệch nhau (bài học QĐ-10).
+//
+// Kết quả về lúc Sheet CHƯA NẠP XONG thì GIỮ LẠI, nạp xong mới cho qua cổng. Không giữ thì máy
+// nào quét trúng một link máy khác vừa đẩy lên sẽ được coi là link mới — và bị đẩy lên Sheet lần
+// hai. Lời hứa `.then` chạy đúng thứ tự đăng ký nên thứ tự kết quả không bị xáo.
+function nhanKetQua(deviceId, data) {
+  if (_seedPromise && !_seedDone) {
+    _seedPromise.then(() => quaCongLocTrung(deviceId, data));
+    return;
+  }
+  quaCongLocTrung(deviceId, data);
+}
+
+function quaCongLocTrung(deviceId, data) {
+  const khoa = normalizeKey(data.url || '');
+  if (khoa && linkstore.load().has(khoa)) {
+    sendToRenderer('crawl-status', {
+      deviceId, kind: 'log',
+      line: `Bỏ "${data.name || '(không tên)'}" — đã thu từ trước.`,
+    });
+    return;
+  }
+  if (khoa) {
+    try { linkstore.addUrls([data.url]); } catch (_) { /* ghi hỏng thì thôi, đừng chặn quét */ }
+  }
+
+  sendToRenderer('crawl-data', { deviceId, ...data });
+  if (sheets.isEnabled()) {
+    const dev = devices.loadDevices().find((d) => d.id === deviceId);
+    // Không thấy tên = máy đã bị xoá mà vẫn còn kết quả chảy về. Nói thẳng ra thay vì để mã
+    // `d_…` trần — mã trần là thứ đã khiến lỗi "máy ma" nằm im không ai nhận ra.
+    const deviceName = dev ? dev.name : `máy đã xoá (${deviceId})`;
+    // Cột: A=Tên sound, B=Link, C=Số post, D=Thiết bị, E=Tình trạng(=1)
+    sheets.enqueue([data.name || '', data.url || '', data.posts ?? '', deviceName, 1]);
   }
 }
 
@@ -144,7 +265,13 @@ ipcMain.handle('devices-list', () => devices.loadDevices());
 ipcMain.handle('devices-add', (_e, data) => devices.addDevice(data));
 ipcMain.handle('devices-update', (_e, data) => devices.updateDevice(data));
 ipcMain.handle('devices-delete', (_e, data) => {
-  runner.stopDevice(data.id);
+  // ⚠ XOÁ PHẢI DỌN ĐỦ NHƯ DỪNG (2026-09-18).
+  // Bản cũ chỉ gọi `runner.stopDevice` — hàm đó KHÔNG làm gì khi máy đang nghỉ giữa ca hoặc
+  // đang xếp hàng, vì lúc đó không có tiến trình nào để giết. Lịch chạy lại vẫn còn, nên hết
+  // giờ nghỉ Python chạy lại dưới cái id vừa xoá: không có dòng trong bảng, không có log, không
+  // dừng được, chỉ lộ ra ở cột "Thiết bị" dạng `d_1789619803915`. Thêm lại đúng máy đó là hai
+  // tiến trình cùng lái một điện thoại.
+  dungHan(data.id);
   return devices.deleteDevice(data);
 });
 ipcMain.handle('devices-list-adb', () => devices.listAdbSerials());
@@ -155,59 +282,47 @@ ipcMain.handle('device-identify', (_e, serial) => devices.identifyDevice(serial)
 // Chạy một lượt. Tách riêng để lượt chạy lại sau giờ nghỉ đi qua ĐÚNG đường này — viết hai
 // đường khởi động là chắc chắn có ngày chúng lệch nhau.
 async function chayMot(params) {
+  const id = params && params.deviceId;
+  // ── MỘT MÁY CHỈ MỘT LƯỢT (2026-09-18) ──
+  // Bấm Chạy lần hai lúc máy đang xếp hàng là có HAI chỗ chờ khe cho cùng một máy. Lượt sau tới
+  // khe thì `startDevice` ném "đang chạy rồi", và nhánh lỗi bên dưới nhả khe — nhả mất khe của
+  // CHÍNH lượt đầu đang chạy. Kết quả: vượt trần số máy chạy đồng thời mà không ai biết.
+  if (runner.isRunning(id) || devslot.isActive(id) || devslot.isWaiting(id)) {
+    return { ok: false, msg: 'Máy này đang chạy hoặc đang xếp hàng rồi.' };
+  }
+  let giuKhe = false;   // chỉ nhả khe ở nhánh lỗi khi CHÍNH lượt này đã giữ khe
   try {
     const cfg = applySheetsConfig();
-    if (sheets.isEnabled() && !_seededThisSession) {
-      _seededThisSession = true;
-      await seedKnownLinks(cfg);
-      startReseedTimer(cfg);
-    }
+    // KHÔNG await: máy chạy ngay, kết quả về sớm được giữ lại ở `nhanKetQua` tới khi nạp xong.
+    if (sheets.isEnabled()) napSheetDauPhien(cfg);
     // ── XẾP HÀNG NẾU ĐÃ CHẠM TRẦN SỐ MÁY ĐỒNG THỜI ──
     // 19 máy bật cùng lúc là 19 tiến trình Python cùng dồn lệnh qua MỘT adb server dùng chung.
     const khe = await devslot.acquire(params.deviceId, (pos) => {
       sendToRenderer('crawl-status', {
-        deviceId: params.deviceId, kind: 'status', state: 'queued',
+        deviceId: params.deviceId, kind: 'status', state: 'queued', pos,
         msg: `Đang xếp hàng (${pos}) — chờ khe trong ${devslot.getMax()} máy chạy đồng thời`,
       });
     });
     // `false` = người dùng đã bấm Dừng trong lúc máy còn đang xếp hàng.
     if (!khe) return { ok: false, msg: 'Đã huỷ khi đang xếp hàng.' };
+    giuKhe = true;
 
     // Giãn cách: hai máy cùng được nhả khe một lúc mà spawn cùng lúc thì vẫn dồn cục.
     const cho = devslot.staggerDelay();
     if (cho > 0) await new Promise((r) => setTimeout(r, cho));
 
+    // ⚠ HỎI LẠI SAU KHI CHỜ: người dùng có thể đã bấm Dừng/Xoá trong lúc máy chờ giãn cách. Lúc đó
+    // máy đã giữ khe (không còn trong hàng để rút) mà chưa có tiến trình (không có gì để giết), nên
+    // nút Dừng không chạm được vào nó — thiếu dòng này là máy vẫn khởi động sau khi đã bị dừng.
+    // `_lastParams` còn = người dùng còn muốn máy này chạy (Dừng và Xoá đều xoá nó).
+    if (!_lastParams.has(id)) {
+      devslot.release(id);
+      return { ok: false, msg: 'Đã huỷ trước khi kịp khởi động.' };
+    }
+
     runner.startDevice(
       params,
-      (deviceId, data) => {
-        // ── LỌC TRÙNG Ở ĐÂY, TRƯỚC KHI GỬI LÊN MÀN HÌNH ──
-        //
-        // Đây là chỗ DUY NHẤT mọi máy đi qua, nên cũng là chỗ duy nhất biết được máy khác đã thu
-        // link này chưa. Bản cũ gửi thẳng lên màn hình rồi mới lọc ở đường đẩy Sheet — nên bảng
-        // kết quả bày ra link trùng, đúng cái chủ dự án chụp màn hình gửi lại.
-        //
-        // Khoá so trùng dùng `normalizeKey` — ĐÚNG hàm mà kho link và đường đẩy Sheet dùng. Ba
-        // nơi tự chuẩn hoá theo cách riêng là có ngày lệch nhau (bài học QĐ-10).
-        const khoa = normalizeKey(data.url || '');
-        if (khoa && linkstore.load().has(khoa)) {
-          sendToRenderer('crawl-status', {
-            deviceId, kind: 'log',
-            line: `Bỏ "${data.name || '(không tên)'}" — đã thu từ trước.`,
-          });
-          return;
-        }
-        if (khoa) {
-          try { linkstore.addUrls([data.url]); } catch (_) { /* ghi hỏng thì thôi, đừng chặn quét */ }
-        }
-
-        sendToRenderer('crawl-data', { deviceId, ...data });
-        if (sheets.isEnabled()) {
-          const dev = devices.loadDevices().find((d) => d.id === deviceId);
-          const deviceName = dev ? dev.name : deviceId;
-          // Cột: A=Tên sound, B=Link, C=Số post, D=Thiết bị, E=Tình trạng(=1)
-          sheets.enqueue([data.name || '', data.url || '', data.posts ?? '', deviceName, 1]);
-        }
-      },
+      (deviceId, data) => nhanKetQua(deviceId, data),
       (deviceId, status) => {
         sendToRenderer('crawl-status', { deviceId, ...status });
         // Python báo hết ca TRƯỚC khi thoát. Ghi nhớ để lúc tiến trình đóng thì biết đây là
@@ -232,7 +347,7 @@ async function chayMot(params) {
             const phut = lo + Math.random() * (hi - lo);
             const ms = Math.round(phut * 60000);
             sendToRenderer('crawl-status', {
-              deviceId, kind: 'status', state: 'resting',
+              deviceId, kind: 'status', state: 'resting', until: Date.now() + ms,
               msg: `Hết ca — nghỉ ${phut.toFixed(1)} phút rồi tự chạy lại (đã nhả khe cho máy đang chờ)`,
             });
             const t = setTimeout(() => {
@@ -248,8 +363,9 @@ async function chayMot(params) {
     );
     return { ok: true };
   } catch (e) {
-    // Spawn hỏng (thiếu Python, thiếu adb...) thì khe vừa xin phải trả lại ngay.
-    devslot.release(params && params.deviceId);
+    // Spawn hỏng (thiếu Python, thiếu adb, điện thoại đang bị lượt khác lái...) thì khe vừa xin
+    // phải trả lại ngay — nhưng CHỈ khe mà chính lượt này đã giữ.
+    if (giuKhe) devslot.release(id);
     return { ok: false, msg: String(e.message || e) };
   }
 }
@@ -262,28 +378,29 @@ ipcMain.handle('device-start', async (_e, params) => {
 });
 
 ipcMain.handle('device-stop', async (_e, deviceId) => {
-  // Huỷ hẹn giờ nghỉ TRƯỚC: máy có thể đang trong giờ nghỉ giữa hai ca, lúc đó không có tiến
-  // trình nào để giết nhưng vẫn phải chặn lượt chạy lại đã hẹn.
-  huyNghi(deviceId);
-  _lastParams.delete(deviceId);
-
-  // Máy có thể đang XẾP HÀNG chứ chưa chạy — lúc đó không có tiến trình nào để giết, chỉ cần
-  // rút khỏi hàng. Không rút thì lát nữa tới lượt nó, app sẽ spawn cho một máy người dùng đã
-  // bảo dừng.
-  if (devslot.cancel(deviceId)) {
-    sendToRenderer('crawl-status', { deviceId, kind: 'status', state: 'stopped', msg: 'Đã huỷ khi đang xếp hàng.' });
-    return { ok: true };
-  }
-  devslot.release(deviceId);
-  const r = runner.stopDevice(deviceId);
+  // Máy có thể đang chạy, đang XẾP HÀNG, hoặc đang NGHỈ giữa hai ca. Hai trạng thái sau không có
+  // tiến trình nào để giết, nhưng vẫn phải rút khỏi hàng / huỷ lịch chạy lại — không thì lát nữa
+  // app tự chạy một máy người dùng đã bảo dừng.
+  const dangNghi = _restTimers.has(deviceId);
+  const vua = dungHan(deviceId);
+  let msg = '';
+  if (vua === 'queue') msg = 'Đã huỷ khi đang xếp hàng.';
+  else if (!vua && dangNghi) msg = 'Đã huỷ lượt chạy lại đang hẹn sau giờ nghỉ.';
+  // Máy đang chạy thì KHÔNG báo ở đây: tiến trình đóng lại sẽ tự báo 'stopped' kèm dòng tổng kết.
+  if (msg) sendToRenderer('crawl-status', { deviceId, kind: 'status', state: 'stopped', msg });
   await sheets.flushAll().catch(() => {});
   onDevicesAllStopped();
-  return r;
+  return { ok: true };
 });
 ipcMain.handle('devices-stop-all', async () => {
-  Array.from(_restTimers.keys()).forEach(huyNghi);
-  _lastParams.clear();
-  runner.stopAll();
+  // Gom MỌI máy đang dính líu tới lượt chạy: đang chạy, đang nghỉ, và đang xếp hàng (máy xếp hàng
+  // vẫn có mặt trong `_lastParams`). Bản cũ quên nhóm cuối — bấm Dừng tất cả xong, máy đang xếp
+  // hàng vẫn tự chạy khi tới lượt.
+  // Thứ tự không quan trọng: máy vừa dừng nhả khe và khe đó có thể được trao cho một máy đang
+  // chờ ngay trong vòng lặp này — nhưng máy đó sẽ tự huỷ ở lần hỏi lại `_lastParams` trong
+  // `chayMot` trước khi kịp khởi động (tests/mainflow.test.cjs mục E + F).
+  const ids = new Set([..._lastParams.keys(), ..._restTimers.keys(), ...runner.runningIds()]);
+  ids.forEach(dungHan);
   await sheets.flushAll().catch(() => {});
   onDevicesAllStopped();
   return { ok: true };
@@ -296,9 +413,11 @@ ipcMain.handle('sheets-set-config', async (_e, cfg) => {
   store.set('sheets_config', cfg);
   const applied = applySheetsConfig();
   if (sheets.isEnabled() && runner.runningIds().length) {
-    await seedKnownLinks(applied);
-    startReseedTimer(applied);
-    _seededThisSession = true;
+    // Đổi cấu hình giữa phiên (có thể là sang một Sheet khác) → nạp lại từ đầu theo cấu hình
+    // mới, và bỏ mốc dòng cũ vì nó thuộc về Sheet cũ.
+    _seedPromise = null;
+    _sheetNextRow = 1;
+    napSheetDauPhien(applied);
   } else if (!sheets.isEnabled() && _reseedTimer) {
     clearInterval(_reseedTimer); _reseedTimer = null;
   }

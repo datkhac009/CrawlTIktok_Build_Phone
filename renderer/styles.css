@@ -192,6 +192,9 @@ body {
 .pstat-badge.run { color: var(--ok); }
 .pstat-badge.stop { color: var(--text-muted); }
 .pstat-badge.err { color: var(--primary-hover); }
+/* Xếp hàng / nghỉ giữa ca: KHÁC màu "Đã dừng" để không ai tưởng máy đã tắt hẳn rồi bấm Xoá. */
+.pstat-badge.queue { color: #f5b942; }
+.pstat-badge.rest { color: #7aa7ff; }
 
 /* Placeholder */
 .placeholder {
