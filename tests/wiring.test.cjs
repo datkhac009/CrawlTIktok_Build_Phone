@@ -637,6 +637,51 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     ke({ like: 'mot_gia_tri_chua_tung_co' }) === '');
 }
 
+// ── 18. Lọc trùng link phải chạy CHO MỌI MÁY, và chạy cả khi tắt Google Sheet ──
+// SỰ CỐ THẬT (2026-09-18): chủ dự án chụp màn hình bảng kết quả có hai dòng "thật huy" trùng
+// nhau — cùng link `original-sound-7633696888679598855`, cùng 13.900 post, chỉ khác máy.
+// Bản cũ chỉ lọc trùng ở đường ĐẨY LÊN SHEET, nên ba lỗ hổng cùng lúc: tắt Sheet là mất hẳn bộ
+// lọc; bảng trên màn hình không lọc gì cả; và tắt app mở lại là quên sạch link đã thu.
+{
+  const mj = doc('main.js');
+
+  check('18. Có kho link cục bộ (chép từ bản PC)', /require\('\.\/src\/linkstore\.cjs'\)/.test(mj));
+  check('18b. Nạp kho ngay khi mở app, trước khi máy nào kịp quét',
+    /linkstore\.ensureFile\(\)[\s\S]{0,200}?linkstore\.load\(true\)/.test(mj));
+
+  // Lọc PHẢI nằm trước `sendToRenderer('crawl-data'...)`, nếu không bảng vẫn bày link trùng.
+  {
+    const kA = mj.indexOf('linkstore.load().has(khoa)');
+    const kB = mj.indexOf("sendToRenderer('crawl-data'");
+    check('18c. Lọc trùng TRƯỚC khi gửi lên màn hình', kA > 0 && kB > 0 && kA < kB,
+      `lọc ở ${kA}, gửi ở ${kB}`);
+  }
+
+  // Không được nấp sau `sheets.isEnabled()` — tắt Sheet thì vẫn phải lọc.
+  {
+    const khoiData = /\(deviceId, data\) => \{[\s\S]*?\n      \},/.exec(mj);
+    const kD = khoiData ? khoiData[0] : '';
+    const viTriLoc = kD.indexOf('linkstore.load().has(khoa)');
+    const viTriSheet = kD.indexOf('sheets.isEnabled()');
+    check('18d. Lọc trùng KHÔNG phụ thuộc Google Sheet',
+      viTriLoc > 0 && (viTriSheet < 0 || viTriLoc < viTriSheet));
+    check('18e. Link mới được ghi vào kho để lần sau còn nhớ', /linkstore\.addUrls\(\[data\.url\]\)/.test(kD));
+  }
+
+  // Khoá so trùng phải là ĐÚNG hàm mà kho link và đường đẩy Sheet dùng — ba nơi tự chuẩn hoá
+  // theo cách riêng là có ngày lệch nhau (QĐ-10).
+  check('18f. Dùng chung normalizeKey với kho link và Sheet',
+    /const \{ normalizeKey \} = require\('\.\/src\/linkkey\.cjs'\)/.test(mj)
+    && /normalizeKey\(data\.url/.test(mj));
+
+  // Link đọc từ Sheet cũng phải vào kho, nếu không lần mở app sau lại phải chờ đọc Sheet.
+  check('18g. Link đọc từ Sheet cũng ghi vào kho cục bộ', /linkstore\.addUrls\(links\)/.test(mj));
+
+  // `linkstore.cjs` là module DÙNG CHUNG với bản PC — `srcsync` khoá nó từng byte.
+  check('18h. linkstore nằm trong danh sách module dùng chung',
+    /'linkstore\.cjs'/.test(doc('tests/srcsync.test.cjs')));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);
 if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));

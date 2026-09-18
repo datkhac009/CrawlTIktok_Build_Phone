@@ -10,6 +10,8 @@ const devices = require('./src/devices.cjs');
 const runner = require('./src/runner.cjs');
 const sheets = require('./src/sheets.cjs');
 const devslot = require('./src/devslot.cjs');
+const linkstore = require('./src/linkstore.cjs');
+const { normalizeKey } = require('./src/linkkey.cjs');
 
 const store = new Store({ name: 'settings' });
 
@@ -53,7 +55,25 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // Nạp kho link cục bộ NGAY khi mở app, trước khi máy nào kịp quét.
+  //
+  // ⚠ VÌ SAO (2026-09-18): chủ dự án bắt được hai dòng trùng nhau trong bảng kết quả — cùng một
+  // link sound, hai máy khác nhau. Bản cũ chỉ lọc trùng ở đường ĐẨY LÊN SHEET (`sheets.enqueue`),
+  // nên: tắt Sheet là mất hẳn bộ lọc; bảng trên màn hình thì không lọc gì cả; và tắt app mở lại
+  // là quên sạch mọi link đã thu.
+  //
+  // Kho này chép nguyên từ bản PC (`linkstore.cjs`), nơi nó đã chạy thật — file text nằm cạnh
+  // .exe, nạp tức thì, sống qua lần tắt app.
+  try {
+    linkstore.ensureFile();
+    const n = linkstore.load(true).size;
+    console.log(`[linkstore] đã nạp ${n} link đã biết từ kho cục bộ`);
+  } catch (e) {
+    console.error('[linkstore] không nạp được kho link:', e.message);
+  }
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   runner.stopAll();
@@ -83,7 +103,14 @@ async function seedKnownLinks(cfg) {
   try {
     const links = await sheets.readLinks(cfg.spreadsheetId, cfg.tab || 'Data', cfg.sa);
     sheets.updateKnownLinks(links);
-    sendToRenderer('crawl-status', { deviceId: null, kind: 'sheet-info', msg: `Đã nạp ${links.length} link từ Sheet để lọc trùng` });
+    // Ghi luôn vào kho cục bộ: lần mở app sau không phải chờ đọc Sheet mới có bộ lọc.
+    let them = 0;
+    try { them = linkstore.addUrls(links); } catch (_) { them = 0; }
+    sendToRenderer('crawl-status', {
+      deviceId: null, kind: 'sheet-info',
+      msg: `Đã nạp ${links.length} link từ Sheet để lọc trùng`
+        + (them ? ` (${them} link mới, kho cục bộ nay có ${linkstore.count()})` : ''),
+    });
   } catch (e) {
     sendToRenderer('crawl-status', { deviceId: null, kind: 'sheet-error', msg: `Đọc Sheet lỗi: ${e.message}` });
   }
@@ -153,6 +180,26 @@ async function chayMot(params) {
     runner.startDevice(
       params,
       (deviceId, data) => {
+        // ── LỌC TRÙNG Ở ĐÂY, TRƯỚC KHI GỬI LÊN MÀN HÌNH ──
+        //
+        // Đây là chỗ DUY NHẤT mọi máy đi qua, nên cũng là chỗ duy nhất biết được máy khác đã thu
+        // link này chưa. Bản cũ gửi thẳng lên màn hình rồi mới lọc ở đường đẩy Sheet — nên bảng
+        // kết quả bày ra link trùng, đúng cái chủ dự án chụp màn hình gửi lại.
+        //
+        // Khoá so trùng dùng `normalizeKey` — ĐÚNG hàm mà kho link và đường đẩy Sheet dùng. Ba
+        // nơi tự chuẩn hoá theo cách riêng là có ngày lệch nhau (bài học QĐ-10).
+        const khoa = normalizeKey(data.url || '');
+        if (khoa && linkstore.load().has(khoa)) {
+          sendToRenderer('crawl-status', {
+            deviceId, kind: 'log',
+            line: `Bỏ "${data.name || '(không tên)'}" — đã thu từ trước.`,
+          });
+          return;
+        }
+        if (khoa) {
+          try { linkstore.addUrls([data.url]); } catch (_) { /* ghi hỏng thì thôi, đừng chặn quét */ }
+        }
+
         sendToRenderer('crawl-data', { deviceId, ...data });
         if (sheets.isEnabled()) {
           const dev = devices.loadDevices().find((d) => d.id === deviceId);

@@ -41,6 +41,7 @@ const DUNG_CHUNG = [
   'textset.cjs',       // đọc/ghi file dòng, channelstore cần
   'phaseplan.cjs',     // chia pha theo thời gian
   'linkkey.cjs',       // chuẩn hoá link sound + nhận Original Sound đa ngôn ngữ
+  'linkstore.cjs',     // kho link cục bộ để lọc trùng, sống qua lần tắt app
 ];
 
 function bam(p) {
