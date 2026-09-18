@@ -730,6 +730,51 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     /máy đã xoá \(\$\{deviceId\}\)/.test(rj) && /máy đã xoá \(\$\{deviceId\}\)/.test(mj));
 }
 
+// ── 20. Những chỗ bản phone lệch bản PC (2026-09-18) ──
+{
+  const rn = doc('src/runner.cjs');
+  const rj = doc('renderer/renderer.js');
+  const html = doc('renderer/index.html');
+  const mj = doc('main.js');
+  const py = doc('scan_feed_sounds.py');
+
+  // 3a — không thu sound khớp bộ lọc.
+  check('20a. Kết quả ĐẠT phải qua cổng ngôn ngữ trước khi lên bảng',
+    /payload\.verdict === 'DAT' && brain\.choThu\(payload\.name\)\) \{\s*\n\s*onData\(/.test(rn));
+  check('20b. Có ô "Không thu sound" trong Cài đặt, đọc và ghi đủ',
+    /id="cfgNiBlockCollect"/.test(html)
+    && /\$\('cfgNiBlockCollect'\)\.checked = base\.niBlockCollect !== false/.test(rj)
+    && /niBlockCollect: document\.getElementById\('cfgNiBlockCollect'\)\.checked/.test(rj));
+  check('20c. Dòng hướng dẫn KHÔNG còn nói điều mã không làm',
+    !/Tắt cả hai thì app vẫn nhận diện và vẫn BỎ QUA sound/.test(html));
+  check('20d. Nâng cấp cấu hình đã lưu MỘT lần, có báo ra',
+    /const daNang = nangCapLocNgonNgu\(\);[\s\S]{0,200}storeSet[\s\S]{0,120}toast\(/.test(rj)
+    && /niScriptsV2: true,/.test(rj));
+
+  // 3b — biên số post, số thập phân, cài đặt mới tới máy đang chạy.
+  check('20e. Biên số post gồm cả hai đầu, max = 0 là không giới hạn (như bản PC)',
+    /posts >= MIN_POSTS and \(MAX_POSTS <= 0 or posts <= MAX_POSTS\)/.test(py)
+    && !/MIN_POSTS < posts < MAX_POSTS/.test(py));
+  check('20f. Số lẻ không làm Python chết lúc khởi động',
+    /MIN_POSTS = int\(float\(/.test(py) && /MAX_POSTS = int\(float\(/.test(py)
+    && /limit = int\(float\(/.test(py) && /MIN_POSTS: soNguyen\(minPosts/.test(rn));
+  check('20g. Lưu cài đặt đẩy xuống máy đang bận',
+    /await window\.api\.deviceUpdateParams\(paramsFor\(d\)\)/.test(rj)
+    && /'device-update-params'[\s\S]{0,300}_lastParams\.has\(id\)[\s\S]{0,120}_lastParams\.set\(id/.test(mj));
+  check('20h. Nút Chạy và nút Lưu dựng tham số ở MỘT chỗ',
+    /window\.api\.deviceStart\(paramsFor\(d\)\)/.test(rj));
+}
+
+// Hàm làm tròn: chạy thật, không soi chữ.
+{
+  const { soNguyen } = require('../src/runner.cjs');
+  const ca = [[1000.4, 1000, '1000'], [1000.6, 1000, '1001'], [0, 1000, '0'], ['', 1000, '1000'],
+    [null, 7, '7'], [-5, 1000, '1000'], ['abc', 3, '3'], ['250', 0, '250']];
+  const sai = ca.filter(([v, mac, mong]) => soNguyen(v, mac) !== mong)
+    .map(([v, mac, mong]) => `${JSON.stringify(v)}→${soNguyen(v, mac)} (mong ${mong})`);
+  check('20i. soNguyen: làm tròn, giữ 0 là 0, rác thì về mặc định', sai.length === 0, sai.join('; '));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);
 if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));

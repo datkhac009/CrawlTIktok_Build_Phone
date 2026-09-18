@@ -182,6 +182,17 @@
         <!-- ── Lọc nội dung ── -->
         <div class="section" id="cfgNiSection">
           <div class="field-label">Lọc nội dung không mong muốn</div>
+          <!-- Clone ô `niBlockCollect` của bản PC v0.1.102 (2026-09-18). Dòng hướng dẫn cũ bên dưới
+               từng nói app "vẫn BỎ QUA sound" của video khớp bộ lọc — nhưng không dòng mã nào làm
+               việc đó, nên sound chữ Ả Rập/Ấn Độ vẫn vào bảng. -->
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="cfgNiBlockCollect">
+              <span class="slider"></span>
+            </label>
+            <span class="switch-label"><b>Không thu sound</b> khớp bộ lọc (không vào bảng, không lên Sheet)</span>
+          </div>
+          <div class="section-desc">Soi tên sound và tên kênh. Đảo ngược được — bỏ tích là thu lại bình thường. Cuối lượt, dòng Tổng kết in số sound đã bỏ kèm 5 ví dụ và tên nhóm đã khớp, để soi xem có bắt nhầm không.</div>
           <div class="switch-row">
             <label class="switch">
               <input type="checkbox" id="cfgNiEnabled">
@@ -196,7 +207,7 @@
             </label>
             <span class="switch-label">Bấm "Not interested" với video gắn nhãn AI-generated</span>
           </div>
-          <div class="section-desc">⚠ Hai ô trên DẠY FEED VĨNH VIỄN, không hoàn tác được — nên mặc định tắt. Tắt cả hai thì app vẫn nhận diện và vẫn BỎ QUA sound của video đó, chỉ là không bấm gì.</div>
+          <div class="section-desc">⚠ Hai ô "Not interested" DẠY FEED VĨNH VIỄN, không hoàn tác được — nên mặc định tắt. Việc không thu sound là do ô đầu tiên, chạy độc lập với hai ô này.</div>
           <div class="field-label">Nhóm ký tự</div>
           <div class="row gap" id="cfgNiScripts"></div>
           <div class="field-label">Từ khóa — mỗi dòng một từ</div>

@@ -416,6 +416,38 @@ dọn.forEach((d) => { try { fs.rmSync(d, { recursive: true, force: true }); } c
   check('17b. Và không cấp tym-trong-trang khi không ghé', a.like_profile === 0, JSON.stringify(a));
 }
 
+// ── 18. Cổng ngôn ngữ khi THU SOUND (2026-09-18, clone `niBlockCollect` bản PC v0.1.102) ──
+// Dòng hướng dẫn trong Cài đặt từng nói app "vẫn BỎ QUA sound" của video khớp bộ lọc — nhưng
+// không dòng mã nào làm việc đó. Ở đây khoá lại cả hai chiều: chặn đúng thứ phải chặn, và KHÔNG
+// chặn nhầm thứ phải thu.
+{
+  const macDinh = ['bengali', 'urdu', 'pashto', 'perso', 'arabic', 'indic'];
+  const b = ap.makeBrain({ deviceId: 'm18', dir: newDir(), cfg: { niScripts: macDinh } });
+
+  check('18. Tên sound chữ Ả Rập → KHÔNG thu', b.choThu('الصوت الأصلي - tajciget') === false);
+  check('18b. Tên sound chữ Ấn Độ → KHÔNG thu', b.choThu('मूल ध्वनि - raju') === false);
+  check('18c. Tên sound Latin/Việt → vẫn thu', b.choThu('Original Sound - thật huy') === true);
+  check('18d. Tiếng Nga → vẫn thu (chủ dự án CHỌN không chặn Kirin)', b.choThu('оригинальный звук') === true);
+
+  // Tác giả của câu hỏi theo video được dùng cho CHÍNH kết quả của video đó...
+  b.answer(hoi({ id: 30, author: 'قناة الأخبار @news_ar', handle: '@news_ar' }));
+  check('18e. Sound tên Latin nhưng KÊNH chữ Ả Rập → KHÔNG thu', b.choThu('original sound') === false);
+  // ...và CHỈ một lần: không được dính sang video sau (video sau không hỏi — vd kênh hỏi/đáp tắt).
+  check('18f. Tác giả video trước KHÔNG dính sang kết quả video sau', b.choThu('original sound') === true);
+
+  const tk = b.summary();
+  check('18g. Dòng Tổng kết đếm số sound bỏ', /bỏ 3 sound vì bộ lọc ngôn ngữ/.test(tk), tk.split('\n')[0]);
+  check('18h. Và kèm ví dụ có tên nhóm để soi bắn nhầm', /Ví dụ sound không thu:.*\[arabic\].*\[indic\]/.test(tk));
+
+  // Ô tắt → thu hết, không lọc gì.
+  const tat = ap.makeBrain({ deviceId: 'm18b', dir: newDir(), cfg: { niScripts: macDinh, niBlockCollect: false } });
+  check('18i. Tắt ô "Không thu" → vẫn thu cả sound chữ Ả Rập', tat.choThu('الصوت الأصلي') === true);
+
+  // Cấu hình cũ CHƯA CÓ khoá này → mặc định phải là BẬT, không phải tắt ngầm.
+  const cu = ap.makeBrain({ deviceId: 'm18c', dir: newDir(), cfg: { niScripts: ['arabic'] } });
+  check('18j. Cấu hình cũ chưa có khoá → vẫn lọc (mặc định BẬT)', cu.choThu('الصوت الأصلي') === false);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);
 if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));

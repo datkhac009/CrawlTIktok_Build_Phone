@@ -88,8 +88,26 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random,
     ? langfilter.makeMatcher({ scripts: cfg.niScripts, keywords: cfg.niKeywords })
     : null;
 
+  // ── CỔNG NGÔN NGỮ KHI THU SOUND (2026-09-18, clone ô `niBlockCollect` của bản PC v0.1.102) ──
+  //
+  // Dòng hướng dẫn trong Cài đặt từ lâu đã nói app "vẫn BỎ QUA sound" của video khớp bộ lọc,
+  // nhưng KHÔNG dòng mã nào làm việc đó: bộ lọc chỉ quyết định bấm Not interested / follow / tym,
+  // còn sound thì vẫn vào bảng, vẫn lên Sheet. Đúng lỗ bản PC vừa vá.
+  //
+  // Mặc định BẬT (`!== false`: cấu hình cũ chưa có khoá này vẫn được lọc). Bỏ một link là việc
+  // rẻ và đảo ngược được — khác hẳn cú bấm Not interested.
+  //
+  // ⚠ Soi TÊN SOUND luôn được (có sẵn trong kết quả, không tốn gì). TÊN TÁC GIẢ thì chỉ có khi
+  // kênh hỏi/đáp đang bật — không ép bật nó chỉ vì ô này, vì đọc màn hình tốn 0,5–2 giây mỗi video.
+  const matcherThu = cfg.niBlockCollect !== false
+    ? langfilter.makeMatcher({ scripts: cfg.niScripts, keywords: cfg.niKeywords })
+    : null;
+  let tacGiaCuoi = '';
+  const viDuBoThu = [];     // tối đa 5 sound bị chặn, KÈM TÊN NHÓM — để soi bắt đúng hay bắn nhầm
+
   const dem = {
     asked: 0, lang: 0, ai: 0, ni: 0,
+    boThu: 0,         // số sound KHÔNG thu vì khớp bộ lọc ngôn ngữ
     follow: 0, followFail: 0, like: 0, likeFail: 0, visit: 0,
     askFail: 0,
     live: 0,          // số video livestream đã bỏ qua
@@ -211,6 +229,9 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random,
       if (!hopLe) { dem.askFail++; return safeAnswer(id); }
 
       dem.asked++;
+      // Nhớ tác giả của câu hỏi THEO VIDEO này: kết quả sound của CHÍNH video này tới ngay sau
+      // (hỏi trước khi bấm icon sound, kết quả về sau), và `choThu` soi cả tên tác giả.
+      tacGiaCuoi = String(ask.author || '').slice(0, 300);
 
       const author = String(ask.author || '').slice(0, 300);
       const desc = String(ask.desc || '').slice(0, 500);
@@ -408,6 +429,22 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random,
 
   function noteAskFail() { dem.askFail++; }
 
+  // Sound vừa ĐẠT bộ lọc số post: có được thu không? `false` = bộ lọc ngôn ngữ chặn (đã đếm và
+  // giữ ví dụ). Đặt ở đây chứ không ở main.js vì đây là nơi DUY NHẤT biết cấu hình của máy này
+  // và biết tác giả của video vừa hỏi.
+  function choThu(tenSound) {
+    const tacGia = tacGiaCuoi;
+    tacGiaCuoi = '';          // dùng một lần — không để tác giả video trước dính sang video sau
+    if (!matcherThu) return true;
+    // ⚠ `desc` ở đây là TÊN SOUND, không phải caption — `makeMatcher` chỉ nhận hai trường nên
+    // mượn tạm. Vì vậy chỉ lấy `detail` (tên nhóm), không in `reason` (nó nói "caption").
+    const hit = matcherThu({ author: tacGia, desc: String(tenSound || '') });
+    if (!hit) return true;
+    dem.boThu++;
+    if (viDuBoThu.length < 5) viDuBoThu.push(`${String(tenSound || '?').slice(0, 48)} [${hit.detail}]`);
+    return false;
+  }
+
   // Dòng tổng kết cuối lượt. Bộ đếm về 0 là dấu hiệu thấy ngay rằng nhận diện đã trượt.
   function summary() {
     const p = [];
@@ -439,13 +476,16 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random,
       p.push(`ghé ${dem.visit} kênh${dem.gheTrung ? `, bỏ qua ${dem.gheTrung} đã ghé gần đây` : ''}`);
     }
     if (dem.askFail) p.push(`⚠ ${dem.askFail} lượt hỏi hỏng`);
+    // BẮT BUỘC in: lọc giờ là ép cứng, thiếu dòng này thì sound mất ÂM THẦM (bài học QĐ-24).
+    if (dem.boThu) p.push(`bỏ ${dem.boThu} sound vì bộ lọc ngôn ngữ`);
     if (!p.length) return '';
     let s = p.join(' · ');
     if (viDu.length) s += `\n   Ví dụ kênh bị loại: ${viDu.join(', ')}`;
+    if (viDuBoThu.length) s += `\n   Ví dụ sound không thu: ${viDuBoThu.join(' | ')}`;
     return s;
   }
 
-  return { answer, noteActed, noteAskFail, summary, _dem: dem };
+  return { answer, noteActed, noteAskFail, choThu, summary, _dem: dem };
 }
 
 module.exports = { PROTO_VERSION, makeBrain, safeAnswer };

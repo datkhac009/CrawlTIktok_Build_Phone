@@ -268,6 +268,28 @@ const start = (id, serial, cfg = {}) => handlers.get('device-start')({}, { devic
     check('F3. Và khe được trả lại', !devslot.isActive('dK'));
   }
 
+  // ── G. Lưu cài đặt lúc máy đang NGHỈ → lượt chạy lại dùng cài đặt MỚI ──
+  // Bản cũ chạy lại bằng bản chụp lúc bấm Chạy: đổi cài đặt xong vẫn chạy cấu hình cũ tới khi
+  // Dừng rồi Chạy tay, và không có gì trên màn hình cho biết.
+  {
+    devslot._resetForTest();
+    await handlers.get('set-global-settings')({}, { deviceConcurrency: 6, launchStaggerMs: 0 });
+    const cfgCu = { cycleBreakMin: 0.005, cycleBreakMax: 0.005, minPosts: 1000 };
+    await start('dL', '192.168.5.112:5555', cfgCu);
+    ketThuc(lanChay('dL')[0], true);                               // hết ca → nghỉ 0,3 giây
+    const r = await handlers.get('device-update-params')({},
+      { deviceId: 'dL', serial: '192.168.5.112:5555', cfg: { ...cfgCu, minPosts: 5000 } });
+    check('G. Cập nhật được tham số của máy đang nghỉ', r.ok === true);
+    await nghi(500);
+    const lan2 = lanChay('dL')[1];
+    check('G2. Lượt chạy lại sau giờ nghỉ dùng cài đặt MỚI', !!lan2 && lan2.params.cfg.minPosts === 5000,
+      lan2 ? `minPosts=${lan2.params.cfg.minPosts}` : 'không chạy lại');
+    await handlers.get('device-stop')({}, 'dL');
+
+    const r2 = await handlers.get('device-update-params')({}, { deviceId: 'dRanh', cfg: {} });
+    check('G3. Máy đang RẢNH thì không bị biến thành "đang bận"', r2.ok === false);
+  }
+
   _xong = true;
   const failed = results.filter((x) => !x.pass);
   console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);

@@ -30,7 +30,12 @@ const DEFAULT_SETTINGS = {
   // Lọc nội dung. Hai ô bấm mặc định TẮT: cú "Not interested" dạy feed vĩnh viễn.
   niEnabled: false,
   niAi: false,
-  niScripts: ['bengali', 'urdu', 'pashto', 'perso'],
+  // KHÔNG THU sound khớp bộ lọc — mặc định BẬT, ngược với hai ô trên, vì giá khác hẳn: bỏ một
+  // link là rẻ và đảo ngược được (clone bản PC v0.1.102).
+  niBlockCollect: true,
+  niScripts: ['bengali', 'urdu', 'pashto', 'perso', 'arabic', 'indic'],
+  // (Cờ `niScriptsV2` KHÔNG nằm ở đây: nó không phải một cài đặt mà là dấu "đã nâng cấp" của cấu
+  // hình ĐÃ LƯU — xem `nangCapLocNgonNgu()`. Máy chưa lưu gì thì vốn đã dùng mặc định mới này.)
   niKeywords: [
     'afghan', 'afghanistan', 'kabul', 'pashto', 'pashtun', 'kandahar',
     'pakistan', 'pakistani', 'urdu', 'karachi', 'lahore', 'islamabad',
@@ -98,6 +103,30 @@ function getSettingsFor(deviceId) {
   return Object.assign({}, DEFAULT_SETTINGS, deviceSettings[deviceId] || {});
 }
 
+// ── NÂNG CẤP CẤU HÌNH MỘT LẦN: bật chặn chữ Ả Rập + chữ Ấn Độ (2026-09-18, y hệt bản PC) ──
+//
+// VÌ SAO CẦN: đổi DEFAULT_SETTINGS là VÔ TÁC DỤNG với máy đã lưu cài đặt — `getSettingsFor()`
+// trộn mặc định với cấu hình ĐÃ LƯU, và mảng `niScripts` đã lưu thắng tuyệt đối. Không có hàm
+// này thì cập nhật xong, chạy lại, vẫn thấy y nguyên sound chữ Ả Rập, và kết luận là bản vá
+// không chạy.
+//
+// Chạy ĐÚNG MỘT LẦN nhờ cờ `niScriptsV2`: sau đó ai bỏ tích thì nó ở yên đã bỏ tích. Có báo ra
+// bằng toast — không đổi cấu hình của người ta trong im lặng.
+function nangCapLocNgonNgu() {
+  const daDoi = [];
+  for (const id of Object.keys(deviceSettings)) {
+    const st = deviceSettings[id];
+    if (!st || st.niScriptsV2) continue;
+    const ds = Array.isArray(st.niScripts) ? st.niScripts.slice() : DEFAULT_SETTINGS.niScripts.slice();
+    for (const k of ['arabic', 'indic']) if (!ds.includes(k)) ds.push(k);
+    st.niScripts = ds;
+    if (st.niBlockCollect === undefined) st.niBlockCollect = true;
+    st.niScriptsV2 = true;
+    daDoi.push(id);
+  }
+  return daDoi;
+}
+
 // ---- Bootstrap ----
 async function init() {
   const ver = await window.api.getVersion();
@@ -105,6 +134,11 @@ async function init() {
 
   const stored = await window.api.storeGet(['device_settings', 'global_settings']);
   deviceSettings = stored.device_settings || {};
+  const daNang = nangCapLocNgonNgu();
+  if (daNang.length) {
+    await window.api.storeSet({ device_settings: deviceSettings });
+    toast(`Đã bật chặn chữ Ả Rập + chữ Ấn Độ cho ${daNang.length} máy. Bỏ tích trong Cài đặt nếu không muốn.`, true);
+  }
   globalSettings = Object.assign({}, DEFAULT_GLOBAL, stored.global_settings || {});
   // Day xuong tien trinh chinh NGAY luc khoi dong: neu chi day luc bam Luu thi lan chay dau
   // tien sau khi mo app se dung tran mac dinh chu khong phai tran nguoi dung da dat.
@@ -284,16 +318,12 @@ function addResultRow(row, idx) {
   while (tbody.children.length > MAX_RESULT_ROWS) tbody.removeChild(tbody.firstChild);
 }
 
-// ---- Chạy / dừng ----
-async function startDeviceById(id) {
-  const d = devices.find((x) => x.id === id);
-  if (!d) return;
-  clearResultsIfIdle();               // lam moi bang neu day la phien chay moi
-  const st = deviceState[id];
-  if (st) { st.checked = 0; st.qualified = 0; }   // reset dem cua may nay
-  const s = getSettingsFor(id);
-  const res = await window.api.deviceStart({
-    deviceId: id,
+// Tham số một lượt chạy — MỘT chỗ dựng duy nhất, cho cả nút Chạy lẫn nút Lưu cài đặt. Hai chỗ
+// dựng riêng là có ngày một chỗ thiếu trường mới (QĐ-10).
+function paramsFor(d) {
+  const s = getSettingsFor(d.id);
+  return {
+    deviceId: d.id,
     serial: d.serial,
     minPosts: s.minPosts,
     maxPosts: s.maxPosts,
@@ -305,7 +335,17 @@ async function startDeviceById(id) {
     // moi trong modal ma quen them vao day thi o do hien ra nhung KHONG lam gi ca - dung loai
     // hong cam ma ban PC ghi lai o QD-38.
     cfg: s,
-  });
+  };
+}
+
+// ---- Chạy / dừng ----
+async function startDeviceById(id) {
+  const d = devices.find((x) => x.id === id);
+  if (!d) return;
+  clearResultsIfIdle();               // lam moi bang neu day la phien chay moi
+  const st = deviceState[id];
+  if (st) { st.checked = 0; st.qualified = 0; }   // reset dem cua may nay
+  const res = await window.api.deviceStart(paramsFor(d));
   if (!res.ok) {
     toast(res.msg || 'Không chạy được', false);
     return;
@@ -531,6 +571,7 @@ function openSettingsModal(ids) {
   $('cfgCycleBreakMin').value = base.cycleBreakMin;
   $('cfgCycleBreakMax').value = base.cycleBreakMax;
 
+  $('cfgNiBlockCollect').checked = base.niBlockCollect !== false;
   $('cfgNiEnabled').checked = !!base.niEnabled;
   $('cfgNiAi').checked = !!base.niAi;
   $('cfgNiKeywords').value = base.niKeywords;
@@ -595,10 +636,14 @@ async function saveSettings() {
     cycleBreakMin: numOf('cfgCycleBreakMin', D.cycleBreakMin),
     cycleBreakMax: numOf('cfgCycleBreakMax', D.cycleBreakMax),
 
+    niBlockCollect: document.getElementById('cfgNiBlockCollect').checked,
     niEnabled: document.getElementById('cfgNiEnabled').checked,
     niAi: document.getElementById('cfgNiAi').checked,
     niScripts: readNiScripts(),
     niKeywords: document.getElementById('cfgNiKeywords').value,
+    // ⚠ PHẢI ghi lại cờ này: hàm lưu dựng một object MỚI hoàn toàn. Thiếu cờ là lần mở app sau
+    // `nangCapLocNgonNgu()` tưởng chưa nâng cấp và TÍCH LẠI hai nhóm người dùng vừa cố ý bỏ.
+    niScriptsV2: true,
 
     followOn: document.getElementById('cfgFollowOn').checked,
     followPerDay: numOf('cfgFollowPerDay', D.followPerDay),
@@ -621,8 +666,22 @@ async function saveSettings() {
 
   await window.api.storeSet({ device_settings: deviceSettings, global_settings: globalSettings });
   await window.api.setGlobalSettings(globalSettings);
+
+  // ── ĐẨY CÀI ĐẶT MỚI XUỐNG MÁY ĐANG BẬN (2026-09-18) ──
+  // Máy đang chạy theo chu kỳ tự chạy lại sau mỗi giờ nghỉ bằng BẢN CÀI ĐẶT CHỤP LÚC BẤM CHẠY.
+  // Không đẩy xuống thì bấm Lưu xong vẫn chạy cấu hình cũ tới khi Dừng rồi Chạy tay — và không
+  // có gì trên màn hình cho biết điều đó.
+  let banMay = 0;
+  for (const id of settingsTargetIds) {
+    const d = devices.find((x) => x.id === id);
+    if (!d || !dangBan(id)) continue;
+    banMay++;
+    await window.api.deviceUpdateParams(paramsFor(d));
+  }
   closeSettingsModal();
-  toast('Đã lưu cài đặt');
+  toast(banMay
+    ? `Đã lưu cài đặt — ${banMay} máy đang chạy sẽ dùng cài đặt mới từ lượt chạy kế tiếp.`
+    : 'Đã lưu cài đặt');
 }
 
 // ---- O tich nhom ky tu, dung khuon cua ban PC ----

@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('api', {
 
   deviceStart: (params) => ipcRenderer.invoke('device-start', params),
   deviceStop: (deviceId) => ipcRenderer.invoke('device-stop', deviceId),
+  deviceUpdateParams: (params) => ipcRenderer.invoke('device-update-params', params),
   devicesStopAll: () => ipcRenderer.invoke('devices-stop-all'),
   crawlRunningIds: () => ipcRenderer.invoke('crawl-running-ids'),
 

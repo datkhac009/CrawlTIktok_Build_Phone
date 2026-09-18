@@ -377,6 +377,16 @@ ipcMain.handle('device-start', async (_e, params) => {
   return chayMot(params);
 });
 
+// Cài đặt vừa Lưu cho một máy đang bận (chạy / nghỉ / xếp hàng) → lượt chạy KẾ TIẾP dùng bản
+// mới. Chỉ cập nhật máy ĐANG có lượt chạy: tạo mới `_lastParams` cho máy đang rảnh là biến nó
+// thành "máy đang bận" trong mắt Dừng tất cả và bộ đếm giờ nghỉ.
+ipcMain.handle('device-update-params', (_e, params) => {
+  const id = params && params.deviceId;
+  if (!id || !_lastParams.has(id)) return { ok: false };
+  _lastParams.set(id, Object.assign({}, _lastParams.get(id), params));
+  return { ok: true };
+});
+
 ipcMain.handle('device-stop', async (_e, deviceId) => {
   // Máy có thể đang chạy, đang XẾP HÀNG, hoặc đang NGHỈ giữa hai ca. Hai trạng thái sau không có
   // tiến trình nào để giết, nhưng vẫn phải rút khỏi hàng / huỷ lịch chạy lại — không thì lát nữa

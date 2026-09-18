@@ -115,6 +115,14 @@ function kePhanTuongTac(payload) {
   return `${hong ? '⚠ ' : ''}${phan.join(' · ')}.`;
 }
 
+// Số nguyên không âm, dạng chuỗi cho biến môi trường. Rỗng / không phải số / âm → mặc định.
+// ⚠ Không dùng `Math.round(x) || mac`: 0 là giá trị HỢP LỆ (0 = không giới hạn) mà `||` biến nó
+// thành mặc định — đúng loại lỗi QĐ-27 bản PC đã ghi lại.
+function soNguyen(v, mac) {
+  const n = Math.round(Number(v));
+  return String(v !== '' && v !== null && v !== undefined && Number.isFinite(n) && n >= 0 ? n : mac);
+}
+
 function startDevice(params, onData, onStatus) {
   const { deviceId, serial, minPosts, maxPosts, dwellMin, dwellMax, originalOnly, limit } = params;
   const cfg = params.cfg || {};
@@ -151,12 +159,14 @@ function startDevice(params, onData, onStatus) {
 
   const env = Object.assign({}, process.env, {
     GUI_MODE: '1',
-    MIN_POSTS: String(minPosts ?? 1000),
-    MAX_POSTS: String(maxPosts ?? 100000),
+    // Làm tròn TRƯỚC khi truyền: ô nhập cho gõ số lẻ, mà Python `int("1000.5")` chết ngay lúc
+    // khởi động với mã 1 — giao diện chỉ thấy chữ "Lỗi". `soNguyen` giữ 0 là 0 (QĐ-27).
+    MIN_POSTS: soNguyen(minPosts, 1000),
+    MAX_POSTS: soNguyen(maxPosts, 100000),
     DWELL_MIN: String(dwellMin ?? 3.0),
     DWELL_MAX: String(dwellMax ?? 6.0),
     ORIGINAL_ONLY: originalOnly === false ? '0' : '1',
-    LIMIT: String(limit || 0),
+    LIMIT: soNguyen(limit, 0),
     PYTHONIOENCODING: 'utf-8',
 
     // ── Những thứ Python TỰ quyết được vì chúng thuần số, không phải luật ──
@@ -302,7 +312,9 @@ function startDevice(params, onData, onStatus) {
         // (`Lấy "X" (3.300 video)` / `Bỏ "X" (1.600.000 > 100.000 video)`) ngay khi đọc xong
         // trang nhạc. Bản cũ in thêm một dòng nữa ở đây, nên MỌI kết quả nằm trong log hai lần,
         // hai định dạng khác nhau — chủ dự án đọc log tưởng máy làm hai lượt.
-        if (payload.verdict === 'DAT') {
+        // `choThu` = cổng ngôn ngữ khi THU sound (clone PC `niBlockCollect`). Chặn thì sound
+        // không vào bảng, không lên Sheet; số lượng + ví dụ hiện ở dòng Tổng kết.
+        if (payload.verdict === 'DAT' && brain.choThu(payload.name)) {
           onData(deviceId, { name: payload.name, url: payload.url, posts: payload.posts });
         }
       }
@@ -353,4 +365,4 @@ function stopAll() {
 
 // `kePhanTuongTac` mở ra CHỈ để phép thử gọi được: đây là dòng người dùng nhìn thấy nhiều nhất
 // trong ca chạy, nên nó phải kiểm được mà không cần cắm điện thoại.
-module.exports = { startDevice, stopDevice, stopAll, runningIds, isRunning, kePhanTuongTac };
+module.exports = { startDevice, stopDevice, stopAll, runningIds, isRunning, kePhanTuongTac, soNguyen };

@@ -49,8 +49,12 @@ COUNT_IDS = rid("used_count")
 MUSIC_ACTIVITY = "MusicDetailActivity"
 
 # Cac nguong nay doc duoc tu bien moi truong (GUI truyen vao), fallback ve mac dinh cu.
-MIN_POSTS = int(os.environ.get("MIN_POSTS", "1000"))
-MAX_POSTS = int(os.environ.get("MAX_POSTS", "100000"))
+# `int(float(...))`: o nhap tren giao dien cho go so le ("1000.5"), ma `int("1000.5")` nem loi
+# ngay luc khoi dong -> tien trinh chet ma 1, giao dien chi thay chu "Loi". Node da lam tron
+# truoc khi truyen xuong; day la hang rao thu hai.
+MIN_POSTS = int(float(os.environ.get("MIN_POSTS", "1000")))
+# 0 = KHONG gioi han tren, giong o "Số video đến ≤" cua ban PC (QD-27: 0 la gia tri hop le).
+MAX_POSTS = int(float(os.environ.get("MAX_POSTS", "100000")))
 ORIGINAL_ONLY = os.environ.get("ORIGINAL_ONLY", "1") != "0"
 REJECT_KEYWORDS = ["contains:", "bao gồm"]
 
@@ -451,7 +455,10 @@ def check_current_video(d):
 
     result = None
     _ten = name or "(không đọc được tên)"
-    if (is_original or not ORIGINAL_ONLY) and posts is not None and MIN_POSTS < posts < MAX_POSTS:
+    # Bien GOM CA HAI DAU (>= / <=) nhu ban PC ("Số video từ ≥ / đến ≤"). Ban cu so chat
+    # `MIN < posts < MAX`, nen sound dung 1.000 post bi loai du o nhap 1000.
+    trong_khoang = posts is not None and posts >= MIN_POSTS and (MAX_POSTS <= 0 or posts <= MAX_POSTS)
+    if (is_original or not ORIGINAL_ONLY) and trong_khoang:
         link = get_link(d)
         if link:
             result = (link, posts, name)
@@ -470,7 +477,7 @@ def check_current_video(d):
             _vi = "không đọc được số video"
         elif not is_original and ORIGINAL_ONLY:
             _vi = "không phải Original Sound"
-        elif posts <= MIN_POSTS:
+        elif posts < MIN_POSTS:
             _vi = f"{_so(posts)} < {_so(MIN_POSTS)} video"
         else:
             _vi = f"{_so(posts)} > {_so(MAX_POSTS)} video"
@@ -724,7 +731,7 @@ def main():
     set_active_pkg(pkg)
     emit_event("status", state="app_open", pkg=pkg)
 
-    limit = int(os.environ.get("LIMIT", "0"))
+    limit = int(float(os.environ.get("LIMIT", "0")))
     count = 0
     qualified = 0
     consecutive_fail = 0
