@@ -35,5 +35,11 @@ contextBridge.exposeInMainWorld('api', {
   sheetsTest: (cfg) => ipcRenderer.invoke('sheets-test', cfg),
   sheetsPushManual: (rows) => ipcRenderer.invoke('sheets-push-manual', rows),
 
+  // Kho link cục bộ (known_links.txt) — nguồn lọc trùng chính (clone bản PC)
+  linksInfo: () => ipcRenderer.invoke('links-info'),
+  linksReload: () => ipcRenderer.invoke('links-reload'),
+  linksOpenFile: () => ipcRenderer.invoke('links-open-file'),
+  linksImportFromSheet: () => ipcRenderer.invoke('links-import-from-sheet'),
+
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
 });

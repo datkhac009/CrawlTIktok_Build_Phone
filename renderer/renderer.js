@@ -158,6 +158,7 @@ async function init() {
   // Day xuong tien trinh chinh NGAY luc khoi dong: neu chi day luc bam Luu thi lan chay dau
   // tien sau khi mo app se dung tran mac dinh chu khong phai tran nguoi dung da dat.
   await window.api.setGlobalSettings(globalSettings);
+  refreshPendingConfigured();
 
   devices = await window.api.devicesList();
   devices.forEach((d) => {
@@ -194,6 +195,8 @@ function onCrawlStatus(payload) {
   // Sự kiện Sheet toàn cục (deviceId = null)
   if (kind === 'sheet-info') { toast(payload.msg, true); return; }
   if (kind === 'sheet-error') { toast(`Sheet: ${payload.msg}`, false); return; }
+  // Một sound vừa được cất vào tab Pending (không đọc được số post).
+  if (kind === 'pending') { if (payload.ok) { soPending++; renderPendingChip(); } return; }
 
   const st = deviceState[deviceId];
   if (!st) return;
@@ -360,6 +363,8 @@ function clearResultsIfIdle() {
   crawlResults = [];
   document.getElementById('resultBody').innerHTML = '';
   renderResultCount();
+  soPending = 0;
+  renderPendingChip();
 }
 
 function addResultRow(row, idx) {
@@ -814,8 +819,83 @@ async function openSheetsModal() {
   document.getElementById('sheetsTab').value = cfg.tab || 'Data';
   document.getElementById('sheetsReseedMin').value = cfg.reseedMinutes || 5;
   document.getElementById('sheetsSa').value = cfg.sa || '';
+  document.getElementById('sheetsPendingTab').value = cfg.pendingTab || '';
   document.getElementById('sheetsTestResult').textContent = '';
   document.getElementById('sheetsModal').classList.add('open');
+  refreshLinksInfo();
+}
+
+// ── KHO LINK CỤC BỘ trong modal ☁ (clone bản PC) ──
+const soVi = (n) => Number(n || 0).toLocaleString('vi-VN');
+async function refreshLinksInfo() {
+  const el = document.getElementById('linksInfo');
+  if (!el) return;
+  try {
+    const r = await window.api.linksInfo();
+    el.innerHTML = r && r.ok
+      ? `Đang giữ <b>${soVi(r.count)}</b> link · <code style="font-size:11px">${esc(r.path)}</code>`
+      : 'Không đọc được kho link.';
+  } catch (_) { el.textContent = 'Không đọc được kho link.'; }
+}
+
+function initLinkStore() {
+  const btnImport = document.getElementById('linksImportBtn');
+  const btnOpen = document.getElementById('linksOpenBtn');
+  const btnReload = document.getElementById('linksReloadBtn');
+  btnImport.addEventListener('click', async () => {
+    const nhan = btnImport.textContent;
+    btnImport.disabled = true;
+    // Sheet lớn có thể mất vài phút — phải báo rõ, không thì người dùng tưởng app treo (QĐ-09).
+    btnImport.textContent = '⏳ Đang đọc Sheet...';
+    try {
+      const r = await window.api.linksImportFromSheet();
+      if (r && r.ok) {
+        // Báo tách bạch tab chính / tab Pending: nút này dùng để CHỐT KHO trước khi dọn Sheet.
+        let msg = `Đã đọc ${soVi(r.read)} link từ Sheet, ghi thêm ${soVi(r.added)} link mới vào kho `
+          + `(kho hiện có ${soVi(r.total)} link).`;
+        if (r.pendingRead) msg += ` Tab Pending: đọc ${soVi(r.pendingRead)}, thêm ${soVi(r.pendingAdded)} link.`;
+        toast(msg, true);
+        if (r.pendingError) toast('Không đọc được tab Pending: ' + r.pendingError, false);
+        await refreshLinksInfo();
+      } else {
+        toast('Nạp từ Sheet thất bại: ' + ((r && r.msg) || 'lỗi không rõ'), false);
+      }
+    } catch (e) {
+      toast('Nạp từ Sheet thất bại: ' + e.message, false);
+    } finally {
+      btnImport.disabled = false;
+      btnImport.textContent = nhan;
+    }
+  });
+  btnOpen.addEventListener('click', async () => {
+    const r = await window.api.linksOpenFile();
+    if (!(r && r.ok)) toast('Không mở được file: ' + ((r && r.msg) || ''), false);
+  });
+  btnReload.addEventListener('click', async () => {
+    const r = await window.api.linksReload();
+    if (r && r.ok) { toast(`Đã đọc lại kho: ${soVi(r.count)} link.`, true); await refreshLinksInfo(); }
+    else toast('Đọc lại thất bại: ' + ((r && r.msg) || ''), false);
+  });
+}
+
+// ── Chip "N lỗi → Pending" (clone bản PC) ──
+// HIỆN/ẨN theo CẤU HÌNH, không theo con số: đã đặt tên tab Pending thì LUÔN hiện, kể cả đang 0 —
+// để biết tính năng đang bật. Chưa đặt thì ẩn hẳn: hiện "0 lỗi" lúc đó là nói sai, vì sound lỗi
+// vẫn đang bị bỏ luôn chứ không phải không có.
+let soPending = 0;
+let pendingDaBat = false;
+function renderPendingChip() {
+  const el = document.getElementById('crawlPendingCount');
+  if (!el) return;
+  el.textContent = `${soPending} lỗi → Pending`;
+  el.style.display = (pendingDaBat || soPending > 0) ? '' : 'none';
+}
+async function refreshPendingConfigured() {
+  try {
+    const cfg = await window.api.sheetsGetConfig();
+    pendingDaBat = !!(cfg && cfg.enabled && String(cfg.pendingTab || '').trim());
+  } catch (_) { pendingDaBat = false; }
+  renderPendingChip();
 }
 function closeSheetsModal() {
   document.getElementById('sheetsModal').classList.remove('open');
@@ -827,6 +907,9 @@ function readSheetsForm() {
     tab: document.getElementById('sheetsTab').value.trim() || 'Data',
     reseedMinutes: Number(document.getElementById('sheetsReseedMin').value) || 5,
     sa: document.getElementById('sheetsSa').value.trim(),
+    // Để TRỐNG = TẮT Pending. Không tự đặt tên mặc định: Sheet chưa chắc có tab đó, tự bật sẽ làm
+    // mọi lần cất Pending lỗi liên tục (bản PC ghi rõ lý do này).
+    pendingTab: document.getElementById('sheetsPendingTab').value.trim(),
   };
 }
 async function testSheets() {
@@ -840,6 +923,7 @@ async function saveSheets() {
   const cfg = readSheetsForm();
   await window.api.sheetsSetConfig(cfg);
   closeSheetsModal();
+  await refreshPendingConfigured();   // bật/tắt Pending phải thấy ngay, không đợi mở lại app
   toast('Đã lưu cài đặt Google Sheet');
 }
 
@@ -877,6 +961,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sheetsModalClose').addEventListener('click', closeSheetsModal);
   document.getElementById('sheetsCancel').addEventListener('click', closeSheetsModal);
   document.getElementById('sheetsTestBtn').addEventListener('click', testSheets);
+  initLinkStore();
   document.getElementById('sheetsSaveBtn').addEventListener('click', saveSheets);
   document.getElementById('pushSheetBtn').addEventListener('click', pushToSheet);
 

@@ -77,6 +77,11 @@ RE_GOC_TEN = re.compile(_RE_GOC_TEN_SRC or "(?!)")
 # Khi do thu moi sound dat so post va NOI RA luc khoi dong, thay vi loai sach moi thu trong im lang.
 CO_LUAT_GOC = bool(_RE_GOC_SLUG_SRC and _RE_GOC_TEN_SRC)
 
+# Tab PENDING bat khong (clone QD-20 ban PC). Bat thi sound KHONG DOC DUOC so video duoc lay link
+# de cat vao tab Pending cho nguoi kiem tay, thay vi bo luon. Tat thi khong ton 2-3 giay lay link
+# cho no — khong co cho nao de cat.
+PENDING_ON = os.environ.get("PENDING_ON") == "1"
+
 HERE = os.path.dirname(__file__)
 OUTPUT_FILE = os.path.join(HERE, "sound_links.txt")
 
@@ -397,7 +402,7 @@ TRUOT = {"khong_icon": 0, "khong_vao_trang_nhac": 0, "het_gio_doc_so_post": 0}
 
 # Dem sound DAT so post nhung bi bo vi KHONG PHAI Original Sound, va so lan khong lay duoc link
 # that. In o dong tong ket: loc gio la luat that (theo ban PC), mat sound phai thay duoc.
-DEM = {"khong_goc": 0, "khong_link_that": 0}
+DEM = {"khong_goc": 0, "khong_link_that": 0, "pending": 0}
 
 # Vì sao bỏ lượt tương tác. Bản cũ gộp cả bốn thành một dòng "video đã đổi" — sai ở ba trong bốn
 # trường hợp, và không có số nào để biết cái nào đang xảy ra.
@@ -513,9 +518,10 @@ def check_current_video(d):
             TRUOT["het_gio_doc_so_post"] += 1
             log_han_che(
                 "het_gio_doc_so_post",
-                f"⚠ Trang nhạc mở rồi nhưng số video chưa hiện sau {SETTLE:.1f}s — sound này bị "
-                "loại, CÓ THỂ là loại oan. Dòng này lặp nhiều thì nới ô \"Chờ số post hiện ra "
-                "tối đa\".")
+                f"⚠ Trang nhạc mở rồi nhưng số video chưa hiện sau {SETTLE:.1f}s — "
+                + ("sound này được cất vào tab Pending để kiểm tay. " if PENDING_ON
+                   else "sound này bị loại, CÓ THỂ là loại oan. ")
+                + "Dòng này lặp nhiều thì nới ô \"Chờ số post hiện ra tối đa\".")
             break
         time.sleep(0.2)
     name = extract_sound_name(desc)
@@ -566,6 +572,34 @@ def check_current_video(d):
             else:
                 log(f'⚠ Bỏ "{_ten}" ({_so(posts)} video) — đạt bộ lọc nhưng KHÔNG lấy được link.')
                 emit_event("result", verdict="ERROR", name=name, posts=posts, msg="khong lay duoc link")
+    elif posts is None and PENDING_ON:
+        # ── PENDING: khong doc duoc so video — CAT LAI thay vi bo (clone QD-20 ban PC) ──
+        # Sound chua chac da chet: trang nhac mo cham hon tran cho la chuyen thuong. Van phai qua
+        # luat Original Sound nhu sound thuong — Pending khong phai cua sau de nhac ban quyen lot.
+        # Cung duong voi sound DAT o tren: link that truoc; khong co thi dung music id (slug
+        # `original-sound` CHI khi ten da xac nhan la sound goc).
+        url_that = lay_link_that(d)
+        if not url_that:
+            DEM["khong_link_that"] += 1
+        goc = la_sound_goc(url_that, tieu_de)
+        if ORIGINAL_ONLY and CO_LUAT_GOC and not goc:
+            DEM["khong_goc"] += 1
+            bang_chung = (f"link thật …/music/{_slug_ngan(url_that)}" if url_that
+                          else "không lấy được link thật, tên cũng không phải")
+            log(f'Bỏ "{_ten}" (không phải Original Sound — {bang_chung})')
+            emit_event("result", verdict="LOAI", name=name, posts=None, original=False)
+        else:
+            link = url_that
+            if not link:
+                mid = get_music_id(d)
+                if mid:
+                    link = f"https://www.tiktok.com/music/{'original-sound' if goc else 'sound'}-{mid}"
+            if link:
+                DEM["pending"] += 1
+                emit_event("result", verdict="PENDING", name=name, title=tieu_de, url=link)
+            else:
+                log(f'Bỏ "{_ten}" (không đọc được số video, cũng không lấy được link để cất vào Pending)')
+                emit_event("result", verdict="LOAI", name=name, posts=None)
     else:
         # Mỗi lý do loại một câu riêng. Bản cũ in `original=True posts=None desc='...'` — đọc ra
         # thì phải tự suy, mà suy sai thì không ai biết.
@@ -1053,6 +1087,8 @@ def main():
     _p = [f"quét {count} video", f"lấy {qualified} sound"]
     if DEM["khong_goc"]:
         _p.append(f"bỏ {DEM['khong_goc']} sound không phải Original Sound")
+    if DEM["pending"]:
+        _p.append(f"cất {DEM['pending']} sound vào tab Pending (không đọc được số video)")
     if DEM["khong_link_that"]:
         _p.append(f"{DEM['khong_link_that']} lần không lấy được link thật")
     if live_bo_qua:

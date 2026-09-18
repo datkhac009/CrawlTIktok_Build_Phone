@@ -829,6 +829,55 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     /DEM\["khong_goc"\] \+= 1/.test(py) && /không phải Original Sound"\)/.test(py));
 }
 
+// ── 23. Google Sheet: Service Account, kho link cục bộ, tab Pending (2026-09-18) ──
+// Hành vi do `mainflow.test.cjs` mục M và `sheetsa.test.cjs` chạy thật. Ở đây canh nối dây.
+{
+  const mj = doc('main.js');
+  const rn = doc('src/runner.cjs');
+  const rj = doc('renderer/renderer.js');
+  const html = doc('renderer/index.html');
+  const pl = doc('preload.cjs');
+  const py = doc('scan_feed_sounds.py');
+
+  // Lỗi v0.1.8: gọi sheets.cjs với Service Account dạng CHUỖI. Không chỗ nào được đọc thẳng
+  // `store.get('sheets_config')` rồi đưa cho sheets.cjs — phải đi qua `docCauHinhSheet()`.
+  check('23a. Mọi chỗ đọc cấu hình Sheet đều đi qua bước đổi Service Account',
+    (mj.match(/store\.get\('sheets_config'\)/g) || []).length === 2   // docCauHinhSheet + 'sheets-get-config'
+    && /function docCauHinhSheet\(\) \{ return cauHinhSheet\(store\.get\('sheets_config'\)/.test(mj)
+    && /'sheets-get-config', \(\) => store\.get\('sheets_config'\)/.test(mj));
+  check('23b. "Test kết nối" đổi Service Account trước khi gọi sheets.cjs',
+    /'sheets-test', async \(_e, raw\) => \{\s*\n[^\n]*\n\s*const \{ cfg, loiSa \} = cauHinhSheet\(raw\);/.test(mj));
+  check('23c. Tab Pending được đọc lúc nạp đầu phiên, mỗi vòng đồng bộ, và ở nút "Nạp từ Sheet"',
+    (mj.match(/await napTabPending\(cfg\)/g) || []).length === 3);
+  check('23d. Có đủ bốn nút xử lý kho link cục bộ',
+    ['links-info', 'links-reload', 'links-open-file', 'links-import-from-sheet']
+      .every((k) => mj.includes(`ipcMain.handle('${k}'`) && pl.includes(`'${k}'`)));
+  {
+    // Ba nút chỉ hoạt động khi `initLinkStore` được GỌI lúc mở app — định nghĩa hàm thôi thì nút
+    // hiện ra mà bấm không có gì xảy ra.
+    const than = (rj.match(/function initLinkStore\(\) \{[\s\S]*?\n\}/) || [''])[0];
+    check('23d2. Ba nút kho link được gắn lúc mở app, mỗi nút gọi đúng việc của nó',
+      (rj.match(/^\s*initLinkStore\(\);/gm) || []).length === 1
+      && /btnImport\.addEventListener[\s\S]*?window\.api\.linksImportFromSheet\(\)/.test(than)
+      && /btnOpen\.addEventListener[\s\S]*?window\.api\.linksOpenFile\(\)/.test(than)
+      && /btnReload\.addEventListener[\s\S]*?window\.api\.linksReload\(\)/.test(than));
+  }
+  check('23e. Modal ☁ có đủ phần của bản PC: kho link + 3 nút + tab Pending',
+    ['linksInfo', 'linksImportBtn', 'linksOpenBtn', 'linksReloadBtn', 'sheetsPendingTab']
+      .every((id) => html.includes(`id="${id}"`)));
+  check('23f. Tên tab Pending được nạp VÀ lưu',
+    /getElementById\('sheetsPendingTab'\)\.value = cfg\.pendingTab/.test(rj)
+    && /pendingTab: document\.getElementById\('sheetsPendingTab'\)\.value\.trim\(\)/.test(rj));
+  check('23g. Chip "N lỗi → Pending" có mặt và được đếm',
+    html.includes('id="crawlPendingCount"') && /kind === 'pending'\) \{ if \(payload\.ok\) \{ soPending\+\+/.test(rj));
+  check('23h. Runner báo xuống Python tab Pending có bật không',
+    /PENDING_ON: params\.pendingOn \? '1' : '0'/.test(rn) && /pendingOn: !!\(sheets\.isEnabled\(\) && String\(cfg\.pendingTab/.test(mj));
+  check('23i. Kết quả PENDING đi qua ĐÚNG các cổng của sound thường (Original Sound, ngôn ngữ)',
+    /payload\.verdict === 'DAT' \|\| laPending/.test(rn) && /pending: true \}/.test(rn));
+  check('23j. Python cất Pending CHỈ khi bật, và vẫn xét Original Sound',
+    /elif posts is None and PENDING_ON:[\s\S]{0,600}goc = la_sound_goc\(url_that, tieu_de\)\s*\n\s*if ORIGINAL_ONLY and CO_LUAT_GOC and not goc:[\s\S]{0,1200}verdict="PENDING"/.test(py));
+}
+
 // Hàm làm tròn: chạy thật, không soi chữ.
 {
   const { soNguyen } = require('../src/runner.cjs');

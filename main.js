@@ -162,11 +162,54 @@ app.on('before-quit', () => {
 });
 
 // ---- Google Sheet helpers ----
+
+// Cấu hình Sheet với Service Account ĐÃ ĐỔI từ CHUỖI (đúng nguyên văn người dùng dán vào ô) sang
+// ĐỐI TƯỢNG. Trả `{ cfg, loiSa }` — `loiSa` khác rỗng khi JSON hỏng cú pháp.
+//
+// ⚠ VÌ SAO PHẢI Ở ĐÂY (2026-09-18, lỗi thật của v0.1.8): `sheets.cjs` chép nguyên từ bản PC chỉ
+// nhận ĐỐI TƯỢNG — bên PC, việc đổi chuỗi nằm ở main.js (`JSON.parse(cfg.saJson)`). `sheets.cjs`
+// cũ của bản phone thì tự đổi bên trong. Chép tệp sang mà không chuyển việc đổi ra đây là MỌI thao
+// tác Sheet đều hỏng — kiểm tra kết nối, đọc link lọc trùng, đẩy link — với câu "thiếu
+// client_email/private_key" dù JSON dán vào hoàn toàn đúng.
+// `sheets.cjs` bị `srcsync` khoá giống bản PC từng byte, nên KHÔNG được vá bên trong nó.
+function cauHinhSheet(raw) {
+  const cfg = Object.assign({}, raw || {});
+  let loiSa = '';
+  if (typeof cfg.sa === 'string') {
+    const t = cfg.sa.trim();
+    if (!t) cfg.sa = null;
+    else {
+      try { cfg.sa = JSON.parse(t); } catch (_) {
+        cfg.sa = null;
+        loiSa = 'Service Account JSON hỏng cú pháp — mở file .json, chép NGUYÊN VĂN toàn bộ rồi dán lại.';
+      }
+    }
+  }
+  return { cfg, loiSa };
+}
+function docCauHinhSheet() { return cauHinhSheet(store.get('sheets_config') || {}); }
+
 function applySheetsConfig() {
-  const cfg = store.get('sheets_config') || {};
+  const { cfg } = docCauHinhSheet();
   sheets.configure(cfg, (msg) =>
     sendToRenderer('crawl-status', { deviceId: null, kind: 'sheet-error', msg }));
   return cfg;
+}
+
+// Tab PENDING — clone `reseedFromPendingTab` bản PC. Đọc TRỌN mỗi lần (tab này nhỏ, và dòng bị
+// xoá sau khi xử lý tay). Link trong đó vào kho cục bộ: đây là đường DUY NHẤT để máy này biết máy
+// khác vừa cất sound nào vào Pending, vì kho link là file riêng từng máy.
+async function napTabPending(cfg) {
+  const tab = String((cfg && cfg.pendingTab) || '').trim();
+  if (!tab || !cfg.spreadsheetId || !cfg.sa) return null;   // để trống = tính năng Pending TẮT
+  try {
+    const links = await sheets.readLinks(cfg.spreadsheetId, tab, cfg.sa);
+    let them = 0;
+    try { them = linkstore.addUrls(links); } catch (_) { them = 0; }
+    return { read: links.length, added: them };
+  } catch (e) {
+    return { read: 0, added: 0, error: e.message };
+  }
 }
 
 // Nạp link từ Sheet vào CẢ HAI bộ lọc: cổng đẩy (`sheets._knownLinks`) và kho cục bộ
@@ -184,10 +227,13 @@ async function seedKnownLinks(cfg) {
     const links = await sheets.readLinks(cfg.spreadsheetId, cfg.tab || 'Data', cfg.sa);
     const them = napVaoBoLoc(links);
     if (links.nextRow) _sheetNextRow = links.nextRow;
+    const p = await napTabPending(cfg);
     sendToRenderer('crawl-status', {
       deviceId: null, kind: 'sheet-info',
       msg: `Đã nạp ${links.length} link từ Sheet để lọc trùng`
-        + (them ? ` (${them} link mới, kho cục bộ nay có ${linkstore.count()})` : ''),
+        + (them ? ` (${them} link mới, kho cục bộ nay có ${linkstore.count()})` : '')
+        + (p && p.read ? ` + ${p.read} link từ tab Pending` : '')
+        + (p && p.error ? ` — ⚠ không đọc được tab Pending: ${p.error}` : ''),
     });
   } catch (e) {
     sendToRenderer('crawl-status', {
@@ -225,6 +271,7 @@ function startReseedTimer(cfg) {
       const links = await sheets.readLinks(cfg.spreadsheetId, cfg.tab || 'Data', cfg.sa, { fromRow: from });
       const them = napVaoBoLoc(links);
       if (links.nextRow) _sheetNextRow = links.nextRow;
+      await napTabPending(cfg);
       if (_reseedLoi) {
         _reseedLoi = '';
         sendToRenderer('crawl-status', { deviceId: null, kind: 'sheet-info', msg: 'Đồng bộ Sheet chạy lại được rồi.' });
@@ -286,15 +333,34 @@ function quaCongLocTrung(deviceId, data) {
     try { linkstore.addUrls([data.url]); } catch (_) { /* ghi hỏng thì thôi, đừng chặn quét */ }
   }
 
+  // ── PENDING: sound không đọc được số video (clone QĐ-20 bản PC) ──
+  // Cất vào tab Pending để kiểm tay thay vì bỏ. KHÔNG lên bảng kết quả — bảng chỉ chứa sound ĐÃ
+  // đếm được. Đã vào kho cục bộ ở trên, nên không bị quét rồi cất lại lần nữa (bản PC y hệt).
+  if (data.pending) {
+    const daCat = sheets.isEnabled() && sheets.enqueuePending([data.name || '', data.url || '', '', tenThietBi(deviceId)]);
+    sendToRenderer('crawl-status', { deviceId, kind: 'pending', ok: !!daCat });
+    sendToRenderer('crawl-status', {
+      deviceId, kind: 'log',
+      line: daCat
+        ? `Cất "${data.name || '(không tên)'}" vào tab Pending — không đọc được số video.`
+        : `⚠ Không cất được "${data.name || '(không tên)'}" vào tab Pending — chưa bật Sheet hoặc chưa đặt tên tab Pending.`,
+    });
+    return;
+  }
+
   sendToRenderer('crawl-data', { deviceId, ...data });
   if (sheets.isEnabled()) {
-    const dev = devices.loadDevices().find((d) => d.id === deviceId);
-    // Không thấy tên = máy đã bị xoá mà vẫn còn kết quả chảy về. Nói thẳng ra thay vì để mã
-    // `d_…` trần — mã trần là thứ đã khiến lỗi "máy ma" nằm im không ai nhận ra.
-    const deviceName = dev ? dev.name : `máy đã xoá (${deviceId})`;
     // Cột: A=Tên sound, B=Link, C=Số post, D=Thiết bị, E=Tình trạng(=1)
-    sheets.enqueue([data.name || '', data.url || '', data.posts ?? '', deviceName, 1]);
+    sheets.enqueue([data.name || '', data.url || '', data.posts ?? '', tenThietBi(deviceId), 1]);
   }
+}
+
+// Tên máy cho cột "Thiết bị" trên Sheet.
+function tenThietBi(deviceId) {
+  const dev = devices.loadDevices().find((d) => d.id === deviceId);
+  // Không thấy tên = máy đã bị xoá mà vẫn còn kết quả chảy về. Nói thẳng ra thay vì để mã
+  // `d_…` trần — mã trần là thứ đã khiến lỗi "máy ma" nằm im không ai nhận ra.
+  return dev ? dev.name : `máy đã xoá (${deviceId})`;
 }
 
 // ---- App info ----
@@ -362,7 +428,11 @@ async function chayMot(params) {
 
     // ── GẮN PHA (chế độ Quét ⇄ Xem) ──
     const kh = keHoachPha(params.cfg);
-    let chay = params;
+    // Tab Pending có bật không. Tắt thì Python KHÔNG tốn 2–3 giây lấy link cho sound không đọc
+    // được số video — không có chỗ nào để cất nó (bản PC: "để trống = tắt, bỏ link luôn").
+    let chay = Object.assign({}, params, {
+      pendingOn: !!(sheets.isEnabled() && String(cfg.pendingTab || '').trim()),
+    });
     if (kh) {
       if (!kh.plan.length) {
         devslot.release(id);
@@ -376,7 +446,7 @@ async function chayMot(params) {
           line: '⚠ Danh sách link cần xem đang trống — bỏ pha Xem, chỉ quét theo chu kỳ.',
         });
       }
-      chay = Object.assign({}, params, {
+      chay = Object.assign({}, chay, {
         pha: { key: pha.key, ms: pha.ms, links: kh.links, moc: docMoc(id) },
       });
       sendToRenderer('crawl-status', {
@@ -529,14 +599,63 @@ ipcMain.handle('sheets-set-config', async (_e, cfg) => {
   }
   return { ok: true };
 });
-ipcMain.handle('sheets-test', (_e, cfg) => sheets.testConnection(cfg.spreadsheetId, cfg.sa));
+ipcMain.handle('sheets-test', async (_e, raw) => {
+  // Kiểm ĐÚNG cấu hình đang gõ trong ô (chưa cần bấm Lưu) — y như bản PC.
+  const { cfg, loiSa } = cauHinhSheet(raw);
+  if (loiSa) return { ok: false, msg: loiSa };
+  if (!cfg.sa) return { ok: false, msg: 'Chưa dán Service Account JSON.' };
+  try { return await sheets.testConnection(cfg.spreadsheetId, cfg.sa); }
+  catch (e) { return { ok: false, msg: e.message }; }
+});
 ipcMain.handle('sheets-push-manual', async (_e, rows) => {
-  const cfg = store.get('sheets_config') || {};
+  const { cfg, loiSa } = docCauHinhSheet();
+  if (loiSa) return { ok: false, msg: loiSa };
   if (!cfg.spreadsheetId || !cfg.sa) return { ok: false, msg: 'Chưa cấu hình Google Sheet (ID/Service Account).' };
   await sheets.flushAll().catch(() => {});
   const r = await sheets.pushDedup({ spreadsheetId: cfg.spreadsheetId, tab: cfg.tab, sa: cfg.sa }, rows);
   if (r.ok) sheets.dropFromBuffer((rows || []).map((x) => x && x[1]));
   return r;
+});
+
+// ── KHO LINK CỤC BỘ (clone bản PC, main.js 654-702) ──
+// Đường dẫn + số link đang giữ, để hiện trong modal ☁.
+ipcMain.handle('links-info', () => {
+  try { return { ok: true, path: linkstore.getFilePath(), count: linkstore.count() }; }
+  catch (e) { return { ok: false, msg: e.message }; }
+});
+// Đọc lại file từ đĩa — sau khi người dùng tự mở file dán thêm link bằng tay.
+ipcMain.handle('links-reload', () => {
+  try { return { ok: true, count: linkstore.load(true).size }; }
+  catch (e) { return { ok: false, msg: e.message }; }
+});
+// Mở file bằng trình soạn thảo mặc định để dán link vào.
+ipcMain.handle('links-open-file', async () => {
+  try {
+    const f = linkstore.ensureFile();
+    await require('electron').shell.openPath(f);
+    return { ok: true, path: f };
+  } catch (e) { return { ok: false, msg: e.message }; }
+});
+// "Nạp từ Google Sheet vào kho": đọc TRỌN cột Link, ghi những link chưa có vào file. Cách nạp kho
+// lần đầu mà không phải dán tay, và cách CHỐT KHO trước khi dọn Sheet (mỗi máy bấm một lần).
+ipcMain.handle('links-import-from-sheet', async () => {
+  const { cfg, loiSa } = docCauHinhSheet();
+  if (loiSa) return { ok: false, msg: loiSa };
+  if (!cfg.spreadsheetId || !cfg.sa) return { ok: false, msg: 'Chưa cấu hình Spreadsheet ID hoặc Service Account.' };
+  linkstore.ensureFile();   // Sheet trống thì file vẫn phải được tạo
+  try {
+    const links = await sheets.readLinks(cfg.spreadsheetId, cfg.tab || 'Data', cfg.sa);
+    const added = napVaoBoLoc(links);   // vào cả bộ lọc đang chạy — khỏi phải khởi động lại app
+    // Tab Pending cũng vào kho — quan trọng nhất ở ĐÚNG nút này: chốt kho trước khi dọn Sheet mà
+    // bỏ sót tab Pending là dọn xong mất luôn danh sách đó.
+    const p = await napTabPending(cfg);
+    return {
+      ok: true, read: links.length, added, total: linkstore.count(), path: linkstore.getFilePath(),
+      pendingRead: p ? p.read : 0, pendingAdded: p ? p.added : 0, pendingError: p && p.error ? p.error : null,
+    };
+  } catch (e) {
+    return { ok: false, msg: e.message };
+  }
 });
 
 // ---- Cài đặt toàn app (trần song song + giãn cách khởi động) ----

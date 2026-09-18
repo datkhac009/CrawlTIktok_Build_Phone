@@ -254,6 +254,9 @@ function startDevice(params, onData, onStatus) {
     // Nhãn "original sound" — dựng từ `linkkey.cjs`, xem chú thích ở `_reNhanDau`.
     RE_GOC_SLUG,
     RE_GOC_TEN,
+    // Tab Pending có bật không (main.js quyết theo cấu hình Sheet). Bật thì sound không đọc được
+    // số video được lấy link để cất vào Pending thay vì bỏ.
+    PENDING_ON: params.pendingOn ? '1' : '0',
     // Phía Python dùng ĐÚNG adb mà phía Node đã chọn. Hai bên tự dò riêng là có ngày mỗi bên
     // một binary khác phiên bản, và chúng sẽ thay nhau giết adb server của nhau.
     ADB_PATH,
@@ -371,7 +374,10 @@ function startDevice(params, onData, onStatus) {
         // (`Lấy "X" (3.300 video)` / `Bỏ "X" (1.600.000 > 100.000 video)`) ngay khi đọc xong
         // trang nhạc. Bản cũ in thêm một dòng nữa ở đây, nên MỌI kết quả nằm trong log hai lần,
         // hai định dạng khác nhau — chủ dự án đọc log tưởng máy làm hai lượt.
-        if (payload.verdict === 'DAT') {
+        // PENDING = không đọc được số video, sẽ cất vào tab Pending. Đi qua ĐÚNG các cổng của sound
+        // thường — một sound Pending vẫn phải là Original Sound và không dính bộ lọc ngôn ngữ.
+        const laPending = payload.verdict === 'PENDING';
+        if (payload.verdict === 'DAT' || laPending) {
           const url = String(payload.url || '');
           const tieuDe = String(payload.title || payload.name || '');
           // ── CHỐT LẦN CUỐI BẰNG ĐÚNG LUẬT BẢN PC ──
@@ -387,7 +393,9 @@ function startDevice(params, onData, onStatus) {
           } else if (brain.choThu(tieuDe)) {
             // Rút gọn bằng `canonicalSoundUrl` của bản PC: slug sound gốc (34 thứ tiếng) → dạng
             // `original-sound-<id>`; nhạc bản quyền GIỮ NGUYÊN tên bài trong link.
-            onData(deviceId, { name: payload.name, url: linkkey.canonicalSoundUrl(url), posts: payload.posts });
+            onData(deviceId, laPending
+              ? { name: payload.name, url: linkkey.canonicalSoundUrl(url), posts: null, pending: true }
+              : { name: payload.name, url: linkkey.canonicalSoundUrl(url), posts: payload.posts });
           }
         }
       }

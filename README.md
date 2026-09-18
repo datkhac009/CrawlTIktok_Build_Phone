@@ -69,7 +69,7 @@ Theo thứ tự, dừng ở cái đầu tiên thấy được:
 ```bash
 npm install
 npm start           # hoặc start.bat
-npm test            # ~430 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
+npm test            # ~480 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
 ```
 
 Trong app, bấm **🔌 Kiểm tra** ở dòng một máy. Nó kiểm từng mục và **mục nào đỏ thì in ra đúng
@@ -123,6 +123,20 @@ lọc theo ngôn ngữ, **không thu** sound khớp bộ lọc · nhận nhãn A
 interested" · **follow / thả tim / ghé thăm trang cá nhân** kèm hạn mức.
 
 **Chưa có**: Quét Mix (= Quét ⇄ Xem + ghé thăm kênh, như bản PC) · tự cập nhật.
+
+### Google Sheet (2026-09-18, v0.1.9)
+
+Modal ☁ giống bản PC: Spreadsheet ID (dán cả link cũng được), tên tab chính (cột A:E), **kho link
+cục bộ** (`known_links.txt`: số link đang giữ + ba nút *Nạp từ Google Sheet vào kho* / *Mở file*
+/ *Đọc lại file*), **tên tab Pending**, Service Account JSON, chu kỳ đồng bộ.
+
+- Service Account lưu dạng CHUỖI (đúng thứ dán vào ô), còn `sheets.cjs` bản PC chỉ nhận ĐỐI
+  TƯỢNG — `main.js` đổi ở một chỗ duy nhất (`cauHinhSheet`). v0.1.8 thiếu bước này nên mọi thao
+  tác Sheet báo "thiếu client_email/private_key".
+- **Tab Pending** (clone QĐ-20 bản PC): để trống = TẮT. Đặt tên thì sound **không đọc được số
+  video** được lấy link thật, xét Original Sound như sound thường, rồi cất vào tab đó (cột
+  `[tên, link, "", thiết bị]`) thay vì bỏ — không lên bảng kết quả. Tab Pending cũng được đọc vào
+  kho lọc trùng lúc nạp đầu phiên, mỗi vòng đồng bộ và ở nút *Nạp từ Google Sheet vào kho*.
 
 ### Quét ⇄ Xem (2026-09-18)
 

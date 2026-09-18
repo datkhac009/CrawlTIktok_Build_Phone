@@ -359,3 +359,6 @@ textarea.input { resize: vertical; font-family: 'Consolas', monospace; font-size
 .device-item-info { flex: 1; min-width: 0; }
 .adb-scan-item .serial { display: flex; flex-direction: column; gap: 2px; }
 .adb-scan-item .serial b { font-weight: 600; }
+
+/* Chip "N lỗi → Pending" — màu cảnh báo, khác chip số sound (clone bản PC). */
+.badge.badge-warn { background: #f5b942; color: #1a1a1a; }

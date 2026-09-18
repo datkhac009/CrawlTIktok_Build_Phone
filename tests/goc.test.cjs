@@ -107,4 +107,84 @@ check('2c. Python biết mình đang có luật từ app',
   check('3. Thiếu nhãn từ app → Python TỰ BIẾT là không có luật (để tắt lọc và nói ra)', co.endsWith('false'), co);
 }
 
+// ── 4. Nhánh PENDING (2026-09-18): KHÔNG đọc được số video ──
+// Chạy ĐÚNG `check_current_video` thật, chỉ thay phần chạm màn hình: icon sound bấm được, trang
+// nhạc mở ra với tên cho sẵn, ô số video KHÔNG BAO GIỜ hiện, link thật cho sẵn.
+{
+  const KB_PENDING = [
+    'import sys, os, json',
+    'sys.path.insert(0, os.environ["APP_DIR"])',
+    'import scan_feed_sounds as S',
+    'S.REST_AFTER_BACK = 0',
+    'S.SETTLE = 0.05',
+    'su_kien = []',
+    'S.emit_event = lambda t, **f: su_kien.append(dict(f, type=t))',
+    'S.log = lambda m: None',
+    'S.log_han_che = lambda k, m: None',
+    'class El:',
+    '    def __init__(s, desc): s.info = {"contentDescription": desc}',
+    '    def get_text(s): return s.info["contentDescription"]',
+    '    def click(s): pass',
+    'class D:',
+    '    def press(s, k): pass',
+    '    def app_current(s): return {"activity": ""}',
+    'kq = []',
+    'for (ten, url, mid) in json.loads(os.environ["CA"]):',
+    '    su_kien.clear()',
+    '    def ff(d, ids, timeout=0, _ten=ten):',
+    '        if ids is S.SOUND_ICON_IDS: return El("")',
+    '        if ids is S.TITLE_IDS: return El(_ten)',
+    '        return None',
+    '    S.find_first = ff',
+    '    S.lay_link_that = lambda d, _u=url: _u',
+    '    S.get_music_id = lambda d, _m=mid: _m',
+    '    r = S.check_current_video(D())',
+    '    kq.append({"ket_qua": r[0], "su_kien": [e for e in su_kien if e["type"] == "result"]})',
+    'print("@@PENDING@@" + json.dumps(kq, ensure_ascii=False), flush=True)',
+  ].join('\n');
+  // [tên nguyên văn trên trang nhạc, link thật (rỗng = Share → Copy link hỏng), music id]
+  const CA = [
+    ['Original Sound T Lajico', M + '%C3%A2m-thanh-g%E1%BB%91c-Lajico' + ID, '7633696888679598855'],
+    ['Passport Sky T Tommy Alvarez', M + 'Passport-Sky' + ID, '7633696888679598855'],
+    ['Original Sound thật huy', '', '7633696888679598855'],
+    ['Original Sound thật huy', '', null],
+  ];
+  const chayPending = (bat) => {
+    const r4 = spawnSync(py.cmd, [...py.args, '-c', KB_PENDING], {
+      encoding: 'utf8', timeout: 60000,
+      env: Object.assign({}, process.env, {
+        APP_DIR: R, PYTHONIOENCODING: 'utf-8', GUI_MODE: '1',
+        RE_GOC_SLUG: runner.RE_GOC_SLUG, RE_GOC_TEN: runner.RE_GOC_TEN,
+        PENDING_ON: bat ? '1' : '0', CA: JSON.stringify(CA),
+      }),
+    });
+    const l = String(r4.stdout || '').split(/\r?\n/).find((x) => x.startsWith('@@PENDING@@'));
+    if (!l) return { loi: String(r4.stderr || '').slice(-400) };
+    return { kq: JSON.parse(l.slice('@@PENDING@@'.length)) };
+  };
+
+  const bat = chayPending(true);
+  check('4. Chạy được check_current_video thật với Pending bật', !!bat.kq, bat.loi);
+  if (bat.kq) {
+    const [a, b, c, e] = bat.kq;
+    const ea = a.su_kien[0] || {};
+    check('4a. Sound gốc, không đọc được số video → PENDING kèm LINK THẬT, không phải kết quả thường',
+      a.ket_qua === null && a.su_kien.length === 1 && ea.verdict === 'PENDING' && ea.url === CA[0][1]
+      && ea.title === 'Original Sound T Lajico', JSON.stringify(a));
+    const eb = b.su_kien[0] || {};
+    check('4b. Nhạc bản quyền, không đọc được số video → LOẠI, không lọt vào Pending',
+      b.ket_qua === null && eb.verdict === 'LOAI' && eb.original === false, JSON.stringify(b));
+    const ec = c.su_kien[0] || {};
+    check('4c. Không lấy được link thật nhưng tên là sound gốc → cất bằng link dựng từ music id (như sound thường)',
+      c.ket_qua === null && ec.verdict === 'PENDING' && ec.url === M + 'original-sound' + ID, JSON.stringify(c));
+    const ee = e.su_kien[0] || {};
+    check('4e. Không có link thật, cũng không có music id → LOẠI (không có gì để cất)',
+      e.ket_qua === null && ee.verdict === 'LOAI', JSON.stringify(e));
+  }
+  const tat = chayPending(false);
+  check('4d. Pending TẮT → sound không đọc được số video bị LOẠI như trước, không cất',
+    !!tat.kq && tat.kq.every((x) => x.su_kien.length === 1 && x.su_kien[0].verdict === 'LOAI'),
+    tat.loi || JSON.stringify(tat.kq && tat.kq.map((x) => x.su_kien[0])));
+}
+
 done();

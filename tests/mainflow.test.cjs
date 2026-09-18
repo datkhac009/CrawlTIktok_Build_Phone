@@ -100,16 +100,26 @@ function ketThuc(entry, hetCa) {
 let sheetBat = false;
 let xongNap = null;                    // gọi để lần đọc Sheet đang treo trả kết quả
 const pushed = [];
+const pendingDay = [];                 // các dòng main.js cất vào tab Pending
+const nhanDuoc = { configure: [], readLinks: [], testConnection: [], updateKnownLinks: [] };   // Sheet giả nhận được gì
+let tabPendingGia = '';                // tên tab Pending; đọc tab này trả ngay `linkPendingGia`
+let linkPendingGia = [];
 const fakeSheets = {
-  configure(cfg) { sheetBat = !!(cfg && cfg.enabled); },
+  configure(cfg) { sheetBat = !!(cfg && cfg.enabled); nhanDuoc.configure.push(cfg); },
   isEnabled: () => sheetBat,
   setOnPushed(fn) { fakeSheets._onPushed = fn; },
-  readLinks: () => new Promise((res) => { xongNap = res; }),
-  updateKnownLinks: () => 0,
+  // Tab chính: TREO tới khi phép thử gọi `xongNap` (mục B cần đúng điều đó). Tab Pending: trả ngay.
+  readLinks: (id, tab, sa) => {
+    nhanDuoc.readLinks.push({ tab, sa });
+    if (tabPendingGia && tab === tabPendingGia) return Promise.resolve(linkPendingGia.slice());
+    return new Promise((res) => { xongNap = res; });
+  },
+  updateKnownLinks: (links) => { nhanDuoc.updateKnownLinks.push(...links); return 0; },
   enqueue: (row) => pushed.push(row),
+  enqueuePending: (row) => { pendingDay.push(row); return true; },
   flush() {},
   flushAll: async () => {},
-  testConnection: async () => ({ ok: true }),
+  testConnection: async (id, sa) => { nhanDuoc.testConnection.push({ id, sa }); return { ok: true }; },
   pushDedup: async () => ({ ok: true }),
   dropFromBuffer() {},
 };
@@ -384,6 +394,83 @@ const start = (id, serial, cfg = {}) => handlers.get('device-start')({}, { devic
     await nghi(400);
     check('L. Không chạy lại được → báo "Không chạy lại được" kèm lý do',
       coLog('dQ', /Không chạy lại được: .*cả hai pha/));
+  }
+
+  // ── M. GOOGLE SHEET: Service Account dạng chuỗi, tab Pending, kho link cục bộ ──
+  // Lỗi thật của v0.1.8: dán đúng JSON mà "Test kết nối" báo "thiếu client_email/private_key".
+  {
+    const SA = { type: 'service_account', client_email: 'crawler@gia.iam.gserviceaccount.com',
+      private_key: '-----BEGIN PRIVATE KEY-----\\nX\\n-----END PRIVATE KEY-----\\n' };
+    const chuoi = JSON.stringify(SA, null, 2);   // đúng thứ người dùng dán vào ô: một CHUỖI
+
+    // M1–M2. Test kết nối.
+    const r1 = await handlers.get('sheets-test')({}, { spreadsheetId: 'x', sa: chuoi });
+    const lanTest = nhanDuoc.testConnection.pop();
+    check('M1. "Test kết nối" với JSON dán vào ô → sheets.cjs nhận ĐỐI TƯỢNG, không phải chuỗi',
+      r1.ok === true && lanTest && typeof lanTest.sa === 'object' && lanTest.sa.client_email === SA.client_email,
+      lanTest ? typeof lanTest.sa : 'không gọi');
+    const soLanTruoc = nhanDuoc.testConnection.length;
+    const r2 = await handlers.get('sheets-test')({}, { spreadsheetId: 'x', sa: '{ "client_email": "a", ' });
+    check('M2. JSON dán thiếu/hỏng → báo đúng là HỎNG CÚ PHÁP, không nói sai "thiếu client_email"',
+      r2.ok === false && /hỏng cú pháp/.test(r2.msg || '') && nhanDuoc.testConnection.length === soLanTruoc, r2.msg);
+
+    // M3–M5. Chạy máy với Sheet bật: mọi chỗ gọi Sheet đều nhận đối tượng; tab Pending được đọc.
+    devslot._resetForTest();
+    await handlers.get('set-global-settings')({}, { deviceConcurrency: 6, launchStaggerMs: 0 });
+    tabPendingGia = 'Total_Link_Voice_Pending';
+    linkPendingGia = ['https://www.tiktok.com/music/original-sound-7555555555555555555'];
+    FakeStore.last.set('sheets_config', { enabled: true, spreadsheetId: 'x', tab: 'Data', sa: chuoi,
+      pendingTab: tabPendingGia });
+    nhanDuoc.configure.length = 0; nhanDuoc.readLinks.length = 0;
+    await start('dR', '192.168.5.119:5555');
+    const cfgDaNhan = nhanDuoc.configure[nhanDuoc.configure.length - 1];
+    check('M3. Khi chạy máy, sheets.configure nhận Service Account dạng ĐỐI TƯỢNG',
+      !!cfgDaNhan && typeof cfgDaNhan.sa === 'object' && cfgDaNhan.sa.client_email === SA.client_email);
+    const lanChayR = lanChay('dR')[0];
+    check('M4. Tab Pending đang bật → báo xuống Python (để lấy link cho sound không đọc được số post)',
+      !!lanChayR && lanChayR.params.pendingOn === true);
+    xongNap(['https://www.tiktok.com/music/original-sound-7444444444444444444']);   // tab chính xong
+    await nghi(30);
+    const docTab = nhanDuoc.readLinks.map((x) => x.tab);
+    check('M5. Nạp đầu phiên đọc CẢ tab chính LẪN tab Pending, bằng Service Account đối tượng',
+      docTab.includes('Data') && docTab.includes(tabPendingGia) && nhanDuoc.readLinks.every((x) => typeof x.sa === 'object'),
+      JSON.stringify(docTab));
+    // Link trong tab Pending là do MÁY KHÁC cất. Máy này gặp lại đúng sound đó thì phải coi là trùng
+    // — tab Pending chỉ có tác dụng lọc trùng nếu link của nó vào được kho cục bộ.
+    const dongTruocM5 = soDong();
+    lanChayR.onData('dR', { name: 'máy khác đã cất Pending', url: linkPendingGia[0], posts: 5000 });
+    check('M5b. Sound máy khác đã cất vào tab Pending → coi là TRÙNG, không lên bảng', soDong() === dongTruocM5);
+
+    // M6–M8. Kết quả PENDING: cất vào tab Pending, KHÔNG lên bảng kết quả, vào kho để khỏi cất lại.
+    const urlP = 'https://www.tiktok.com/music/original-sound-7666666666666666666';
+    const dongTruoc = soDong();
+    lanChayR.onData('dR', { name: 'không đọc được số', url: urlP, posts: null, pending: true });
+    check('M6. Sound Pending được cất vào tab Pending: [tên, link, "", thiết bị]',
+      pendingDay.length === 1 && pendingDay[0][1] === urlP && pendingDay[0][2] === '', JSON.stringify(pendingDay[0]));
+    check('M7. Sound Pending KHÔNG lên bảng kết quả (bảng chỉ chứa sound đã đếm được)', soDong() === dongTruoc);
+    lanChayR.onData('dR', { name: 'không đọc được số', url: urlP, posts: null, pending: true });
+    check('M8. Gặp lại đúng sound đó → không cất lần hai (đã vào kho cục bộ)', pendingDay.length === 1);
+    check('M9. Giao diện được báo để đếm chip "N lỗi → Pending"',
+      sent.some(([c, p]) => c === 'crawl-status' && p.kind === 'pending' && p.ok === true));
+    ketThuc(lanChayR, false);
+
+    // M10–M12. Ba nút của kho link cục bộ.
+    const info = await handlers.get('links-info')({});
+    check('M10. "Kho link cục bộ" hiện đường dẫn + số link đang giữ',
+      info.ok === true && /known_links\.txt$/.test(info.path) && info.count > 0, `${info.count} link`);
+    const rl = await handlers.get('links-reload')({});
+    check('M11. "Đọc lại file" đọc lại từ đĩa', rl.ok === true && rl.count === info.count);
+    const imp = handlers.get('links-import-from-sheet')({});
+    await nghi(20);
+    xongNap(['https://www.tiktok.com/music/original-sound-7888888888888888888']);
+    const ri = await imp;
+    check('M12. "Nạp từ Google Sheet vào kho" đọc tab chính + tab Pending, báo số link thêm mới',
+      ri.ok === true && ri.read === 1 && ri.added === 1 && ri.pendingRead === 1, JSON.stringify(ri));
+    check('M12b. Link vừa nạp vào luôn bộ lọc ĐANG CHẠY của cổng đẩy Sheet (khỏi phải mở lại app)',
+      nhanDuoc.updateKnownLinks.includes('https://www.tiktok.com/music/original-sound-7888888888888888888'));
+    FakeStore.last.set('sheets_config', { enabled: false });
+    sheetBat = false;
+    tabPendingGia = '';
   }
 
   _xong = true;
