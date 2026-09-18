@@ -181,13 +181,11 @@ Chưa dò được `resource-id` của caption và tên tác giả trên máy th
 chúng theo hình dạng (handle là chuỗi `@abc`, caption là chuỗi dài nhất). Khớp theo **tên hiển
 thị** của tác giả vì thế yếu hơn bản PC. Hướng sai ở đây là *bỏ sót*, không phải *bắt nhầm*.
 
-**Lọc Original Sound chưa bằng bản PC** (đo 2026-09-18, `probe_screen.py --origin`). Python chỉ loại
-tên có chữ "Contains:" / "Bao gồm", rồi dựng link `original-sound-<id>` cho MỌI sound qua. Nên
-nhạc bản quyền không có chữ đó (vd "Passport Sky" — slug web thật `Passport-Sky-…`) vẫn lọt, và
-bị gắn nhầm dạng `original-sound-…`. Link thật qua Share → Copy link có đúng slug web, nên chép
-được luật slug của bản PC (`linkkey.isOriginalSound`) — nhưng luật đó cũng bỏ sound gốc bị người
-tạo đổi tên và giữ sound "Contains: …", tức đổi hẳn thứ được thu. Đang chờ chủ dự án quyết.
-
-**`linkkey.cjs` thiếu nhãn "âm thanh gốc"** (module dùng chung, bản PC là nguồn). Slug
-`âm-thanh-gốc-…` không được rút về `original-sound-<id>`, nên cùng một sound thu từ máy tiếng Việt
-và máy tiếng Anh ra hai khoá lọc trùng. Phải sửa bên bản PC rồi chép sang (`srcsync` khoá byte).
+**Luật "Chỉ lấy Original Sound" = luật bản PC** (2026-09-18). Sound đạt số post được lấy **link
+thật** qua Share → Copy link (thêm ~2–3 giây, chỉ cho sound đã đạt). Slug của link thật, hoặc tên
+sound, phải bắt đầu bằng một nhãn "original sound" (34 thứ tiếng trong `linkkey.cjs`, gồm "âm
+thanh gốc"). Nhãn do Node truyền xuống — Python không giữ bản sao; Node chốt lại bằng chính
+`linkkey.isOriginalSound` và rút gọn link. `tests/goc.test.cjs` chạy CẢ HAI phía trên 20 mẫu (có 8
+sound đo thật trên farm) để hai bên không lệch. Hệ quả, giống hệt bản PC: nhạc bản quyền bị bỏ;
+sound gốc bị người tạo đổi tên cũng bị bỏ (không phân biệt được với bài hát); sound "Contains: …"
+được GIỮ. Không lấy được link thật (UI khác tiếng Anh) thì xét theo tên và in cảnh báo.

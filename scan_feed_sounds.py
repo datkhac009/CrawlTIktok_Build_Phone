@@ -56,7 +56,26 @@ MIN_POSTS = int(float(os.environ.get("MIN_POSTS", "1000")))
 # 0 = KHONG gioi han tren, giong o "Số video đến ≤" cua ban PC (QD-27: 0 la gia tri hop le).
 MAX_POSTS = int(float(os.environ.get("MAX_POSTS", "100000")))
 ORIGINAL_ONLY = os.environ.get("ORIGINAL_ONLY", "1") != "0"
-REJECT_KEYWORDS = ["contains:", "bao gồm"]
+
+# ── LUAT "CHI LAY ORIGINAL SOUND" — DUNG LUAT BAN PC (2026-09-18) ──
+#
+# Ban cu o day: `REJECT_KEYWORDS = ["contains:", "bao gồm"]` — chi LOAI ten co chu "Contains:"
+# (tieng Anh/Viet), roi dung link `original-sound-<id>` cho MOI sound con lai. Do tren may that
+# (`probe_screen.py --origin`): nhac ban quyen "Passport Sky" — link that `Passport-Sky-<id>` —
+# lot qua va bi GAN NHAM thanh `original-sound-<id>` tren Sheet.
+#
+# Gio xet DUNG nhu ban PC (`linkkey.isOriginalSound`): SLUG cua LINK THAT (lay qua Share -> Copy
+# link), hoac TEN sound, phai BAT DAU bang mot nhan "original sound" (34 thu tieng, gom ca "âm
+# thanh gốc"). Nhan do Node dung tu `src/linkkey.cjs` roi truyen xuong — Python KHONG giu ban sao
+# nao (bai hoc `linkkey.cjs` tung lech giua hai app). Node con chot lai lan cuoi bang chinh ham
+# `isOriginalSound` cua ban PC.
+_RE_GOC_SLUG_SRC = os.environ.get("RE_GOC_SLUG", "")
+_RE_GOC_TEN_SRC = os.environ.get("RE_GOC_TEN", "")
+RE_GOC_SLUG = re.compile(_RE_GOC_SLUG_SRC or "(?!)")
+RE_GOC_TEN = re.compile(_RE_GOC_TEN_SRC or "(?!)")
+# Chay ngoai app (start_scan_feed_sound.bat) thi khong co nhan -> KHONG loc duoc Original Sound.
+# Khi do thu moi sound dat so post va NOI RA luc khoi dong, thay vi loai sach moi thu trong im lang.
+CO_LUAT_GOC = bool(_RE_GOC_SLUG_SRC and _RE_GOC_TEN_SRC)
 
 HERE = os.path.dirname(__file__)
 OUTPUT_FILE = os.path.join(HERE, "sound_links.txt")
@@ -296,46 +315,74 @@ def get_music_id(d):
     return None
 
 
-def canonical_from_url(url):
-    """Rút link bất kỳ (kể cả đã resolve) về dạng chuẩn nếu có music id trong path."""
-    m = re.search(r"/music/[^/?#]*-(\d{8,})", url or "")
-    return f"https://www.tiktok.com/music/original-sound-{m.group(1)}" if m else None
+def lay_link_that(d):
+    """Share sound -> Copy link -> clipboard -> theo redirect -> LINK THAT, co slug that.
 
-
-def resolve_shortlink(url):
-    """Giải shortlink /t/xxx -> URL cuối -> dạng chuẩn original-sound-<id>. Trả None nếu không được."""
-    if not url:
-        return None
-    try:
-        import requests
-        r = requests.get(url, allow_redirects=True, timeout=10,
-                         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        return canonical_from_url(r.url)
-    except Exception:
-        return None
-
-
-def get_link(d):
-    """Ưu tiên dựng link từ music ID (1 lệnh dumpsys, ~0.5s, không đụng UI).
-    Fallback: Share sound -> Copy link -> clipboard, rồi GIẢI shortlink về dạng chuẩn
-    (để không còn link cũ /t/... lọt qua)."""
-    mid = get_music_id(d)
-    if mid:
-        return f"https://www.tiktok.com/music/original-sound-{mid}"
+    Tra None neu khong lay duoc. KHONG rut gon link o day — rut gon la viec cua Node
+    (`linkkey.canonicalSoundUrl`), va no chi rut gon SLUG CUA SOUND GOC. Ban cu rut MOI link
+    `/music/...-<id>` thanh `original-sound-<id>`, ke ca nhac ban quyen — dung loi gan nham.
+    """
     share = d(description="Share sound")
-    if not share.wait(timeout=5):
+    if not share.wait(timeout=4):
         return None
     share.click()
     time.sleep(WAIT_SHARE_SHEET)
     copy = d(description="Copy link")
-    if not copy.wait(timeout=5):
+    if not copy.wait(timeout=4):
         d.press("back")
         return None
     copy.click()
     time.sleep(1)
+    # Bang chia se con mo thi dong lai, de nut back sau do roi dung vao trang nhac.
+    if d(description="Copy link").exists:
+        d.press("back")
+        time.sleep(0.5)
     raw = (d.clipboard or "").strip()
-    # Chuan hoa: neu la link /music/... thi rut gon; neu la shortlink /t/... thi resolve.
-    return canonical_from_url(raw) or resolve_shortlink(raw) or raw
+    if not raw.startswith("http"):
+        return None
+    if "/music/" in raw:
+        return raw.split("?")[0].split("#")[0]
+    # Link ngan (vt.tiktok.com/...): theo redirect ra link web that. `stream=True` + dong ngay:
+    # chi can URL cuoi, khong tai trang HTML vai tram KB ve.
+    try:
+        import requests
+        r = requests.get(raw, allow_redirects=True, timeout=10, stream=True,
+                         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        cuoi = r.url
+        r.close()
+    except Exception:
+        return None
+    return cuoi.split("?")[0].split("#")[0] if "/music/" in cuoi else None
+
+
+def la_sound_goc(url, tieu_de):
+    """Sound goc hay khong — DUNG luat ban PC (`linkkey.isOriginalSound`): slug cua link that,
+    HOAC ten sound, bat dau bang mot nhan "original sound" (nhan tu Node, xem RE_GOC_*).
+
+    Hai buoc chuan hoa bat buoc, giong het phia JS:
+      - giai %-encode: TikTok tra slug tieng Viet dang `%C3%A2m-thanh-g%E1%BB%91c-...`
+      - NFC + chu thuong: tieng Viet/Han co hai cach ma hoa cung mot chu (dung san / to hop)
+    """
+    import unicodedata
+    from urllib.parse import unquote
+    if url:
+        sach = url.strip().split("?")[0].split("#")[0].rstrip("/")
+        try:
+            sach = unquote(sach)
+        except Exception:
+            pass
+        m = re.search(r"/music/([^/]*)-(\d{8,})$", sach)
+        if m and RE_GOC_SLUG.match(unicodedata.normalize("NFC", m.group(1)).lower()):
+            return True
+    t = unicodedata.normalize("NFC", tieu_de or "").strip().lower()
+    return bool(RE_GOC_TEN.match(t))
+
+
+def _slug_ngan(url):
+    """'.../music/Passport-Sky-7633...' -> 'Passport-Sky' — bang chung ngan gon cho dong log."""
+    from urllib.parse import unquote
+    m = re.search(r"/music/([^/?#]*)-\d{8,}", unquote(url or ""))
+    return m.group(1)[:40] if m else ""
 
 
 # Dem cu TRUOT VI HET TRAN CHO, de tra loi duoc cau "quet nhanh the co dang tin khong".
@@ -347,6 +394,10 @@ def get_link(d):
 # mot sound bi loc loai. Khong dem duoc thi khong biet nhip dang dat hay qua tay, va "nhanh" voi
 # "nhanh den muc bo sot" nhin tu log la mot.
 TRUOT = {"khong_icon": 0, "khong_vao_trang_nhac": 0, "het_gio_doc_so_post": 0}
+
+# Dem sound DAT so post nhung bi bo vi KHONG PHAI Original Sound, va so lan khong lay duoc link
+# that. In o dong tong ket: loc gio la luat that (theo ban PC), mat sound phai thay duoc.
+DEM = {"khong_goc": 0, "khong_link_that": 0}
 
 # Vì sao bỏ lượt tương tác. Bản cũ gộp cả bốn thành một dòng "video đã đổi" — sai ở ba trong bốn
 # trường hợp, và không có số nào để biết cái nào đang xảy ra.
@@ -467,39 +518,65 @@ def check_current_video(d):
                 "tối đa\".")
             break
         time.sleep(0.2)
-    is_original = not any(kw in desc.lower() for kw in REJECT_KEYWORDS)
     name = extract_sound_name(desc)
+    # Ten NGUYEN VAN — GIU nhan ("Original Sound ...", "âm thanh gốc ...", "Contains: ..."), chi bo
+    # duoi "N posts". Luat Original Sound cua ban PC xet CHINH nhan nay; `name` o tren da cat mat
+    # nhan "original sound" nen khong dung duoc cho viec xet.
+    tieu_de = re.sub(r"[‎‏]?[\d.,]+\s*[KkMm]?\s*posts?\s*$", "", desc, flags=re.I).strip()
 
     result = None
     _ten = name or "(không đọc được tên)"
     # Bien GOM CA HAI DAU (>= / <=) nhu ban PC ("Số video từ ≥ / đến ≤"). Ban cu so chat
     # `MIN < posts < MAX`, nen sound dung 1.000 post bi loai du o nhap 1000.
     trong_khoang = posts is not None and posts >= MIN_POSTS and (MAX_POSTS <= 0 or posts <= MAX_POSTS)
-    if (is_original or not ORIGINAL_ONLY) and trong_khoang:
-        link = get_link(d)
-        if link:
-            result = (link, posts, name)
-            # ⚠ Câu phán quyết theo khuôn bản PC: VIỆC "TÊN" (bằng chứng), KHÔNG dấu chấm cuối.
-            # Và KHÔNG in link: link đã nằm trong bảng kết quả, in thêm vào log chỉ làm dòng dài
-            # ra mà không nói thêm gì.
-            log(f'Lấy "{_ten}" ({_so(posts)} video)')
-            emit_event("result", verdict="DAT", name=name, url=link, posts=posts)
+    if trong_khoang:
+        # Loc so post TRUOC, xet Original Sound SAU: lay link that ton 2-3 giay (Share -> Copy
+        # link -> theo redirect), chi dang tieu cho sound da dat so post (~5-10%).
+        url_that = lay_link_that(d)
+        if not url_that:
+            DEM["khong_link_that"] += 1
+            log_han_che(
+                "khong_link_that",
+                "⚠ Không lấy được link thật qua Share → Copy link — đang xét Original Sound theo TÊN, "
+                "nên sẽ bỏ sót sound gốc bị đổi tên và sound \"Contains: …\".")
+        loc_goc = ORIGINAL_ONLY and CO_LUAT_GOC
+        goc = la_sound_goc(url_that, tieu_de)
+        if loc_goc and not goc:
+            DEM["khong_goc"] += 1
+            bang_chung = (f"link thật …/music/{_slug_ngan(url_that)}" if url_that
+                          else "không lấy được link thật, tên cũng không phải")
+            log(f'Bỏ "{_ten}" (không phải Original Sound — {bang_chung})')
+            emit_event("result", verdict="LOAI", name=name, posts=posts, original=False)
         else:
-            log(f'⚠ Bỏ "{_ten}" ({_so(posts)} video) — đạt bộ lọc nhưng KHÔNG lấy được link.')
-            emit_event("result", verdict="ERROR", name=name, posts=posts, msg="khong lay duoc link")
+            link = url_that
+            if not link:
+                # Khong co link that thi dung tu music id. Slug `original-sound` CHI khi ten da xac
+                # nhan la sound goc; con lai dung slug trung tinh `sound` — TikTok mo link theo ID
+                # nen link van dung, chi khong NHAN BUA day la sound goc.
+                mid = get_music_id(d)
+                if mid:
+                    link = f"https://www.tiktok.com/music/{'original-sound' if goc else 'sound'}-{mid}"
+            if link:
+                result = (link, posts, name)
+                # ⚠ Câu phán quyết theo khuôn bản PC: VIỆC "TÊN" (bằng chứng), KHÔNG dấu chấm cuối.
+                # Và KHÔNG in link: link đã nằm trong bảng kết quả, in thêm vào log chỉ làm dòng dài
+                # ra mà không nói thêm gì.
+                log(f'Lấy "{_ten}" ({_so(posts)} video)')
+                emit_event("result", verdict="DAT", name=name, title=tieu_de, url=link, posts=posts)
+            else:
+                log(f'⚠ Bỏ "{_ten}" ({_so(posts)} video) — đạt bộ lọc nhưng KHÔNG lấy được link.')
+                emit_event("result", verdict="ERROR", name=name, posts=posts, msg="khong lay duoc link")
     else:
         # Mỗi lý do loại một câu riêng. Bản cũ in `original=True posts=None desc='...'` — đọc ra
         # thì phải tự suy, mà suy sai thì không ai biết.
         if posts is None:
             _vi = "không đọc được số video"
-        elif not is_original and ORIGINAL_ONLY:
-            _vi = "không phải Original Sound"
         elif posts < MIN_POSTS:
             _vi = f"{_so(posts)} < {_so(MIN_POSTS)} video"
         else:
             _vi = f"{_so(posts)} > {_so(MAX_POSTS)} video"
         log(f'Bỏ "{_ten}" ({_vi})')
-        emit_event("result", verdict="LOAI", name=name, posts=posts, original=is_original)
+        emit_event("result", verdict="LOAI", name=name, posts=posts)
 
     d.press("back")
     time.sleep(REST_AFTER_BACK)
@@ -824,6 +901,9 @@ def main():
         emit_event("status", state="done", checked=0, qualified=0)
         return
 
+    if ORIGINAL_ONLY and not CO_LUAT_GOC:
+        log("⚠ Chạy ngoài app: không có luật Original Sound từ app — thu MỌI sound đạt số post.")
+
     limit = int(float(os.environ.get("LIMIT", "0")))
     count = 0
     qualified = 0
@@ -971,6 +1051,10 @@ def main():
     # Khuôn bản PC: một câu nền, rồi CÁC MẢNH GHÉP THÊM chỉ khi khác 0. Nhờ vậy bật thêm một tính
     # năng không viết lại dòng cũ, và số 0 không chiếm chỗ của số đáng đọc.
     _p = [f"quét {count} video", f"lấy {qualified} sound"]
+    if DEM["khong_goc"]:
+        _p.append(f"bỏ {DEM['khong_goc']} sound không phải Original Sound")
+    if DEM["khong_link_that"]:
+        _p.append(f"{DEM['khong_link_that']} lần không lấy được link thật")
     if live_bo_qua:
         _p.append(f"bỏ qua {live_bo_qua} livestream")
     if TRUOT["khong_icon"]:

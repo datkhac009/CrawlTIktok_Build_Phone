@@ -740,7 +740,7 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
 
   // 3a — không thu sound khớp bộ lọc.
   check('20a. Kết quả ĐẠT phải qua cổng ngôn ngữ trước khi lên bảng',
-    /payload\.verdict === 'DAT' && brain\.choThu\(payload\.name\)\) \{\s*\n\s*onData\(/.test(rn));
+    /\} else if \(brain\.choThu\(tieuDe\)\) \{[\s\S]{0,300}?onData\(deviceId/.test(rn));
   check('20b. Có ô "Không thu sound" trong Cài đặt, đọc và ghi đủ',
     /id="cfgNiBlockCollect"/.test(html)
     && /\$\('cfgNiBlockCollect'\)\.checked = base\.niBlockCollect !== false/.test(rj)
@@ -803,6 +803,30 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     /id="cfgMode"/.test(html) && /getElementById\('cfgMode'\)\.addEventListener\('change', apCheDo\)/.test(rj));
   check('21m. Bảng thiết bị nói rõ đang ở pha nào',
     /`Xem link \$\{st\.viewIdx \+ 1\}\/\$\{st\.viewTotal\}`/.test(rj) && /`Quét \$\{gioPhut\(/.test(rj));
+}
+
+// ── 22. Luật "Chỉ lấy Original Sound" = luật bản PC (2026-09-18) ──
+// Phần KHỚP NHAU giữa Python và bản PC được `tests/goc.test.cjs` chạy thật trên 20 mẫu. Ở đây
+// canh các mắt xích nối dây.
+{
+  const rn = doc('src/runner.cjs');
+  const py = doc('scan_feed_sounds.py');
+
+  check('22a. Nhãn original sound dựng TỪ linkkey.cjs rồi truyền xuống Python',
+    /RE_GOC_SLUG = _reNhanDau\(linkkey\.ORIGINAL_SOUND_LABELS/.test(rn) && /\n\s*RE_GOC_SLUG,\s*\n\s*RE_GOC_TEN,/.test(rn));
+  // Soi MÃ chứ không soi chú thích: chú thích giải thích lý do sửa có nhắc tên cũ, và nên nhắc.
+  check('22b. Python KHÔNG còn danh sách chữ cứng "Contains:" / "Bao gồm"',
+    !/^REJECT_KEYWORDS\s*=|\bin REJECT_KEYWORDS\b/m.test(py));
+  check('22c. Python KHÔNG còn tự dựng link original-sound cho mọi sound (lỗi gắn nhầm nhạc bản quyền)',
+    !/def canonical_from_url/.test(py) && !/def get_link\(/.test(py));
+  check('22d. Sound đạt số post được lấy LINK THẬT rồi mới xét Original Sound',
+    /url_that = lay_link_that\(d\)[\s\S]{0,900}goc = la_sound_goc\(url_that, tieu_de\)/.test(py));
+  check('22e. Node chốt lần cuối bằng ĐÚNG hàm của bản PC, rồi mới rút gọn link',
+    /!linkkey\.isOriginalSound\(url, tieuDe\)/.test(rn) && /url: linkkey\.canonicalSoundUrl\(url\)/.test(rn));
+  check('22f. Không có link thật thì KHÔNG gắn nhãn original-sound cho sound chưa xác nhận',
+    /\{'original-sound' if goc else 'sound'\}-\{mid\}/.test(py));
+  check('22g. Sound bị bỏ vì không phải Original Sound được ĐẾM và in ở tổng kết',
+    /DEM\["khong_goc"\] \+= 1/.test(py) && /không phải Original Sound"\)/.test(py));
 }
 
 // Hàm làm tròn: chạy thật, không soi chữ.

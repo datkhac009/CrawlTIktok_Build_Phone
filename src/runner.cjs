@@ -13,6 +13,29 @@ const askproto = require('./askproto.cjs');
 const { getDeviceDir } = require('./paths.cjs');
 
 const uilabels = require('./uilabels.cjs');
+const linkkey = require('./linkkey.cjs');
+
+// ── NHÃN "ORIGINAL SOUND" cho phía Python (2026-09-18) ──
+//
+// Dựng TỪ `linkkey.cjs` — danh sách 34 thứ tiếng của bản PC — rồi truyền xuống bằng biến môi
+// trường, y hệt cách nhãn nút đi từ `uilabels.cjs`. Python không giữ bản sao nào.
+//
+// Khớp ĐÚNG luật `_hasLabelPrefix` của linkkey: nhãn đứng ĐẦU chuỗi, và ngay sau nó là HẾT chuỗi
+// hoặc một dấu ngăn cách — slug ngăn bằng '-', tên ngăn bằng ' ' hoặc '-'. Thiếu ràng buộc ngăn
+// cách thì "original-soundtrack-of-my-life" (nhạc phim có bản quyền) lọt thành sound gốc — đúng
+// lỗi bản PC đã sửa. `tests/goc.test.cjs` chạy CẢ HAI phía trên cùng bộ mẫu để hai bên không lệch.
+function _nfcThuong(s) {
+  let x = String(s == null ? '' : s);
+  try { x = x.normalize('NFC'); } catch (_) {}
+  return x.toLowerCase();
+}
+function _reNhanDau(list, ngan) {
+  const phan = list.filter(Boolean).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const lop = ngan.split('').map((c) => (c === '-' ? '\\-' : c)).join('');
+  return phan.length ? `^(?:${phan.join('|')})(?:[${lop}]|$)` : '(?!)';
+}
+const RE_GOC_SLUG = _reNhanDau(linkkey.ORIGINAL_SOUND_LABELS.map((l) => _nfcThuong(l).replace(/\s+/g, '-')), '-');
+const RE_GOC_TEN = _reNhanDau(linkkey.ORIGINAL_SOUND_LABELS.map(_nfcThuong), ' -');
 
 const SCRIPT_PATH = getPythonScriptPath();
 const TIKTOK_PKGS = ['com.zhiliaoapp.musically', 'com.ss.android.ugc.trill'];
@@ -228,6 +251,9 @@ function startDevice(params, onData, onStatus) {
     RE_FOLLOW: _reTu(uilabels.FOLLOW_LABELS),
     RE_FOLLOWING: _reTu(uilabels.FOLLOWING_LABELS),
     RE_NOT_INTERESTED: _reTu(uilabels.NOT_INTERESTED_LABELS),
+    // Nhãn "original sound" — dựng từ `linkkey.cjs`, xem chú thích ở `_reNhanDau`.
+    RE_GOC_SLUG,
+    RE_GOC_TEN,
     // Phía Python dùng ĐÚNG adb mà phía Node đã chọn. Hai bên tự dò riêng là có ngày mỗi bên
     // một binary khác phiên bản, và chúng sẽ thay nhau giết adb server của nhau.
     ADB_PATH,
@@ -345,10 +371,24 @@ function startDevice(params, onData, onStatus) {
         // (`Lấy "X" (3.300 video)` / `Bỏ "X" (1.600.000 > 100.000 video)`) ngay khi đọc xong
         // trang nhạc. Bản cũ in thêm một dòng nữa ở đây, nên MỌI kết quả nằm trong log hai lần,
         // hai định dạng khác nhau — chủ dự án đọc log tưởng máy làm hai lượt.
-        // `choThu` = cổng ngôn ngữ khi THU sound (clone PC `niBlockCollect`). Chặn thì sound
-        // không vào bảng, không lên Sheet; số lượng + ví dụ hiện ở dòng Tổng kết.
-        if (payload.verdict === 'DAT' && brain.choThu(payload.name)) {
-          onData(deviceId, { name: payload.name, url: payload.url, posts: payload.posts });
+        if (payload.verdict === 'DAT') {
+          const url = String(payload.url || '');
+          const tieuDe = String(payload.title || payload.name || '');
+          // ── CHỐT LẦN CUỐI BẰNG ĐÚNG LUẬT BẢN PC ──
+          // Python đã lọc bằng biểu thức dựng từ CÙNG danh sách nhãn, nên hai bên phải khớp nhau
+          // (`tests/goc.test.cjs` khoá điều đó). Lệch nhau là lỗi — tin `linkkey` và NÓI RA.
+          if (originalOnly !== false && !linkkey.isOriginalSound(url, tieuDe)) {
+            onStatus(deviceId, {
+              kind: 'log',
+              line: `⚠ Bỏ "${payload.name || '?'}" — xét lại theo luật bản PC: không phải Original Sound (${url}).`,
+            });
+          // `choThu` = cổng ngôn ngữ khi THU sound (clone PC `niBlockCollect`). Chặn thì sound
+          // không vào bảng, không lên Sheet; số lượng + ví dụ hiện ở dòng Tổng kết.
+          } else if (brain.choThu(tieuDe)) {
+            // Rút gọn bằng `canonicalSoundUrl` của bản PC: slug sound gốc (34 thứ tiếng) → dạng
+            // `original-sound-<id>`; nhạc bản quyền GIỮ NGUYÊN tên bài trong link.
+            onData(deviceId, { name: payload.name, url: linkkey.canonicalSoundUrl(url), posts: payload.posts });
+          }
         }
       }
       return;
@@ -398,4 +438,4 @@ function stopAll() {
 
 // `kePhanTuongTac` mở ra CHỈ để phép thử gọi được: đây là dòng người dùng nhìn thấy nhiều nhất
 // trong ca chạy, nên nó phải kiểm được mà không cần cắm điện thoại.
-module.exports = { startDevice, stopDevice, stopAll, runningIds, isRunning, kePhanTuongTac, soNguyen };
+module.exports = { startDevice, stopDevice, stopAll, runningIds, isRunning, kePhanTuongTac, soNguyen, RE_GOC_SLUG, RE_GOC_TEN };

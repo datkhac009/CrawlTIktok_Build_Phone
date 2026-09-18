@@ -33,6 +33,11 @@
 const _LABELS_SEEN = [
   'original sound',      // en — dạng chuẩn, đích của phép rút gọn
   'nhạc nền',            // vi — có trong mã từ trước
+  // vi — THÊM 2026-09-18. Đo trên farm điện thoại (`probe_screen.py --origin`, TikTok 46.9.3):
+  // 3/8 sound gốc có slug `âm-thanh-gốc-<tên user>`. Thiếu nhãn này thì (1) sound gốc có tên
+  // lẫn link đều tiếng Việt bị coi là "không phải Original Sound" và BỊ BỎ, và (2) cùng một
+  // sound ra hai khoá lọc trùng — `âm-thanh-gốc-lajico-7633…` và `original-sound-7633…`.
+  'âm thanh gốc',
   'son original',        // fr
   'suara asli',          // id / ms
   'som original',        // pt
