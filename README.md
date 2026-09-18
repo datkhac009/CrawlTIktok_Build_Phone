@@ -69,7 +69,7 @@ Theo thứ tự, dừng ở cái đầu tiên thấy được:
 ```bash
 npm install
 npm start           # hoặc start.bat
-npm test            # 180 phép thử, ~2 giây
+npm test            # ~430 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
 ```
 
 Trong app, bấm **🔌 Kiểm tra** ở dòng một máy. Nó kiểm từng mục và **mục nào đỏ thì in ra đúng
@@ -116,12 +116,24 @@ là kết quả thu thập. Cả hai là trạng thái riêng của từng máy 
 
 ## Hiện trạng
 
-**Có**: quét For You · lọc theo số post · lọc Original Sound (đa ngôn ngữ) · đẩy Google Sheet ·
-trần số máy chạy đồng thời + hàng đợi · chu kỳ quét/nghỉ · lọc theo ngôn ngữ · nhận nhãn
-AI-generated · bấm "Not interested" · **follow / thả tim / ghé thăm trang cá nhân** kèm hạn mức
-theo ngày.
+**Có**: quét For You · **chế độ Quét ⇄ Xem** (clone `cycle` bản PC) · lọc theo số post · lọc
+Original Sound · đẩy Google Sheet · lọc trùng mọi máy qua `known_links.txt` + đọc Sheet tăng dần
+(chép nguyên `sheets.cjs` bản PC) · trần số máy chạy đồng thời + hàng đợi · chu kỳ quét/nghỉ ·
+lọc theo ngôn ngữ, **không thu** sound khớp bộ lọc · nhận nhãn AI-generated · bấm "Not
+interested" · **follow / thả tim / ghé thăm trang cá nhân** kèm hạn mức.
 
-**Chưa có**: tự cập nhật.
+**Chưa có**: Quét Mix (= Quét ⇄ Xem + ghé thăm kênh, như bản PC) · tự cập nhật.
+
+### Quét ⇄ Xem (2026-09-18)
+
+Quét For You N giờ → nghỉ → xem danh sách link M phút → nghỉ → lặp tới khi bấm Dừng. Chia pha
+bằng ĐÚNG `src/phaseplan.cjs` của bản PC. Mỗi pha là một lượt chạy Python (`MODE=scan|view`);
+hết pha máy nhả khe và xếp lại cuối hàng. Pha Xem không thu sound, không bấm gì — mở link bằng
+deep link, bấm một video ngẫu nhiên trong lưới, xem, vuốt thêm vài chục video của cùng sound.
+Mốc "xem tới link nào" nằm ở `config/devices/<id>/view_cursor.json`, nên pha sau (kể cả sau khi
+tắt app) xem tiếp đúng chỗ. Khác bản PC ở một điểm: bản PC xem 40–70% **độ dài** video, còn điện
+thoại đã đo là không đọc được độ dài video, nên xem theo **giây**. Ghé thăm kênh tắt ở chế độ
+này, đúng như bản PC (ghé thăm là phần Quét Mix cộng thêm).
 
 ## Phán xét ở đâu
 
@@ -168,3 +180,14 @@ Mặc định **TẮT hết**. Nên thử một máy vài ngày trước khi m�
 Chưa dò được `resource-id` của caption và tên tác giả trên máy thật, nên `phone_actions.py` nhận
 chúng theo hình dạng (handle là chuỗi `@abc`, caption là chuỗi dài nhất). Khớp theo **tên hiển
 thị** của tác giả vì thế yếu hơn bản PC. Hướng sai ở đây là *bỏ sót*, không phải *bắt nhầm*.
+
+**Lọc Original Sound chưa bằng bản PC** (đo 2026-09-18, `probe_screen.py --origin`). Python chỉ loại
+tên có chữ "Contains:" / "Bao gồm", rồi dựng link `original-sound-<id>` cho MỌI sound qua. Nên
+nhạc bản quyền không có chữ đó (vd "Passport Sky" — slug web thật `Passport-Sky-…`) vẫn lọt, và
+bị gắn nhầm dạng `original-sound-…`. Link thật qua Share → Copy link có đúng slug web, nên chép
+được luật slug của bản PC (`linkkey.isOriginalSound`) — nhưng luật đó cũng bỏ sound gốc bị người
+tạo đổi tên và giữ sound "Contains: …", tức đổi hẳn thứ được thu. Đang chờ chủ dự án quyết.
+
+**`linkkey.cjs` thiếu nhãn "âm thanh gốc"** (module dùng chung, bản PC là nguồn). Slug
+`âm-thanh-gốc-…` không được rút về `original-sound-<id>`, nên cùng một sound thu từ máy tiếng Việt
+và máy tiếng Anh ra hai khoá lọc trùng. Phải sửa bên bản PC rồi chép sang (`srcsync` khoá byte).

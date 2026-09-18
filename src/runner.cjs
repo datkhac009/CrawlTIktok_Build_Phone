@@ -2,6 +2,8 @@
 // Mỗi thiết bị chạy = 1 tiến trình con `python scan_feed_sounds.py <serial>`.
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const readline = require('readline');
 const { spawn, execFile } = require('child_process');
 const { getBaseDir, getPythonScriptPath } = require('./paths.cjs');
@@ -115,6 +117,13 @@ function kePhanTuongTac(payload) {
   return `${hong ? '⚠ ' : ''}${phan.join(' · ')}.`;
 }
 
+// Ghi danh sách link của pha Xem vào thư mục riêng của máy, trả đường dẫn cho Python đọc.
+function ghiDanhSachLink(deviceId, links) {
+  const p = path.join(getDeviceDir(deviceId), 'view_links.json');
+  fs.writeFileSync(p, JSON.stringify(Array.isArray(links) ? links : []), 'utf8');
+  return p;
+}
+
 // Số nguyên không âm, dạng chuỗi cho biến môi trường. Rỗng / không phải số / âm → mặc định.
 // ⚠ Không dùng `Math.round(x) || mac`: 0 là giá trị HỢP LỆ (0 = không giới hạn) mà `||` biến nó
 // thành mặc định — đúng loại lỗi QĐ-27 bản PC đã ghi lại.
@@ -125,7 +134,15 @@ function soNguyen(v, mac) {
 
 function startDevice(params, onData, onStatus) {
   const { deviceId, serial, minPosts, maxPosts, dwellMin, dwellMax, originalOnly, limit } = params;
-  const cfg = params.cfg || {};
+  // ── PHA của chế độ Quét ⇄ Xem (2026-09-18) ──
+  // `params.pha` = { key: 'scan' | 'view', ms, links, moc } do main.js dựng từ `phaseplan.cjs`.
+  // Không có `pha` = chế độ For You, chạy y nguyên như trước.
+  const pha = params.pha || null;
+  const phaXem = !!(pha && pha.key === 'view');
+  // Ghé thăm kênh TẮT trong Quét ⇄ Xem — clone QĐ-47/48 bản PC: `cycle` không ghé thăm; ghé
+  // thăm chính là phần mà Quét Mix cộng thêm. Tắt ở đây (một chỗ) thì cả bộ não lẫn ASK_ON đều
+  // thấy cùng một cấu hình.
+  const cfg = pha ? Object.assign({}, params.cfg || {}, { visitOn: false }) : (params.cfg || {});
   if (_active.has(deviceId)) {
     throw new Error('Thiết bị này đang chạy rồi.');
   }
@@ -172,14 +189,27 @@ function startDevice(params, onData, onStatus) {
     // ── Những thứ Python TỰ quyết được vì chúng thuần số, không phải luật ──
     // Luật (lọc ngôn ngữ, nhãn AI, hạn mức follow) ở lại Node và đi qua kênh hỏi/đáp.
     PROTO_V: String(askproto.PROTO_VERSION),
-    ASK_ON: (cfg.niEnabled || cfg.niAi || cfg.followOn || cfg.likeOn || cfg.visitOn) ? '1' : '0',
-    CYCLE_ON: cfg.cycleOn ? '1' : '0',
+    // Pha Xem không hỏi gì (không thu, không bấm) — khỏi tốn 0,5–2 giây đọc màn hình mỗi video.
+    ASK_ON: (!phaXem && (cfg.niEnabled || cfg.niAi || cfg.followOn || cfg.likeOn || cfg.visitOn)) ? '1' : '0',
+    // Pha Quét của Quét ⇄ Xem đi ĐÚNG đường "chạy theo chu kỳ" đã có: quét đủ thời lượng thì báo
+    // `cycle_done` rồi thoát. Không viết đường thứ hai.
+    CYCLE_ON: (pha ? pha.key === 'scan' : cfg.cycleOn) ? '1' : '0',
+    MODE: phaXem ? 'view' : 'scan',
 
     // Cờ THỬ NGHIỆM, không có ô nào trong giao diện bật được: bỏ tạm điều kiện "sound hợp lệ" ở
     // nhánh follow để đo xem đường follow có bấm được thật không. Chỉ `tools/run-one.cjs --follow-test`
     // bật nó. Mặc định tắt nên app chạy y nguyên.
     FOLLOW_ANY: cfg.followAnySound ? '1' : '0',
-    CYCLE_SCAN_MIN: String(cfg.cycleScanMinutes ?? 30),
+    CYCLE_SCAN_MIN: String(pha && pha.key === 'scan' ? pha.ms / 60000 : (cfg.cycleScanMinutes ?? 30)),
+    VIEW_PHASE_MIN: String(phaXem ? pha.ms / 60000 : 0),
+    VIEW_START: soNguyen(phaXem ? pha.moc : 0, 0),
+    VIEW_SEC_MIN: String(cfg.viewSecMin ?? 10),
+    VIEW_SEC_MAX: String(cfg.viewSecMax ?? 20),
+    VIEW_SCROLL_MIN: soNguyen(cfg.viewScrollMin, 20),
+    VIEW_SCROLL_MAX: soNguyen(cfg.viewScrollMax, 30),
+    // Danh sách link đi qua TỆP, không qua biến môi trường: Windows giới hạn cả khối biến môi
+    // trường ~32.767 ký tự — vài trăm link là tràn, và `spawn` hỏng với một lỗi chẳng nói gì.
+    VIEW_LINKS_FILE: phaXem ? ghiDanhSachLink(deviceId, pha.links) : '',
     VISIT_SEC_MIN: String(cfg.visitSecMin ?? 5),
     VISIT_SEC_MAX: String(cfg.visitSecMax ?? 10),
 
@@ -291,6 +321,9 @@ function startDevice(params, onData, onStatus) {
       }
       if (payload.type === 'progress') {
         onStatus(deviceId, { kind: 'progress', checked: payload.checked, qualified: payload.qualified });
+      } else if (payload.type === 'view_progress' || payload.type === 'view_moc') {
+        // Pha Xem: đang xem link nào (hiện lên bảng), và MỐC xem tiếp (main.js ghi xuống đĩa).
+        onStatus(deviceId, { kind: 'view', idx: payload.idx | 0, total: payload.total | 0, moc: payload.type === 'view_moc' });
       } else if (payload.type === 'status') {
         onStatus(deviceId, { kind: 'status', state: payload.state, msg: payload.msg });
       } else if (payload.type === 'acted') {

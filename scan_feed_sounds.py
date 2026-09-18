@@ -103,6 +103,23 @@ VISIT_SEC_MAX = float(os.environ.get("VISIT_SEC_MAX", "10") or 10)
 PROFILE_VID_MIN = float(os.environ.get("PROFILE_VID_SEC_MIN", "3") or 3)
 PROFILE_VID_MAX = float(os.environ.get("PROFILE_VID_SEC_MAX", "7") or 7)
 
+# ── CHE DO QUET <-> XEM (2026-09-18, clone che do `cycle` ban PC) ──
+# Moi PHA la mot luot chay Python rieng: Node chia pha bang `phaseplan.cjs` cua ban PC, het pha
+# thi Python bao `cycle_done` roi thoat, Node cho nghi roi chay pha ke. Python chi biet pha cua
+# CHINH luot nay qua bien MODE — khong giu trang thai, khong giu luat.
+MODE = (os.environ.get("MODE") or "scan").strip().lower()       # "scan" | "view"
+VIEW_LINKS_FILE = os.environ.get("VIEW_LINKS_FILE", "")
+VIEW_START = int(float(os.environ.get("VIEW_START", "0") or 0))    # moc: link can xem tiep
+VIEW_PHASE_MIN = float(os.environ.get("VIEW_PHASE_MIN", "0") or 0)
+# Xem video DAU cua moi link bao lau. Ban PC xem 40-70% DO DAI video, nhung tren dien thoai do
+# duoc la KHONG doc duoc do dai (khong SeekBar, khong chu mm:ss, media_session rong) -> tinh bang
+# giay.
+VIEW_SEC_MIN = float(os.environ.get("VIEW_SEC_MIN", "10") or 0)
+VIEW_SEC_MAX = float(os.environ.get("VIEW_SEC_MAX", "20") or 0)
+# Vuot them bao nhieu video sau video dau (ban PC: 20-30). 0 = khong vuot.
+VIEW_SCROLL_MIN = int(float(os.environ.get("VIEW_SCROLL_MIN", "20") or 0))
+VIEW_SCROLL_MAX = int(float(os.environ.get("VIEW_SCROLL_MAX", "30") or 0))
+
 
 def log(msg):
     """In một dòng log. KHÔNG tự đóng dấu giờ.
@@ -661,6 +678,77 @@ def _thi_hanh(d, bridge, aid, ans, info, res, da_roi_feed=True):
         bridge.acted(aid, **kq)
 
 
+def chay_pha_xem(d, pkg):
+    """Pha XEM cua che do Quet <-> Xem. KHONG thu sound, KHONG bam gi — viec cua no la nuoi tai
+    khoan: mo trang sound, xem mot video, vuot them vai chuc video cua cung sound, sang link ke.
+    """
+    try:
+        with open(VIEW_LINKS_FILE, encoding="utf-8") as fh:
+            links = [x for x in json.load(fh) if isinstance(x, str) and x.startswith("http")]
+    except Exception as e:
+        links = []
+        log(f"⚠ Không đọc được danh sách link ({str(e)[:80]}).")
+    if not links:
+        # Node da bo pha Xem khi danh sach trong; toi duoc day nghia la tep hong giua chung.
+        log("⚠ Danh sách link trống — bỏ pha Xem.")
+        emit_event("status", state="cycle_done")
+        return
+
+    # Canh app con song. Pha nay khong hoi gi nen kenh hoi/dap TAT — ma tat thi khong co luong doc
+    # stdin, khong biet Electron da chet, va tien trinh nay thanh MO COI vuot may mai. Bat cau noi
+    # CHI de nghe EOF, khong gui cau hoi nao.
+    canh = AskBridge(enabled=True, log=log)
+    dung = lambda: canh.parent_gone
+
+    n = len(links)
+    i = VIEW_START % n
+    han = (time.time() + VIEW_PHASE_MIN * 60) if VIEW_PHASE_MIN > 0 else None
+    log(f"Pha Xem{f' ({VIEW_PHASE_MIN:g} phút)' if han else ''}: {n} link, bắt đầu từ link {i + 1}...")
+    da_xem = bo = hong_lien = 0
+    while True:
+        if han and time.time() >= han:
+            break
+        if dung():
+            log("App đã đóng — thoát.")
+            return
+        emit_event("view_progress", idx=i, total=n)
+        log(f"Đang xem link {i + 1}/{n}...")
+        kq = PA.xem_mot_link(
+            d, pkg, links[i], han, dung,
+            (VIEW_SEC_MIN, max(VIEW_SEC_MIN, VIEW_SEC_MAX)),
+            (VIEW_SCROLL_MIN, max(VIEW_SCROLL_MIN, VIEW_SCROLL_MAX)),
+            (DWELL_MIN, max(DWELL_MIN, DWELL_MAX)), log=log)
+        if kq == "dung":
+            log("App đã đóng — thoát.")
+            return
+        if kq == "het_gio":
+            # KHONG tien moc: pha sau xem lai CHINH link nay. Ban PC v0.1.56 sua dung loi nay —
+            # truoc do moi pha Xem deu bat dau lai tu link 1, cuoi danh sach dai khong bao gio
+            # duoc xem toi.
+            break
+        if kq == "ok":
+            da_xem += 1
+            hong_lien = 0
+        else:
+            bo += 1
+            hong_lien += 1
+            log(f"⚠ Bỏ link {i + 1}/{n} — {kq}.")
+        i = (i + 1) % n
+        # Moc = link KE TIEP can xem. Node ghi xuong dia, nen tat app mo lai van xem tiep dung cho.
+        emit_event("view_moc", idx=i, total=n)
+        # Ca danh sach hong lien tiep (mat mang, TikTok chan, danh sach toan link chet): dung pha
+        # SOM thay vi dot tron thoi luong vao viec mo link hong — moi lan hong ton 12-25 giay.
+        if hong_lien >= n:
+            log(f"⚠ Không xem được link nào trong cả {n} link — kết thúc pha Xem sớm.")
+            break
+
+    _p = [f"xem {da_xem} link"]
+    if bo:
+        _p.append(f"bỏ {bo} link không xem được")
+    log("Hết pha Xem: " + ", ".join(_p) + f". Lần sau bắt đầu từ link {i + 1}/{n}.")
+    emit_event("status", state="cycle_done")
+
+
 def main():
     serial = sys.argv[1] if len(sys.argv) > 1 else None
 
@@ -730,6 +818,11 @@ def main():
     # Ghi nho goi dang chay -> `find_first` chi cho MOT goi thay vi ca hai (xem chu thich o do).
     set_active_pkg(pkg)
     emit_event("status", state="app_open", pkg=pkg)
+
+    if MODE == "view":
+        chay_pha_xem(d, pkg)
+        emit_event("status", state="done", checked=0, qualified=0)
+        return
 
     limit = int(float(os.environ.get("LIMIT", "0")))
     count = 0

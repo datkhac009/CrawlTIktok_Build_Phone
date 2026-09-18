@@ -720,7 +720,7 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
 
   // Giao diện: hai trạng thái bản cũ vẽ thành "Đã dừng".
   check('19h. Giao diện nhận trạng thái XẾP HÀNG và NGHỈ',
-    /state === 'queued'\) \{ st\.status = 'queue'/.test(rj) && /state === 'resting'\) \{ st\.status = 'rest'/.test(rj));
+    /state === 'queued'\) \{ st\.status = 'queue'/.test(rj) && /state === 'resting'\) \{\s*st\.status = 'rest'/.test(rj));
   check('19i. Máy xếp hàng / đang nghỉ hiện nút Dừng, không hiện nút Chạy',
     /TRANG_THAI_BAN = new Set\(\['run', 'queue', 'rest'\]\)/.test(rj)
     && /dangBan\(id\) \? stopDeviceById\(id\) : startDeviceById\(id\)/.test(rj));
@@ -763,6 +763,46 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     && /'device-update-params'[\s\S]{0,300}_lastParams\.has\(id\)[\s\S]{0,120}_lastParams\.set\(id/.test(mj));
   check('20h. Nút Chạy và nút Lưu dựng tham số ở MỘT chỗ',
     /window\.api\.deviceStart\(paramsFor\(d\)\)/.test(rj));
+}
+
+// ── 21. Quét ⇄ Xem (2026-09-18) ──
+// Hành vi được `mainflow.test.cjs` (phía Node) và `viewphase.test.cjs` (vòng lặp Python) chạy
+// thật. Ở đây canh phần nối dây giữa chúng: runner → biến môi trường → Python → điện thoại.
+{
+  const rn = doc('src/runner.cjs');
+  const mj = doc('main.js');
+  const rj = doc('renderer/renderer.js');
+  const html = doc('renderer/index.html');
+  const py = doc('scan_feed_sounds.py');
+  const pa = doc('phone_actions.py');
+
+  check('21a. Chia pha bằng ĐÚNG phaseplan.cjs của bản PC, không tự chia',
+    /phaseplan\.buildPhasePlan\('cycle', \{/.test(mj) && /require\('\.\/src\/phaseplan\.cjs'\)/.test(mj));
+  check('21b. Pha Xem chạy Python ở chế độ xem, pha Quét đi đường "chạy theo chu kỳ" có sẵn',
+    /MODE: phaXem \? 'view' : 'scan'/.test(rn)
+    && /CYCLE_ON: \(pha \? pha\.key === 'scan' : cfg\.cycleOn\)/.test(rn));
+  check('21c. Danh sách link đi qua TỆP (khối biến môi trường Windows có trần ~32K ký tự)',
+    /VIEW_LINKS_FILE: phaXem \? ghiDanhSachLink\(deviceId, pha\.links\)/.test(rn));
+  check('21d. Ghé thăm TẮT trong Quét ⇄ Xem (clone QĐ-47/48 — ghé thăm là phần của Quét Mix)',
+    /const cfg = pha \? Object\.assign\(\{\}, params\.cfg \|\| \{\}, \{ visitOn: false \}\)/.test(rn));
+  check('21e. Pha Xem không bật kênh hỏi/đáp (không thu, không bấm gì)',
+    /ASK_ON: \(!phaXem && /.test(rn));
+  check('21f. Mốc xem tiếp: runner chuyển tiếp, main ghi xuống đĩa',
+    /payload\.type === 'view_moc'/.test(rn) && /status\.kind === 'view' && status\.moc\) ghiMoc\(/.test(mj));
+  check('21g. Chỉ hẹn chạy lại khi tiến trình ĐÃ ĐÓNG (không hẹn ở "done")',
+    /status\.state === 'stopped' && _cycleDone\.delete\(deviceId\)/.test(mj)
+    && !/_cycleDone\.delete\(deviceId\) && status\.state !== 'error'/.test(mj));
+  check('21h. Python rẽ sang pha Xem theo MODE', /if MODE == "view":\s*\n\s*chay_pha_xem\(d, pkg\)/.test(py));
+  check('21i. Pha Xem vẫn canh được app đã đóng dù tắt kênh hỏi/đáp',
+    /def chay_pha_xem[\s\S]{0,1600}canh = AskBridge\(enabled=True/.test(py));
+  check('21j. Lưới trang nhạc dùng lại `_o_luoi_video` (neo `cover`, lọc bằng hình học)',
+    /def _cho_luoi[\s\S]{0,200}_o_luoi_video\(d\)/.test(pa));
+  check('21k. Deep link truyền dạng DANH SÁCH (link có & và ? không bị shell cắt)',
+    /d\.shell\(\["am", "start", "-a", "android\.intent\.action\.VIEW", "-d", link, goi\]\)/.test(pa));
+  check('21l. Có ô Chế độ, đổi chế độ thì ẩn/hiện đúng khối',
+    /id="cfgMode"/.test(html) && /getElementById\('cfgMode'\)\.addEventListener\('change', apCheDo\)/.test(rj));
+  check('21m. Bảng thiết bị nói rõ đang ở pha nào',
+    /`Xem link \$\{st\.viewIdx \+ 1\}\/\$\{st\.viewTotal\}`/.test(rj) && /`Quét \$\{gioPhut\(/.test(rj));
 }
 
 // Hàm làm tròn: chạy thật, không soi chữ.

@@ -956,3 +956,146 @@ def close_profile(d, log=lambda s: None):
     except Exception as e:
         log("⚠ Quay lại feed lỗi (%s)." % str(e)[:80])
         return False
+
+
+# ════════════════════ PHA XEM (chế độ Quét ⇄ Xem, 2026-09-18) ════════════════════
+#
+# Clone pha `view` của bản PC: mở trang sound → bấm MỘT video ngẫu nhiên trong lưới → xem →
+# vuốt thêm vài chục video của cùng sound → sang link kế. Pha này KHÔNG thu sound, KHÔNG bấm gì
+# — việc của nó là nuôi tài khoản.
+#
+# Mọi thứ dưới đây ĐO TRÊN MÁY THẬT (TikTok 46.9.3, `probe_screen.py --view`, 2026-09-18):
+#   • `am start -a VIEW -d <link> <gói>` vào THẲNG `MusicDetailActivity`. Chỉ định gói ở cuối
+#     để Android không hiện bảng chọn trình duyệt.
+#   • Lưới video = các ô `cover`, y hệt lưới trang cá nhân → dùng lại `_o_luoi_video`.
+#   • Bấm ô → `DetailActivity`; vuốt lên → sang video kế.
+#   • KHÔNG đọc được độ dài video: không SeekBar, không chữ mm:ss, `dumpsys media_session`
+#     rỗng. Nên xem theo SỐ GIÂY, không theo % như bản PC.
+#   • TikTok đôi khi trả "Something went wrong" rồi lần sau mở được bình thường — phải thử lại.
+#
+# Tên activity là tên lớp Java của TikTok, KHÔNG bị làm rối như resource-id (`mj8`, `f16`…),
+# nên dùng làm mốc ổn định hơn.
+ACT_TRANG_NHAC = "MusicDetailActivity"
+ACT_TRINH_PHAT = "DetailActivity"
+
+
+def _activity(d):
+    try:
+        return (d.app_current() or {}).get("activity") or ""
+    except Exception:
+        return ""
+
+
+def _cho(con_han, giay, dung):
+    """Ngủ `giay` giây, chia nhỏ để dừng kịp. Trả False nếu bị ngắt (hết hạn pha / app đóng)."""
+    het = time.time() + max(0.0, giay)
+    while time.time() < het:
+        if dung():
+            return False
+        if con_han is not None and time.time() >= con_han:
+            return False
+        time.sleep(min(0.5, max(0.0, het - time.time())))
+    return True
+
+
+def _mo_link(d, goi, link, cho=12.0):
+    """Mở link bằng deep link. Trả 'nhac' | 'video' | '' (không mở được)."""
+    try:
+        # Truyền dạng DANH SÁCH: link có `&`, `?` — ghép chuỗi là bị shell cắt ngang.
+        d.shell(["am", "start", "-a", "android.intent.action.VIEW", "-d", link, goi])
+    except Exception:
+        return ""
+    han = time.time() + cho
+    while time.time() < han:
+        a = _activity(d)
+        if a.endswith(ACT_TRANG_NHAC):
+            return "nhac"
+        if a.endswith(ACT_TRINH_PHAT):
+            return "video"
+        time.sleep(0.8)
+    return ""
+
+
+def _cho_luoi(d, cho=8.0):
+    han = time.time() + cho
+    while time.time() < han:
+        o = _o_luoi_video(d)
+        if o:
+            return o
+        time.sleep(1.0)
+    return []
+
+
+def _ve_ngoai(d):
+    """Lùi ra khỏi trình phát và trang nhạc (tối đa 4 nhịp)."""
+    for _ in range(4):
+        a = _activity(d)
+        if not (a.endswith(ACT_TRINH_PHAT) or a.endswith(ACT_TRANG_NHAC)):
+            return
+        try:
+            d.press("back")
+        except Exception:
+            return
+        time.sleep(1.2)
+
+
+def xem_mot_link(d, goi, link, con_han, dung, xem_giay, so_vuot, dung_giay, log=lambda s: None):
+    """Xem MỘT link của pha Xem. Trả:
+        'ok'       — đã xem xong
+        'het_gio'  — hết hạn pha GIỮA CHỪNG (lần sau xem lại CHÍNH link này)
+        'dung'     — app đã đóng
+        chuỗi khác — lý do không xem được (bỏ link này, sang link kế)
+
+    `xem_giay` = (min, max) giây cho video đầu; `so_vuot` = (min, max) số video vuốt thêm;
+    `dung_giay` = (min, max) giây trên mỗi video vuốt thêm — đúng ô "Delay" bản PC dùng ở đây.
+    """
+    loai = _mo_link(d, goi, link)
+    if not loai:
+        # Lỗi thoáng qua của TikTok: đo được "Something went wrong" rồi lần sau mở bình thường.
+        loai = _mo_link(d, goi, link)
+    if not loai:
+        _ve_ngoai(d)
+        return "không mở được link"
+
+    if loai == "nhac":
+        o = _cho_luoi(d)
+        if not o:
+            # Trang nhạc mở nhưng lưới trống — thường là màn "Something went wrong". Mở lại một lần.
+            if _mo_link(d, goi, link) == "nhac":
+                o = _cho_luoi(d)
+        if not o:
+            _ve_ngoai(d)
+            return "trang nhạc không có video nào (sound có thể đã bị gỡ)"
+        # Chỉ bốc trong 6 ô đầu: ô xa hơn nằm dưới mép màn hình, bấm vào là cuộn chứ không mở.
+        x, y = random.choice(o[:6])
+        try:
+            d.click(x, y)
+        except Exception:
+            _ve_ngoai(d)
+            return "bấm ô video lỗi"
+        han_mo = time.time() + 8
+        while time.time() < han_mo and not _activity(d).endswith(ACT_TRINH_PHAT):
+            time.sleep(0.8)
+        if not _activity(d).endswith(ACT_TRINH_PHAT):
+            _ve_ngoai(d)
+            return "bấm ô video mà không vào được trình phát"
+
+    # Video đầu: xem lâu (thay cho "40–70% độ dài" của bản PC — xem chú thích đầu mục).
+    if not _cho(con_han, random.uniform(*xem_giay), dung):
+        _ve_ngoai(d)
+        return "dung" if dung() else "het_gio"
+
+    for _ in range(random.randint(*so_vuot)):
+        try:
+            d.swipe(0.5, 0.85, 0.5, 0.15, random.uniform(0.15, 0.3))
+        except Exception:
+            break
+        if not _cho(con_han, random.uniform(*dung_giay), dung):
+            _ve_ngoai(d)
+            return "dung" if dung() else "het_gio"
+        # Lạc khỏi trình phát (vd chạm nhầm mở trang cá nhân) thì thôi link này, đừng vuốt mù.
+        if not _activity(d).endswith(ACT_TRINH_PHAT):
+            break
+
+    _ve_ngoai(d)
+    return "ok"

@@ -27,6 +27,21 @@ const DEFAULT_SETTINGS = {
   cycleBreakMin: 5,
   cycleBreakMax: 10,
 
+  // ── Chế độ (2026-09-18) ──
+  // 'foryou' = quét For You như trước. 'cycle' = Quét ⇄ Xem, clone chế độ cùng tên bản PC.
+  // Tên khoá và mặc định GIỮ ĐÚNG như bản PC (`cycleScanHours` 5 giờ, `cycleViewMinutes` 30
+  // phút, `viewScroll*` 20–30) — sau này chép qua lại giữa hai app không phải dịch tên.
+  mode: 'foryou',
+  cycleScanHours: 5,
+  cycleViewMinutes: 30,
+  viewLinks: '',
+  // Khác bản PC: bản PC xem 40–70% ĐỘ DÀI video (`viewPctMin/Max`). Điện thoại không đọc được
+  // độ dài video (đã đo trên máy thật), nên tính bằng GIÂY — khoá mới, không mượn tên cũ.
+  viewSecMin: 10,
+  viewSecMax: 20,
+  viewScrollMin: 20,
+  viewScrollMax: 30,
+
   // Lọc nội dung. Hai ô bấm mặc định TẮT: cú "Not interested" dạy feed vĩnh viễn.
   niEnabled: false,
   niAi: false,
@@ -183,11 +198,28 @@ function onCrawlStatus(payload) {
   const st = deviceState[deviceId];
   if (!st) return;
 
+  // ── Quét ⇄ Xem: pha nào, xem tới đâu ──
+  if (kind === 'phase') {
+    st.phase = { key: payload.key, ms: payload.ms || 0, at: payload.at || Date.now() };
+    st.viewIdx = -1;
+    st.viewTotal = payload.total || 0;
+    renderDeviceRow(deviceId);
+    return;
+  }
+  if (kind === 'view') {
+    if (!payload.moc) { st.viewIdx = payload.idx; st.viewTotal = payload.total; renderDeviceRow(deviceId); }
+    return;
+  }
+
   if (kind === 'status') {
     if (payload.state === 'running') st.status = 'run';
     else if (payload.state === 'queued') { st.status = 'queue'; st.queuePos = payload.pos || 0; }
-    else if (payload.state === 'resting') { st.status = 'rest'; st.restUntil = payload.until || 0; }
-    else if (payload.state === 'stopped') st.status = 'stop';
+    else if (payload.state === 'resting') {
+      st.status = 'rest'; st.restUntil = payload.until || 0; st.restNext = payload.next || '';
+    }
+    // Hết lượt thì bỏ thông tin pha: lượt sau có thể là For You (không có pha nào), và nhãn
+    // "Quét 2g13/5g" cũ mà còn treo trên dòng là nói sai chỗ máy đang đứng.
+    else if (payload.state === 'stopped') { st.status = 'stop'; st.phase = null; }
     else if (payload.state === 'error') { st.status = 'err'; toast(`Thiết bị lỗi: ${payload.msg || ''}`, false); }
     else if (payload.state === 'done') st.status = 'stop';
     if (payload.msg) appendLog(deviceId, payload.msg);
@@ -246,16 +278,41 @@ function dangBan(id) {
   return !!st && TRANG_THAI_BAN.has(st.status);
 }
 
+// 8.100.000 ms → "2g15"; 1.800.000 → "30p"; 18.000.000 → "5g".
+function gioPhut(ms) {
+  const tong = Math.max(0, Math.floor(ms / 60000));
+  const g = Math.floor(tong / 60);
+  const p = tong % 60;
+  if (!g) return `${p}p`;
+  return p ? `${g}g${String(p).padStart(2, '0')}` : `${g}g`;
+}
+
 function nhanTrangThai(st) {
   if (st.status === 'queue') return `Xếp hàng (${st.queuePos || '…'})`;
   if (st.status === 'rest') {
     const luc = st.restUntil
       ? new Date(st.restUntil).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
       : '…';
-    return `Nghỉ → ${luc}`;
+    return `Nghỉ → ${luc}${st.restNext ? ` → ${st.restNext}` : ''}`;
+  }
+  // Quét ⇄ Xem: nói rõ máy đang ở pha nào — "Đang chạy" không cho biết máy đang thu sound hay
+  // đang xem để nuôi tài khoản.
+  if (st.status === 'run' && st.phase) {
+    if (st.phase.key === 'view') {
+      return st.viewIdx >= 0 && st.viewTotal ? `Xem link ${st.viewIdx + 1}/${st.viewTotal}` : 'Xem';
+    }
+    return `Quét ${gioPhut(Date.now() - st.phase.at)}/${gioPhut(st.phase.ms)}`;
   }
   return { run: 'Đang chạy', stop: 'Đã dừng', err: 'Lỗi' }[st.status] || 'Đã dừng';
 }
+
+// Đồng hồ pha Quét chỉ đổi khi có sự kiện — mà pha Quét 5 giờ có thể im cả chục phút. Vẽ lại
+// mỗi 30 giây, chỉ những dòng đang ở pha Quét.
+setInterval(() => {
+  for (const [id, st] of Object.entries(deviceState)) {
+    if (st.status === 'run' && st.phase && st.phase.key === 'scan') renderDeviceRow(id);
+  }
+}, 30000);
 
 function deviceRowHtml(d) {
   const st = deviceState[d.id] || { status: 'stop', checked: 0, qualified: 0 };
@@ -571,6 +628,16 @@ function openSettingsModal(ids) {
   $('cfgCycleBreakMin').value = base.cycleBreakMin;
   $('cfgCycleBreakMax').value = base.cycleBreakMax;
 
+  $('cfgMode').value = base.mode === 'cycle' ? 'cycle' : 'foryou';
+  $('cfgCycleScanHours').value = base.cycleScanHours;
+  $('cfgCycleViewMinutes').value = base.cycleViewMinutes;
+  $('cfgViewLinks').value = base.viewLinks;
+  $('cfgViewSecMin').value = base.viewSecMin;
+  $('cfgViewSecMax').value = base.viewSecMax;
+  $('cfgViewScrollMin').value = base.viewScrollMin;
+  $('cfgViewScrollMax').value = base.viewScrollMax;
+  apCheDo();
+
   $('cfgNiBlockCollect').checked = base.niBlockCollect !== false;
   $('cfgNiEnabled').checked = !!base.niEnabled;
   $('cfgNiAi').checked = !!base.niAi;
@@ -601,6 +668,17 @@ function openSettingsModal(ids) {
 
   document.getElementById('settingsModal').classList.add('open');
 }
+// Ẩn/hiện theo chế độ. Một ô hiện ra mà không có tác dụng ở chế độ đang chọn thì tệ hơn ô
+// không hiện (QĐ-38): "Chạy theo chu kỳ" vô nghĩa ở Quét ⇄ Xem vì chế độ đó vốn chạy theo chu kỳ.
+function apCheDo() {
+  const xenKe = document.getElementById('cfgMode').value === 'cycle';
+  document.getElementById('cfgXenKeSection').style.display = xenKe ? '' : 'none';
+  document.getElementById('khoiChuKyForYou').style.display = xenKe ? 'none' : '';
+  document.getElementById('nhanNghiGiuaLuot').textContent = xenKe
+    ? 'Nghỉ giữa hai pha … – … phút (máy nhả khe cho máy đang chờ)'
+    : 'Rồi nghỉ … – … phút';
+}
+
 function closeSettingsModal() {
   document.getElementById('settingsModal').classList.remove('open');
 }
@@ -635,6 +713,16 @@ async function saveSettings() {
     cycleScanMinutes: numOf('cfgCycleScanMinutes', D.cycleScanMinutes),
     cycleBreakMin: numOf('cfgCycleBreakMin', D.cycleBreakMin),
     cycleBreakMax: numOf('cfgCycleBreakMax', D.cycleBreakMax),
+
+    mode: document.getElementById('cfgMode').value === 'cycle' ? 'cycle' : 'foryou',
+    // `numOf` giữ 0 là 0 (QĐ-27): Xem = 0 phút là HỢP LỆ — nghĩa là chỉ quét theo chu kỳ.
+    cycleScanHours: numOf('cfgCycleScanHours', D.cycleScanHours),
+    cycleViewMinutes: numOf('cfgCycleViewMinutes', D.cycleViewMinutes),
+    viewLinks: document.getElementById('cfgViewLinks').value,
+    viewSecMin: numOf('cfgViewSecMin', D.viewSecMin),
+    viewSecMax: numOf('cfgViewSecMax', D.viewSecMax),
+    viewScrollMin: numOf('cfgViewScrollMin', D.viewScrollMin),
+    viewScrollMax: numOf('cfgViewScrollMax', D.viewScrollMax),
 
     niBlockCollect: document.getElementById('cfgNiBlockCollect').checked,
     niEnabled: document.getElementById('cfgNiEnabled').checked,
@@ -778,6 +866,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('settingsModalClose').addEventListener('click', closeSettingsModal);
   document.getElementById('settingsCancel').addEventListener('click', closeSettingsModal);
   document.getElementById('settingsSave').addEventListener('click', saveSettings);
+  document.getElementById('cfgMode').addEventListener('change', apCheDo);
   document.getElementById('settingsSelectedBtn').addEventListener('click', () => {
     const ids = getSelectedIds();
     if (!ids.length) { toast('Chưa chọn thiết bị nào', false); return; }

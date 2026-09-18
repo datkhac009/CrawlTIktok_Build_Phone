@@ -290,6 +290,102 @@ const start = (id, serial, cfg = {}) => handlers.get('device-start')({}, { devic
     check('G3. Máy đang RẢNH thì không bị biến thành "đang bận"', r2.ok === false);
   }
 
+  // ── H. QUÉT ⇄ XEM: pha nối pha, và mốc xem tiếp sống qua các pha ──
+  {
+    devslot._resetForTest();
+    await handlers.get('set-global-settings')({}, { deviceConcurrency: 6, launchStaggerMs: 0 });
+    const cfg = {
+      mode: 'cycle', cycleScanHours: 0.001, cycleViewMinutes: 1,     // quét 3,6 giây, xem 1 phút
+      viewLinks: 'https://www.tiktok.com/music/a-111111111\n  \nkhông phải link\nhttps://www.tiktok.com/music/b-222222222',
+      cycleBreakMin: 0.001, cycleBreakMax: 0.001,                    // nghỉ 60 ms
+    };
+    await start('dM', '192.168.5.113:5555', cfg);
+    const l1 = lanChay('dM')[0];
+    check('H. Chế độ Quét ⇄ Xem bắt đầu bằng pha QUÉT', l1 && l1.params.pha && l1.params.pha.key === 'scan',
+      JSON.stringify(l1 && l1.params.pha && { key: l1.params.pha.key, ms: l1.params.pha.ms }));
+    check('H2. Thời lượng pha Quét tính bằng GIỜ, đúng như bản PC', l1.params.pha.ms === 3600);
+    check('H3. Báo lên giao diện đang ở pha nào',
+      sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dM' && p.kind === 'phase' && p.key === 'scan'));
+
+    ketThuc(l1, true);
+    await nghi(250);
+    const nghi1 = sent.filter(([c, p]) => c === 'crawl-status' && p.deviceId === 'dM' && p.state === 'resting').pop();
+    check('H4. Hết pha Quét → nghỉ, và nói rõ pha kế là Xem',
+      !!nghi1 && nghi1[1].next === 'Xem' && /Hết pha Quét — nghỉ .* sang pha Xem/.test(nghi1[1].msg), nghi1 && nghi1[1].msg);
+    const l2 = lanChay('dM')[1];
+    check('H5. Nghỉ xong chạy pha XEM', !!l2 && l2.params.pha.key === 'view');
+    check('H6. Danh sách link: bỏ dòng trống và dòng không phải link',
+      !!l2 && JSON.stringify(l2.params.pha.links) === JSON.stringify(
+        ['https://www.tiktok.com/music/a-111111111', 'https://www.tiktok.com/music/b-222222222']),
+      l2 && JSON.stringify(l2.params.pha.links));
+    check('H7. Lần Xem đầu bắt đầu từ link 1', !!l2 && l2.params.pha.moc === 0);
+
+    // Pha Xem xem xong link 1 → mốc sang link 2, rồi hết pha.
+    l2.onStatus('dM', { kind: 'view', idx: 1, total: 2, moc: true });
+    ketThuc(l2, true);
+    await nghi(250);
+    const l3 = lanChay('dM')[2];
+    check('H8. Hết pha Xem → quay lại pha Quét', !!l3 && l3.params.pha.key === 'scan');
+    ketThuc(l3, true);
+    await nghi(250);
+    const l4 = lanChay('dM')[3];
+    check('H9. Pha Xem SAU xem tiếp từ link 2 — không quay về link 1 (clone PC v0.1.56)',
+      !!l4 && l4.params.pha.key === 'view' && l4.params.pha.moc === 1, l4 && `moc=${l4.params.pha.moc}`);
+    const tep = path.join(TMP, 'config', 'devices', 'dM', 'view_cursor.json');
+    check('H10. Mốc nằm trên ĐĨA, nên tắt app mở lại vẫn còn', fs.existsSync(tep)
+      && JSON.parse(fs.readFileSync(tep, 'utf8')).idx === 1);
+    await handlers.get('device-stop')({}, 'dM');
+  }
+
+  // ── I. Danh sách link trống → bỏ pha Xem và NÓI RA ──
+  {
+    await start('dN', '192.168.5.114:5555', { mode: 'cycle', cycleScanHours: 0.001, cycleViewMinutes: 30,
+      viewLinks: '', cycleBreakMin: 0.001, cycleBreakMax: 0.001 });
+    check('I. Danh sách trống → báo rõ là bỏ pha Xem', coLog('dN', /Danh sách link cần xem đang trống/));
+    ketThuc(lanChay('dN')[0], true);
+    await nghi(250);
+    const l2 = lanChay('dN')[1];
+    check('I2. Và chỉ quét theo chu kỳ, không chạy pha Xem rỗng', !!l2 && l2.params.pha.key === 'scan');
+    await handlers.get('device-stop')({}, 'dN');
+  }
+
+  // ── J. Cả hai pha bằng 0 → từ chối, có lý do ──
+  {
+    const r = await start('dO', '192.168.5.115:5555', { mode: 'cycle', cycleScanHours: 0, cycleViewMinutes: 0 });
+    check('J. Cả hai pha bằng 0 → không chạy, nói rõ vì sao', r.ok === false && /cả hai pha/.test(r.msg || ''), r.msg);
+    check('J2. Và không giữ khe', !devslot.isActive('dO'));
+  }
+
+  // ── K. Nghỉ 0 phút: chỉ hẹn chạy lại khi tiến trình ĐÃ ĐÓNG ──
+  // Python báo 'done' NGAY TRƯỚC khi thoát. Bản cũ hẹn chạy lại ở đó: nghỉ 0 phút thì lượt mới
+  // khởi động khi tiến trình cũ còn sống → bị chặn "đang chạy rồi" → máy lặng lẽ ngừng chu kỳ.
+  {
+    await start('dP', '192.168.5.117:5555', { cycleOn: true, cycleBreakMin: 0, cycleBreakMax: 0 });
+    const e = lanChay('dP')[0];
+    e.onStatus('dP', { kind: 'status', state: 'cycle_done' });
+    e.onStatus('dP', { kind: 'status', state: 'done' });            // tiến trình VẪN còn sống
+    await nghi(30);
+    running.delete('dP');                                            // giờ mới thoát thật
+    e.onStatus('dP', { kind: 'status', state: 'stopped', msg: '' });
+    await nghi(100);
+    check('K. Nghỉ 0 phút vẫn chạy lại được lượt sau', lanChay('dP').length === 2,
+      `chạy ${lanChay('dP').length} lần`);
+    await handlers.get('device-stop')({}, 'dP');
+  }
+
+  // ── L. Không chạy lại được sau giờ nghỉ → phải NÓI RA, không dừng trong im lặng ──
+  {
+    const cfg = { mode: 'cycle', cycleScanHours: 0.001, cycleViewMinutes: 0, cycleBreakMin: 0.003, cycleBreakMax: 0.003 };
+    await start('dQ', '192.168.5.118:5555', cfg);
+    ketThuc(lanChay('dQ')[0], true);
+    // Trong giờ nghỉ người dùng Lưu cài đặt thành 0/0 — lượt kế không còn gì để chạy.
+    await handlers.get('device-update-params')({}, { deviceId: 'dQ', serial: '192.168.5.118:5555',
+      cfg: { ...cfg, cycleScanHours: 0 } });
+    await nghi(400);
+    check('L. Không chạy lại được → báo "Không chạy lại được" kèm lý do',
+      coLog('dQ', /Không chạy lại được: .*cả hai pha/));
+  }
+
   _xong = true;
   const failed = results.filter((x) => !x.pass);
   console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);

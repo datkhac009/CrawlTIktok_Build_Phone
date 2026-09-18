@@ -12,6 +12,8 @@ const sheets = require('./src/sheets.cjs');
 const devslot = require('./src/devslot.cjs');
 const linkstore = require('./src/linkstore.cjs');
 const { normalizeKey } = require('./src/linkkey.cjs');
+const phaseplan = require('./src/phaseplan.cjs');
+const { getDeviceDir } = require('./src/paths.cjs');
 
 const store = new Store({ name: 'settings' });
 
@@ -43,6 +45,43 @@ const _lastParams = new Map();    // deviceId -> tham số lượt chạy gần 
 const _cycleDone = new Set();     // máy vừa kết thúc vì HẾT CA (không phải người dùng bấm Dừng)
 const _restTimers = new Map();    // deviceId -> hẹn giờ chạy lại
 
+// ── QUÉT ⇄ XEM (2026-09-18, clone chế độ `cycle` bản PC) ──
+//
+// Chia pha bằng ĐÚNG `phaseplan.cjs` của bản PC — file đã nằm sẵn ở đây (bị `srcsync` khoá từng
+// byte) mà chưa nơi nào gọi. Hai pha `scan` (tính bằng GIỜ) và `view` (tính bằng PHÚT), pha 0
+// tự bị bỏ. Mỗi pha là MỘT lượt chạy Python: hết pha thì Python báo `cycle_done` rồi thoát, ở
+// đây cho nghỉ rồi chạy pha kế — đi đúng đường "hết ca → nghỉ → chạy lại" đã có, không viết
+// đường thứ hai. Hết pha máy nhả khe và xếp lại CUỐI hàng: đó là thứ giúp 19 máy chia 6 khe.
+const _pha = new Map();   // deviceId -> chỉ số pha của lượt SẮP chạy / đang chạy
+
+const TEN_PHA = { scan: 'Quét', view: 'Xem' };
+
+function docDanhSachLink(raw) {
+  return String(raw || '').split(/\r?\n/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
+}
+
+// Kế hoạch pha của một cấu hình; `null` = không phải chế độ Quét ⇄ Xem.
+function keHoachPha(cfg) {
+  if (!cfg || cfg.mode !== 'cycle') return null;
+  const links = docDanhSachLink(cfg.viewLinks);
+  let plan = phaseplan.buildPhasePlan('cycle', {
+    cycleScanHours: cfg.cycleScanHours, cycleViewMinutes: cfg.cycleViewMinutes,
+  });
+  // Không có link thì pha Xem không có gì để làm → bỏ, và NÓI RA (xem `chayMot`).
+  const boXem = !links.length && plan.some((p) => p.key === 'view');
+  if (boXem) plan = plan.filter((p) => p.key !== 'view');
+  return { plan, links, boXem };
+}
+
+// Mốc "xem tới link nào" — theo TỪNG máy, trên đĩa, nên tắt app mở lại vẫn xem tiếp đúng chỗ.
+function tepMoc(id) { return path.join(getDeviceDir(id), 'view_cursor.json'); }
+function docMoc(id) {
+  try { return Math.max(0, JSON.parse(fs.readFileSync(tepMoc(id), 'utf8')).idx | 0); } catch (_) { return 0; }
+}
+function ghiMoc(id, idx) {
+  try { fs.writeFileSync(tepMoc(id), JSON.stringify({ idx, at: new Date().toISOString() }), 'utf8'); } catch (_) {}
+}
+
 function huyNghi(deviceId) {
   const t = _restTimers.get(deviceId);
   if (t) { clearTimeout(t); _restTimers.delete(deviceId); }
@@ -56,6 +95,7 @@ function huyNghi(deviceId) {
 function dungHan(deviceId) {
   huyNghi(deviceId);
   _lastParams.delete(deviceId);
+  _pha.delete(deviceId);
   if (devslot.cancel(deviceId)) return 'queue';
   devslot.release(deviceId);
   return runner.stopDevice(deviceId).ok ? 'run' : '';
@@ -320,11 +360,38 @@ async function chayMot(params) {
       return { ok: false, msg: 'Đã huỷ trước khi kịp khởi động.' };
     }
 
+    // ── GẮN PHA (chế độ Quét ⇄ Xem) ──
+    const kh = keHoachPha(params.cfg);
+    let chay = params;
+    if (kh) {
+      if (!kh.plan.length) {
+        devslot.release(id);
+        return { ok: false, msg: 'Quét ⇄ Xem: cả hai pha đều bằng 0 — không có gì để chạy.' };
+      }
+      const idx = (_pha.get(id) || 0) % kh.plan.length;
+      const pha = kh.plan[idx];
+      if (kh.boXem && idx === 0) {
+        sendToRenderer('crawl-status', {
+          deviceId: id, kind: 'log',
+          line: '⚠ Danh sách link cần xem đang trống — bỏ pha Xem, chỉ quét theo chu kỳ.',
+        });
+      }
+      chay = Object.assign({}, params, {
+        pha: { key: pha.key, ms: pha.ms, links: kh.links, moc: docMoc(id) },
+      });
+      sendToRenderer('crawl-status', {
+        deviceId: id, kind: 'phase', key: pha.key, ms: pha.ms, at: Date.now(), total: kh.links.length,
+      });
+    }
+
     runner.startDevice(
-      params,
+      chay,
       (deviceId, data) => nhanKetQua(deviceId, data),
       (deviceId, status) => {
         sendToRenderer('crawl-status', { deviceId, ...status });
+        // Mốc xem tiếp của pha Xem: ghi NGAY mỗi lần xem xong một link, không đợi hết pha — app
+        // có thể tắt giữa chừng.
+        if (status.kind === 'view' && status.moc) ghiMoc(deviceId, status.idx);
         // Python báo hết ca TRƯỚC khi thoát. Ghi nhớ để lúc tiến trình đóng thì biết đây là
         // "hết ca" chứ không phải người dùng bấm Dừng hay máy lỗi.
         if (status.kind === 'status' && status.state === 'cycle_done') _cycleDone.add(deviceId);
@@ -335,9 +402,14 @@ async function chayMot(params) {
           devslot.release(deviceId);
           sheets.flush();
           onDevicesAllStopped();
+          if (status.state === 'error') _cycleDone.delete(deviceId);
 
-          // ── Hết ca thì nghỉ rồi tự chạy lại ──
-          if (_cycleDone.delete(deviceId) && status.state !== 'error') {
+          // ── Hết ca / hết pha thì nghỉ rồi tự chạy lại ──
+          // ⚠ CHỈ hẹn khi tiến trình ĐÃ ĐÓNG ('stopped' do runner báo lúc tiến trình thoát).
+          // 'done' là Python tự báo NGAY TRƯỚC khi thoát: hẹn ở đó mà giờ nghỉ bằng 0 thì lượt mới
+          // khởi động khi tiến trình cũ còn sống, bị chặn "đang chạy rồi", và máy LẶNG LẼ ngừng
+          // chu kỳ — Quét ⇄ Xem chạy lại sau MỖI pha nên sẽ gặp đúng ca này.
+          if (status.state === 'stopped' && _cycleDone.delete(deviceId)) {
             const p = _lastParams.get(deviceId) || {};
             const c = p.cfg || {};
             const lo = Math.max(0, Number(c.cycleBreakMin) || 0);
@@ -346,15 +418,36 @@ async function chayMot(params) {
             // lại dồn cục đúng thứ trần song song sinh ra để tránh.
             const phut = lo + Math.random() * (hi - lo);
             const ms = Math.round(phut * 60000);
+            const phutVi = phut.toFixed(1).replace('.', ',');   // kiểu số Việt: 6,2 phút
+
+            // Quét ⇄ Xem: tiến sang pha kế. Tính theo cấu hình MỚI NHẤT — người dùng có thể vừa
+            // Lưu cài đặt trong lúc máy đang chạy (xem 'device-update-params').
+            const khSau = keHoachPha(c);
+            let sang = '';
+            if (khSau && khSau.plan.length) {
+              const ke = ((_pha.get(deviceId) || 0) + 1) % khSau.plan.length;
+              _pha.set(deviceId, ke);
+              sang = TEN_PHA[khSau.plan[ke].key] || '';
+            }
+            const vua = chay.pha ? TEN_PHA[chay.pha.key] : '';
             sendToRenderer('crawl-status', {
-              deviceId, kind: 'status', state: 'resting', until: Date.now() + ms,
-              msg: `Hết ca — nghỉ ${phut.toFixed(1)} phút rồi tự chạy lại (đã nhả khe cho máy đang chờ)`,
+              deviceId, kind: 'status', state: 'resting', until: Date.now() + ms, next: sang,
+              msg: sang
+                ? `Hết pha ${vua} — nghỉ ${phutVi} phút rồi sang pha ${sang} (đã nhả khe cho máy đang chờ)`
+                : `Hết ca — nghỉ ${phutVi} phút rồi tự chạy lại (đã nhả khe cho máy đang chờ)`,
             });
             const t = setTimeout(() => {
               _restTimers.delete(deviceId);
               // Người dùng có thể đã xoá máy hoặc bấm Dừng trong lúc nghỉ.
               if (!_lastParams.has(deviceId)) return;
-              chayMot(_lastParams.get(deviceId)).catch(() => {});
+              // Không chạy lại được thì NÓI RA — bản cũ nuốt kết quả, máy dừng chu kỳ trong im lặng.
+              chayMot(_lastParams.get(deviceId)).then((r) => {
+                if (r && !r.ok) {
+                  sendToRenderer('crawl-status', {
+                    deviceId, kind: 'status', state: 'stopped', msg: `Không chạy lại được: ${r.msg}`,
+                  });
+                }
+              }, () => {});
             }, ms);
             _restTimers.set(deviceId, t);
           }
@@ -374,6 +467,9 @@ ipcMain.handle('device-start', async (_e, params) => {
   // Bấm Chạy tay thì huỷ mọi hẹn giờ nghỉ đang treo của máy đó, tránh chạy chồng hai lượt.
   huyNghi(params && params.deviceId);
   _lastParams.set(params.deviceId, params);
+  // Bấm Chạy tay luôn bắt đầu từ pha ĐẦU (Quét), giống bản PC. Mốc xem tiếp thì GIỮ — nó nằm
+  // trên đĩa, riêng cho từng máy.
+  _pha.set(params.deviceId, 0);
   return chayMot(params);
 });
 
