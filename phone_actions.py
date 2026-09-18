@@ -198,7 +198,7 @@ def read_video_info(d):
         time.sleep(0.3)
 
     if not xml_str:
-        return {"author": "", "handle": "", "desc": "", "badges": [], "live": False}
+        return {"author": "", "handle": "", "desc": "", "badges": [], "live": False, "tako": False}
 
     live = _dang_live(attrs)
     tac_gia = _ten_tac_gia(attrs)
@@ -224,6 +224,10 @@ def read_video_info(d):
         "desc": desc[:MAX_DESC],
         "badges": badges,
         "live": live,
+        # Đang đứng trong TikTok Tako (xem `la_man_tako`). Soi ké trên CÙNG bản chụp vừa đọc, nên
+        # không tốn thêm lần chụp nào. ⚠ Nơi gọi phải `pop` khoá này ra trước khi đưa `info` cho
+        # `bridge.ask(**info)`: `ask` chỉ nhận đúng các tên của nó, thừa một khoá là TypeError.
+        "tako": la_man_tako(xml_str),
     }
 
 
@@ -958,6 +962,109 @@ def close_profile(d, log=lambda s: None):
         return False
 
 
+# ════════════════════ VUỐT SANG VIDEO KẾ + MÀN HÌNH TAKO (2026-09-18) ════════════════════
+#
+# ⚠ SỰ CỐ THẬT: chủ dự án bắt được máy đứng trong "TikTok Tako", màn hình chat với trợ lý AI của
+# TikTok. Máy .140 kẹt ở đó ít nhất 20 phút: ảnh chụp lúc 18:02, chụp lại lúc 18:22 vẫn y nguyên.
+# Vòng quét không có bước nào hỏi "còn ở feed không", nên cứ vuốt và cứ đếm "video không có sound"
+# trên một màn hình chat.
+#
+# LỐI VÀO Tako (đo trên máy thật, TikTok 46.9.3): nút tròn hình mặt ma ở ĐẦU cột nút bên phải,
+# chỉ có trên một số video. Id bị làm rối (`z2u`), không có chữ, không có mô tả, nên không nhận
+# diện lối vào được. Vì vậy chặn bằng hai lớp:
+#   1. Không đặt ngón tay lên vùng có nút: cú vuốt bắt đầu ở GIỮA video (xem `VUOT_TU`).
+#   2. Nhận ra màn hình Tako thì lùi ra ngay, và log ghi bước vừa làm ngay trước đó. Dòng log đó
+#      là cách đo lối vào thật trên farm.
+
+# Cú vuốt sang video kế: từ 60% xuống 15% chiều cao, ở giữa bề ngang.
+#
+# ⚠ Bản cũ đặt ngón ở 85% chiều cao. Đo trên bản chụp feed thật (1080×1920), điểm đó nằm ĐÚNG
+# hàng nút dưới đáy video: dòng tên nhạc (bấm vào là mở trang nhạc), chữ "…more" của caption, và
+# thanh tua video. `d.swipe` bơm sự kiện thưa (xem `_mo_trang_ca_nhan`), nên đặt ngón lên chỗ bấm
+# được là tự nhận rủi ro bị hiểu thành một cú CHẠM. Ở giữa video, chạm nhầm cùng lắm là tạm dừng
+# video. Đo trên máy thật (Pixel 4 XL, 46.9.3): 20/20 lần sang đúng video mới, không lần nào rời
+# feed.
+VUOT_TU, VUOT_DEN = 0.60, 0.15
+
+
+def vuot_video_ke(d):
+    """Vuốt lên sang video kế — dùng chung cho feed, pha Xem, và lúc bỏ qua livestream."""
+    d.swipe(0.5, VUOT_TU, 0.5, VUOT_DEN, random.uniform(0.15, 0.3))
+
+
+# Dấu hiệu màn hình Tako — đo trên bản chụp của chính máy .140 lúc đang kẹt (TikTok 46.9.3), lưu
+# ở `tests/fixtures/tako_man_hinh_46.9.3.xml`:
+#   • chữ "TikTok Tako" trên thanh tiêu đề: tên thương hiệu, không dịch theo ngôn ngữ máy
+#   • dòng "Your use of TikTok Tako is subject to …" ở đầu trang
+#   • nút micro cạnh ô "Ask anything", id KHÔNG bị làm rối: `voice_send_container`, `voice_btn`
+# Phải có ≥ 2 dấu hiệu, để một caption tình cờ ghi "TikTok Tako" không bị nhận nhầm.
+_TAKO_ID_MICRO = ("voice_send_container", "voice_btn")
+
+
+def la_man_tako(xml_str):
+    """Bản chụp màn hình này có phải màn hình TikTok Tako không."""
+    if not xml_str or "Tako" not in xml_str:     # đường nhanh: gần như mọi màn hình dừng ở đây
+        return False
+    try:
+        root = ET.fromstring(xml_str)
+    except Exception:
+        return False
+    dau = set()
+    for n in root.iter():
+        t = (n.get("text") or "").strip()
+        if t == "TikTok Tako":
+            dau.add("ten")
+        elif t.startswith("Your use of TikTok Tako"):
+            dau.add("dieu_khoan")
+        if (n.get("resource-id") or "").split(":id/")[-1] in _TAKO_ID_MICRO:
+            dau.add("micro")
+    return len(dau) >= 2
+
+
+# Câu kể kết quả `thoat_tako`, dùng chung cho mọi nơi in log.
+_TAKO_CACH = {
+    "back": "đã bấm Back thoát ra",
+    "mo_lai": "Back 3 lần không ra, đã mở lại TikTok",
+    "ket": "Back 3 lần rồi mở lại TikTok vẫn không ra — máy này cần xem tay",
+}
+
+
+def thoat_tako(d, goi=None, xml_str=None):
+    """Đang ở Tako thì lùi ra. Trả:
+        ''        — không phải màn hình Tako, không làm gì
+        'back'    — đã lùi ra bằng nút Back
+        'mo_lai'  — Back 3 lần vẫn còn, đã mở lại TikTok
+        'ket'     — mở lại TikTok rồi vẫn còn ở Tako
+
+    ⚠ CHỈ BẤM BACK, tuyệt đối không bấm gì bên trong Tako. Mỗi thẻ trên màn hình đó ("Ask about
+    the video you watched", "Plan your next vacation"…) là một câu hỏi gửi đi cho AI.
+    """
+    try:
+        xml = d.dump_hierarchy() if xml_str is None else xml_str
+    except Exception:
+        return ""
+    if not la_man_tako(xml):
+        return ""
+    # Ba nhịp: nhịp đầu có thể chỉ đóng bàn phím (ô "Ask anything" đang được chọn).
+    for _ in range(3):
+        try:
+            d.press("back")
+            time.sleep(1.2)
+            if not la_man_tako(d.dump_hierarchy()):
+                return "back"
+        except Exception:
+            pass
+    if goi:
+        try:
+            d.app_start(goi, stop=True)
+            time.sleep(6)
+            if not la_man_tako(d.dump_hierarchy()):
+                return "mo_lai"
+        except Exception:
+            pass
+    return "ket"
+
+
 # ════════════════════ PHA XEM (chế độ Quét ⇄ Xem, 2026-09-18) ════════════════════
 #
 # Clone pha `view` của bản PC: mở trang sound → bấm MỘT video ngẫu nhiên trong lưới → xem →
@@ -1087,7 +1194,7 @@ def xem_mot_link(d, goi, link, con_han, dung, xem_giay, so_vuot, dung_giay, log=
 
     for _ in range(random.randint(*so_vuot)):
         try:
-            d.swipe(0.5, 0.85, 0.5, 0.15, random.uniform(0.15, 0.3))
+            vuot_video_ke(d)
         except Exception:
             break
         if not _cho(con_han, random.uniform(*dung_giay), dung):
@@ -1095,6 +1202,13 @@ def xem_mot_link(d, goi, link, con_han, dung, xem_giay, so_vuot, dung_giay, log=
             return "dung" if dung() else "het_gio"
         # Lạc khỏi trình phát (vd chạm nhầm mở trang cá nhân) thì thôi link này, đừng vuốt mù.
         if not _activity(d).endswith(ACT_TRINH_PHAT):
+            break
+        # Tako mở ĐÈ lên trình phát, tên activity không đổi, nên phép kiểm ở trên không thấy.
+        # Phải soi màn hình (một lần chụp mỗi video, trong khi mỗi video xem 10–20 giây).
+        kq_tako = thoat_tako(d, goi)
+        if kq_tako:
+            log(f"⚠ Lọt vào TikTok Tako (trợ lý AI) lúc đang vuốt xem — "
+                f"{_TAKO_CACH.get(kq_tako, kq_tako)}. Thôi link này.")
             break
 
     _ve_ngoai(d)

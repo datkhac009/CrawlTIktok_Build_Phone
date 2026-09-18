@@ -235,7 +235,19 @@ def dismiss_popups(d):
     for t in POPUP_BUTTON_TEXTS:
         el = d(text=t)
         if el.exists:
-            el.click()
+            # ⚠ Hop thoai GIOI THIEU Tako (tro ly AI) cung mang nut "Continue" / "Got it" / "OK" —
+            # bam vao la MO Tako, tuc chinh ta dua may vao cho ket. Hop thoai nao nhac toi Tako
+            # thi chi bam Back. Chi soi man hinh khi da thay nut, nen duong thuong khong ton gi.
+            try:
+                co_tako = "tako" in d.dump_hierarchy().lower()
+            except Exception:
+                co_tako = False
+            if co_tako:
+                BUOC["v"] = "đóng hộp thoại có nhắc tới Tako (bằng Back)"
+                d.press("back")
+            else:
+                BUOC["v"] = f'bấm "{t}" để đóng hộp thoại'
+                el.click()
             acted = True
             time.sleep(1)
             break
@@ -330,6 +342,7 @@ def lay_link_that(d):
     share = d(description="Share sound")
     if not share.wait(timeout=4):
         return None
+    BUOC["v"] = "Share → Copy link trên trang nhạc"
     share.click()
     time.sleep(WAIT_SHARE_SHEET)
     copy = d(description="Copy link")
@@ -398,7 +411,27 @@ def _slug_ngan(url):
 # nham) nhung truoc do KHONG DE LAI DAU VET NAO - cu truot vi het gio doc so post trong y het
 # mot sound bi loc loai. Khong dem duoc thi khong biet nhip dang dat hay qua tay, va "nhanh" voi
 # "nhanh den muc bo sot" nhin tu log la mot.
-TRUOT = {"khong_icon": 0, "khong_vao_trang_nhac": 0, "het_gio_doc_so_post": 0}
+TRUOT = {"khong_icon": 0, "khong_vao_trang_nhac": 0, "het_gio_doc_so_post": 0, "tako": 0}
+
+# ── BUOC VUA LAM GAN NHAT (2026-09-18) ──
+# Loi vao TikTok Tako (tro ly AI) chua do duoc chac chan — xem phone_actions: "VUOT SANG VIDEO KE
+# + MAN HINH TAKO". Nen moi lan lot vao, log phai noi duoc "ngay sau buoc nao": dong log do chinh
+# la cach do loi vao that tren farm. Moi thao tac cham man hinh ghi ten minh vao day truoc khi lam.
+BUOC = {"v": "mở TikTok"}
+
+
+def xu_ly_tako(d, xml_str=None):
+    """Dang o TikTok Tako thi lui ra, dem, va noi ra. Tra ket qua cua `PA.thoat_tako`
+    ('' = khong phai Tako; 'ket' = lui khong ra)."""
+    kq = PA.thoat_tako(d, ACTIVE_PKG, xml_str)
+    if not kq:
+        return ""
+    TRUOT["tako"] += 1
+    # Han che theo TUNG BUOC: moi loi vao duoc in vai lan, loi vao khac van in rieng.
+    log_han_che("tako_" + BUOC["v"],
+                f'⚠ Lọt vào TikTok Tako (trợ lý AI) ngay sau bước "{BUOC["v"]}" — '
+                f'{PA._TAKO_CACH.get(kq, kq)}.')
+    return kq
 
 # Dem sound DAT so post nhung bi bo vi KHONG PHAI Original Sound, va so lan khong lay duoc link
 # that. In o dong tong ket: loc gio la luat that (theo ban PC), mat sound phai thay duoc.
@@ -481,6 +514,7 @@ def check_current_video(d):
         # để đẩy mọi dòng đáng đọc ra khỏi bộ đệm 500 dòng. Con số nằm ở dòng nhịp tim và tổng kết.
         TRUOT["khong_icon"] += 1
         return (None, False)
+    BUOC["v"] = "bấm icon sound để mở trang nhạc"
     icon.click()
 
     title_el = find_first(d, TITLE_IDS, timeout=WAIT_MUSIC_PAGE)
@@ -612,6 +646,7 @@ def check_current_video(d):
         log(f'Bỏ "{_ten}" ({_vi})')
         emit_event("result", verdict="LOAI", name=name, posts=posts)
 
+    BUOC["v"] = "bấm Back từ trang nhạc về feed"
     d.press("back")
     time.sleep(REST_AFTER_BACK)
     return (result, True)
@@ -709,6 +744,7 @@ def _thi_hanh(d, bridge, aid, ans, info, res, da_roi_feed=True):
         if not res and not FOLLOW_ANY:
             kq["follow"] = "not_needed"
         else:
+            BUOC["v"] = "mở trang cá nhân để follow"
             handle_that = PA.open_profile_read_handle(d, log)
             try:
                 if not handle_that:
@@ -753,6 +789,7 @@ def _thi_hanh(d, bridge, aid, ans, info, res, da_roi_feed=True):
     # (:389) va ghe tham (:433) deu co. Hau qua: MOI video deu bi tym, ke ca video vua bi bo loc
     # loai. Chu du an nhin man hinh bat duoc. Mot dieu kien thieu, khong mot dong log nao bao.
     if ans.get("like") and res:
+        BUOC["v"] = "thả tim (chạm đúp giữa video)"
         kq["like"] = PA.do_like(d, log)
 
     # ── GHE TRANG: luot vai giay -> mo MOT video ngau nhien -> xem -> (co the) tym -> ve feed ──
@@ -772,6 +809,7 @@ def _thi_hanh(d, bridge, aid, ans, info, res, da_roi_feed=True):
                 return True          # cau hoi/dap dang tat -> giu nguyen hanh vi cu
             return bool(bridge.take(aid2).get("visit"))
 
+        BUOC["v"] = "ghé trang cá nhân"
         kq["visit"], kq["like_profile"] = PA.do_visit(
             d, tac_gia, VISIT_SEC_MIN, VISIT_SEC_MAX, log,
             like_video=bool(ans.get("like_profile")),
@@ -781,6 +819,7 @@ def _thi_hanh(d, bridge, aid, ans, info, res, da_roi_feed=True):
 
     # Not interested SAU CUNG: no doi feed.
     if ans.get("ni"):
+        BUOC["v"] = "nhấn giữ → Not interested"
         kq["ni"] = PA.tap_not_interested(d, log)
         if kq["ni"] == "ok":
             log("Đã bấm \"Not interested\" (%s)" % _VI_SAO_NI.get(ans.get("why", ""), "không rõ lý do"))
@@ -986,6 +1025,16 @@ def main():
                 # giay mo trang nhac che tron thoi gian di ve, nen duong binh thuong khong ton
                 # them mili-giay nao.
                 info = PA.read_video_info(d) if bridge.enabled else None
+                # Dang dung trong TikTok Tako (tro ly AI) — soi ke tren CUNG ban chup vua doc. Lui
+                # ra roi lam lai vong nay tu dau; luot nay khong tinh la mot video.
+                # ⚠ `pop` la bat buoc: `bridge.ask(**info)` ben duoi khong nhan khoa `tako`.
+                if info is not None and info.pop("tako", False):
+                    count -= 1
+                    if xu_ly_tako(d) == "ket":
+                        # Back lan mo lai TikTok deu khong ra: dua vao nhanh loi ben duoi, du 3 lan
+                        # lien tiep thi no khoi dong lai dich vu va dung may lai tu dau.
+                        raise RuntimeError("kẹt ở màn hình TikTok Tako")
+                    continue
 
                 # ── BO QUA LIVESTREAM ──
                 # Yeu cau cua chu du an (2026-09-16), va ky thuat cung dong y: man LIVE khong co
@@ -1002,7 +1051,8 @@ def main():
                     live_bo_qua += 1
                     emit_event("progress", checked=count, qualified=qualified)
                     time.sleep(random.uniform(1.0, 2.0))
-                    d.swipe(0.5, 0.85, 0.5, 0.15, random.uniform(0.15, 0.3))
+                    BUOC["v"] = "vuốt qua livestream"
+                    PA.vuot_video_ke(d)
                     time.sleep(random.uniform(0.8, 1.4))
                     continue
 
@@ -1060,8 +1110,16 @@ def main():
 
             # dwell ngau nhien truoc khi sang video ke (tranh bi TikTok coi la bot)
             try:
-                time.sleep(random.uniform(DWELL_MIN, DWELL_MAX))
-                d.swipe(0.5, 0.85, 0.5, 0.15, random.uniform(0.15, 0.3))
+                # SOI TAKO TRUOC KHI VUOT, trong luc dang xem video: bat duoc moi lan lot vao do
+                # trang nhac, Share, tym, ghe tham, Not interested cua CHINH vong nay — va cu vuot
+                # khong bao gio roi xuong man hinh Tako (vuot o do la cham vao the "Plan your next
+                # vacation", tuc la gui cau hoi cho AI). Thoi gian chup man hinh tru vao thoi gian
+                # xem, nen nhip quet khong cham di.
+                t_xem = time.time()
+                xu_ly_tako(d)
+                time.sleep(max(0.0, random.uniform(DWELL_MIN, DWELL_MAX) - (time.time() - t_xem)))
+                BUOC["v"] = "vuốt sang video kế"
+                PA.vuot_video_ke(d)
                 time.sleep(random.uniform(0.8, 1.4))
             except Exception as e:
                 log(f"⚠ Vuốt sang video kế lỗi ở #{count} ({str(e)[:100]}) — bỏ qua, thử tiếp.")
@@ -1097,6 +1155,8 @@ def main():
         _p.append(f"{TRUOT['khong_icon']} video không có sound")
     if recover_count:
         _p.append(f"phục hồi {recover_count} lần")
+    if TRUOT["tako"]:
+        _p.append(f"{TRUOT['tako']} lần lọt vào TikTok Tako (đã lùi ra)")
     log("✅ Xong ca: " + ", ".join(_p) + ".")
 
     # Hai số dưới đây là thước đo của câu hỏi "nhịp quét đã quá tay chưa": đó là sound CÓ THẬT mà

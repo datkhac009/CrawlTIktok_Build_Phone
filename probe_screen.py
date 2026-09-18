@@ -330,7 +330,7 @@ def do_pha_xem(d, serial, link):
     print(f"  · read_video_info: {json.dumps(info, ensure_ascii=False)[:300]}")
 
     # 4. Vuot len: co sang video ke CUA CUNG SOUND khong.
-    d.swipe(0.5, 0.85, 0.5, 0.15, random.uniform(0.15, 0.3))
+    PA.vuot_video_ke(d)
     time.sleep(3.5)
     cur2 = d.app_current()
     info2 = PA.read_video_info(d)
@@ -373,7 +373,7 @@ def do_nguon_goc(d, serial, n):
             bang.append(dong)
             log(f"#{i}: {json.dumps(dong, ensure_ascii=False)}")
             d.press("back"); time.sleep(2)
-        d.swipe(0.5, 0.85, 0.5, 0.15, random.uniform(0.15, 0.3))
+        PA.vuot_video_ke(d)
         time.sleep(random.uniform(2.5, 3.5))
     print()
     log("══ TONG KET NGUON GOC ══")
@@ -443,7 +443,7 @@ def main():
             except Exception as e:
                 log(f"do trang ca nhan #{i} loi: {str(e)[:120]}")
         if i < n:
-            d.swipe(0.5, 0.85, 0.5, 0.15, random.uniform(0.15, 0.3))
+            PA.vuot_video_ke(d)
             time.sleep(random.uniform(2.5, 4))
 
     # ── TONG KET: cai ma nguoi doc that su can ──

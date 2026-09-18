@@ -69,7 +69,7 @@ Theo thứ tự, dừng ở cái đầu tiên thấy được:
 ```bash
 npm install
 npm start           # hoặc start.bat
-npm test            # ~480 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
+npm test            # ~520 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
 ```
 
 Trong app, bấm **🔌 Kiểm tra** ở dòng một máy. Nó kiểm từng mục và **mục nào đỏ thì in ra đúng
@@ -120,7 +120,8 @@ là kết quả thu thập. Cả hai là trạng thái riêng của từng máy 
 Original Sound · đẩy Google Sheet · lọc trùng mọi máy qua `known_links.txt` + đọc Sheet tăng dần
 (chép nguyên `sheets.cjs` bản PC) · trần số máy chạy đồng thời + hàng đợi · chu kỳ quét/nghỉ ·
 lọc theo ngôn ngữ, **không thu** sound khớp bộ lọc · nhận nhãn AI-generated · bấm "Not
-interested" · **follow / thả tim / ghé thăm trang cá nhân** kèm hạn mức.
+interested" · **follow / thả tim / ghé thăm trang cá nhân** kèm hạn mức · **tự thoát khi lọt vào
+TikTok Tako** (trợ lý chat AI): chỉ bấm Back, log ghi lọt vào ngay sau bước nào.
 
 **Chưa có**: Quét Mix (= Quét ⇄ Xem + ghé thăm kênh, như bản PC) · tự cập nhật.
 
