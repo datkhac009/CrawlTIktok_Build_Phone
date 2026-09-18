@@ -184,7 +184,8 @@ class AskBridge:
             pass
         if self._fail_streak >= FAIL_STREAK_OFF and self.enabled:
             self.enabled = False
-            self._log("hoi/dap hong %d lan lien tiep -> TAT phan loc & tuong tac, van quet binh thuong"
+            self._log("⛔ Kênh hỏi/đáp với app hỏng %d lần liên tiếp — TẮT phần lọc và tương tác. "
+                      "Việc quét sound KHÔNG bị ảnh hưởng, vẫn chạy bình thường."
                       % self._fail_streak)
         return dict(SAFE)
 

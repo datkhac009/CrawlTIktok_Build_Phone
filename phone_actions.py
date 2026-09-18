@@ -21,6 +21,7 @@ Bấm xong phải đọc lại nhãn nút. `channelstore.cjs:182-184` cảnh bá
 import os
 import random
 import re
+import unicodedata
 import time
 import xml.etree.ElementTree as ET
 
@@ -91,7 +92,39 @@ def _attrs_by_id(xml_str):
 # Tên tác giả nằm trong `content-desc` dạng "<Tên> profile" (avatar) hoặc "Follow <Tên>" (nút
 # follow trên feed). Đo trên máy thật 2026-09-16, TikTok v46.1.1 — xem `probe_screen.py`.
 _RE_AVATAR = re.compile(r"^(.*?)\s+profile$", re.I)
-_RE_NUT_FOLLOW = re.compile(r"^follow\s+(.+)$", re.I)
+# ⚠ Phải nhận CẢ "Following <Tên>" (2026-09-18). Follow xong thì nút đổi chữ, mà bản cũ chỉ khớp
+# `^follow\s+` nên neo dự phòng chết đúng lúc cần nhất — và mọi lần đọc hụt tên đều bị chấm là
+# "video đã đổi", tức là không bấm gì nữa.
+_RE_NUT_FOLLOW = re.compile(r"^follow(?:ing)?\s+(.+)$", re.I)
+
+
+# Kết quả một lượt ghé thăm, dịch sang tiếng Việt NGAY TẠI CHỖ IN.
+#
+# ⚠ Bản cũ in thẳng mã nội bộ ra màn hình: `ghe tham: ok_no_grid sau 12.4s`. Bản PC không bao giờ
+# làm thế — mã nội bộ của nó ('nav', 'nofeed', 'same', 'empty') đều được dịch tại chỗ gọi.
+_KQ_GHE = {
+    "ok": "👀 Đã ghé một kênh",
+    "ok_no_grid": "👀 Đã ghé một kênh, nhưng không mở được video nào trong lưới",
+    "skip_trung": "Bỏ qua một kênh vừa ghé gần đây",
+    "fail": "⚠ Ghé thăm hỏng",
+}
+
+
+def _chuan_ten(s):
+    """Chuẩn hoá tên hiển thị để SO SÁNH (không để hiển thị).
+
+    ⚠ VÌ SAO (2026-09-18): bản cũ so hai chuỗi thô. Tên đọc được từ máy thật có đủ thứ làm lệch —
+    khoảng trắng thừa, hoa thường, ký tự Unicode dựng sẵn so với tổ hợp, và cả đuôi " profile"
+    còn sót khi regex không khớp. Mỗi lần lệch là một lần báo oan "video đã đổi", và báo oan thì
+    KHÔNG bấm gì cả. Bốn đường hỏng oan đã đo được, đây là hàng rào chung cho cả bốn.
+    """
+    if not s:
+        return ""
+    t = unicodedata.normalize("NFC", str(s)).strip()
+    m = _RE_AVATAR.match(t)          # bỏ đuôi " profile" nếu còn sót
+    if m and m.group(1).strip():
+        t = m.group(1).strip()
+    return " ".join(t.split()).casefold()
 
 
 def _ten_tac_gia(attrs):
@@ -134,12 +167,39 @@ def read_video_info(d):
     Hệ quả: khớp theo TÊN HIỂN THỊ của tác giả (thứ mà `langfilter` cũng xét) yếu hơn bản PC.
     Hướng sai ở đây là BỎ SÓT, không phải bắt nhầm — chấp nhận được.
     """
-    try:
-        xml_str = d.dump_hierarchy()
-    except Exception:
+    # ── DÒ LẠI TỚI KHI ĐỌC ĐƯỢC TÊN, KHÔNG CHỤP MỘT PHÁT RỒI THÔI ──
+    #
+    # ⚠ SỰ CỐ THẬT (2026-09-18): bản cũ chụp đúng một lần, ngay 0,8-1,4 giây sau cú vuốt. Nhánh
+    # giao diện mang `user_avatar` khi đó thường CHƯA DỰNG XONG, nên tên tác giả về rỗng — và tên
+    # rỗng thì `same_video` báo "video đã đổi", tức là KHÔNG BẤM GÌ CẢ. Chủ dự án nhìn log thấy
+    # `skip_changed_video` ở mọi video: suốt nhiều ca, không một cú tym hay ghé thăm nào chạy.
+    #
+    # Đo trên 13 bản chụp có sẵn trong repo: 6/13 bản không có `user_avatar`. Mà `probe_screen.py`
+    # — công cụ đã tạo ra các bản ĐỌC ĐƯỢC — cố ý chờ 2,5-4 giây trước khi chụp. Chênh lệch đó
+    # chính là lỗi.
+    #
+    # Dò theo điều kiện nên chỉ tốn thời gian ĐÚNG LÚC đang đọc hụt; feed dựng kịp thì đi tiếp ngay.
+    xml_str = ""
+    attrs = {}
+    het = time.time() + 2.5
+    while True:
+        try:
+            xml_str = d.dump_hierarchy()
+        except Exception:
+            xml_str = ""
+        if xml_str:
+            attrs = _attrs_by_id(xml_str)
+            # Đủ điều kiện đi tiếp khi đọc được tên, HOẶC khi biết chắc đây là LIVE (màn LIVE vốn
+            # không có `user_avatar` — chờ thêm cũng không bao giờ có).
+            if _ten_tac_gia(attrs) or _dang_live(attrs):
+                break
+        if time.time() >= het:
+            break
+        time.sleep(0.3)
+
+    if not xml_str:
         return {"author": "", "handle": "", "desc": "", "badges": [], "live": False}
 
-    attrs = _attrs_by_id(xml_str)
     live = _dang_live(attrs)
     tac_gia = _ten_tac_gia(attrs)
 
@@ -278,12 +338,12 @@ def do_follow(d, log=lambda s: None):
         time.sleep(1.5)                     # trang có thể chưa dựng xong; thử lại một nhịp
         diem = tim_nut_follow(d, RE_FOLLOW)
     if diem is None:
-        log("khong thay nut Follow tren man hinh nay")
+        log("⚠ Không thấy nút Follow trên màn hình này.")
         return "fail"
     try:
         d.click(*diem)
     except Exception as e:
-        log("bam Follow loi: %s" % str(e)[:80])
+        log("⚠ Bấm Follow lỗi (%s)." % str(e)[:80])
         return "fail"
 
     # XÁC MINH: nút phải đổi sang trạng thái "đã theo dõi". Không đổi = không follow được
@@ -298,7 +358,7 @@ def do_follow(d, log=lambda s: None):
         if tim_nut_follow(d, RE_FOLLOWING):
             return "ok"
         time.sleep(0.8)
-    log("da bam Follow nhung nut KHONG doi trang thai -> coi la that bai")
+    log("⚠ Đã bấm Follow nhưng nút KHÔNG đổi trạng thái — coi là thất bại, không ghi sổ.")
     return "fail"
 
 
@@ -315,7 +375,7 @@ def do_like(d, log=lambda s: None):
         time.sleep(0.6)
         return "ok"
     except Exception as e:
-        log("tha tim loi: %s" % str(e)[:80])
+        log("⚠ Thả tim lỗi (%s)." % str(e)[:80])
         return "fail"
 
 
@@ -331,12 +391,12 @@ def tap_not_interested(d, log=lambda s: None):
         d.long_click(w * 0.5, h * 0.45, 0.8)
         time.sleep(1.2)
     except Exception as e:
-        log("nhan giu loi: %s" % str(e)[:80])
+        log("⚠ Nhấn giữ để mở menu lỗi (%s)." % str(e)[:80])
         return "fail"
 
     item = _find_by_regex(d, RE_NOT_INTERESTED, timeout=3)
     if item is None:
-        log("khong thay muc 'Not interested' trong menu -> thoat, KHONG bam gi")
+        log("⚠ Mở được menu nhưng KHÔNG thấy mục \"Not interested\" — thoát ra, không bấm gì.")
         try:
             d.press("back")
             time.sleep(0.6)
@@ -348,7 +408,7 @@ def tap_not_interested(d, log=lambda s: None):
         time.sleep(1.0)
         return "ok"
     except Exception as e:
-        log("bam 'Not interested' loi: %s" % str(e)[:80])
+        log("⚠ Bấm \"Not interested\" lỗi (%s)." % str(e)[:80])
         return "fail"
 
 
@@ -441,7 +501,8 @@ def _ve_feed(d, log=lambda s: None):
         close_profile(d, log)
         if _o_tren_feed(d):
             return True
-    log("ghe tham xong KHONG ve duoc feed - vong quet ke tiep se sai cho")
+    log("⛔ Ghé thăm xong KHÔNG về được feed — vòng quét kế tiếp sẽ thao tác sai chỗ. Nếu dòng này lặp "
+        "lại thì dừng máy và xem màn hình.")
     return False
 
 
@@ -507,18 +568,18 @@ def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
 
     def _xong(kq, kq_tym, vi_sao=""):
         giay = time.time() - t_ghe
-        log("ghe tham: %s sau %.1fs%s" % (kq, giay, (" - " + vi_sao) if vi_sao else ""))
+        log("%s (%.1fs)%s" % (_KQ_GHE.get(kq, "Ghé thăm xong"), giay, (" — " + vi_sao) if vi_sao else ""))
         return (kq, kq_tym)
 
     if not _mo_trang_ca_nhan(d):
-        return _xong("fail", "not_needed", "vuot sang trai khong vao duoc trang")
+        return _xong("fail", "not_needed", "vuốt sang trái không mở được trang cá nhân")
 
     try:
         # Luoi thu hai cho phong LIVE, ngay khi vua vao.
         if dang_trong_phong_live(d):
-            log("ghe tham roi vao phong LIVE -> thoat ra ngay")
+            log("⚠ Ghé thăm rơi vào phòng LIVE — thoát ra ngay.")
             _ve_feed(d, log)
-            return _xong("fail", "not_needed", "roi vao phong LIVE")
+            return _xong("fail", "not_needed", "rơi vào phòng LIVE")
 
         # ── HOI PHIA NODE: CO NEN O LAI KHONG ──
         # Doc `@handle` truoc, vi so chong ghe trung khoa theo no. Tien mot viec: doc duoc
@@ -530,10 +591,10 @@ def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
             # cho mot thu "co thi tot" la lam moi luot ghe dai them gap ruoi khi mang cham.
             h = doc_handle_tren_trang(d, 6.0)
             if not h:
-                log("ghe trang nhung khong doc duoc @handle -> van o lai luot, khong ghi so")
+                log("⚠ Vào được trang nhưng không đọc được @handle — vẫn ở lại lướt, nhưng không ghi sổ ghé thăm.")
             elif not hoi_o_lai(h):
                 _ve_feed(d, log)
-                return _xong("skip_trung", "not_needed", "da ghe %s gan day" % h)
+                return _xong("skip_trung", "not_needed", "đã ghé %s gần đây" % h)
 
         # Cho luoi hien ra theo DIEU KIEN, khong ngu mu. Khong thay thi back MOT nhip roi do lai:
         # 1/3 lan ghe roi vao tam thong bao che trang, va no nuot dung mot `back`.
@@ -551,7 +612,7 @@ def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
             if o:
                 break
             if _o_tren_feed(d):
-                return _xong("fail", "not_needed", "roi ve feed truoc khi luoi kip hien")
+                return _xong("fail", "not_needed", "rơi về feed trước khi lưới kịp hiện")
             # Ba giay cuoi moi thu MOT nhip `back` de bo tam che (vd "Viewer history turned on").
             # ⚠ Chi `back`. TUYET DOI khong bam nut la tren tam do (vd "Save") — bam mu mot nut
             # khong biet la gi tren tai khoan that la dung QD-31.
@@ -574,7 +635,7 @@ def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
         if not o:
             _ve_feed(d, log)
             return _xong("ok_no_grid", "not_needed",
-                         "khong thay o luoi (trang trong / bi chan / bo cuc khac)")
+                         "không thấy ô lưới nào (trang trống, bị chặn, hoặc bố cục khác)")
 
         cx, cy = random.choice(o)
         d.click(cx, cy)
@@ -593,7 +654,7 @@ def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
         if not mo_duoc:
             _ve_feed(d, log)
             return _xong("ok_no_grid", "not_needed",
-                         "bam o luoi nhung video khong mo, KHONG tym (tranh bam mu)")
+                         "bấm ô lưới nhưng video không mở, nên KHÔNG tym (tránh bấm mù)")
 
         time.sleep(random.uniform(vid_min, vid_max))
         # Dung lai `do_like`, khong viet cu double-tap thu hai — dung loi cua `linkkey.cjs`.
@@ -603,33 +664,60 @@ def do_visit(d, author, sec_min=5, sec_max=10, log=lambda s: None,
         return _xong("ok", kq_tym)
     except Exception as e:
         _ve_feed(d, log)
-        return _xong("fail", "not_needed", "loi: %s" % str(e)[:80])
+        return _xong("fail", "not_needed", "lỗi: %s" % str(e)[:80])
 
 
 def same_video(d, author):
-    """Video đang hiển thị có còn là video đã hỏi không. `author` là TÊN HIỂN THỊ.
+    """Video đang hiển thị có còn là video đã hỏi không.
 
-    ⚠ VÌ SAO CẦN: sau khi vào trang nhạc rồi `back`, feed CÓ THỂ đã nhảy sang video khác. Bấm
-    lúc đó là bấm nhầm người. Đây không phải rủi ro của kênh hỏi/đáp mà là rủi ro thật của
-    chính tính năng. Không chắc thì trả False — mặc định an toàn là KHÔNG bấm.
+    Trả về CẶP `(con_dung, ly_do)`:
+      - `(True,  "")`                  vẫn đúng video đó
+      - `(False, "khac_nguoi")`        đọc được tên, và là người KHÁC — video đã trôi thật
+      - `(False, "chua_doc_duoc")`     lúc hỏi đã không đọc được tên, nên không có gì để so
+      - `(False, "khong_doc_duoc")`    giờ không đọc được tên trên màn hình
+      - `(False, "khong_o_feed")`      không còn ở feed (lạc vào story / trang nhạc / app khác)
 
-    ⚠ ĐỔI NEO (2026-09-16): bản cũ so `d(text=handle)` với @handle. Mà @handle KHÔNG hề xuất hiện
-    trên feed, nên phép so này **luôn trả False** — tức `_thi_hanh` thoát sớm ở mọi video và
-    không cú bấm nào từng được phát ra. Giờ so bằng tên hiển thị, đọc từ cùng một nguồn với
-    `read_video_info` nên hai bên không thể lệch nhau.
+    ⚠ VÌ SAO PHẢI TÁCH BỐN LÝ DO (2026-09-18): bản cũ gộp cả bốn thành một `False` và một dòng log
+    duy nhất "video đã đổi sau khi quay lại feed". Câu đó SAI ở ba trong bốn trường hợp — video
+    không đổi gì cả, chỉ là không đọc được tên. Chủ dự án nhìn log thấy `skip_changed_video` ở mọi
+    video và không có cách nào biết vì sao. Đây đúng là hai bài học bản PC đã ghi: chẩn đoán sai
+    tệ hơn không chẩn đoán (QĐ-31), và không gộp hai trạng thái khác nhau vào một câu (QĐ-47).
+
+    ⚠ VÌ SAO CẦN PHÉP KIỂM NÀY: sau khi vào trang nhạc rồi `back`, feed CÓ THỂ đã nhảy sang video
+    khác. Bấm lúc đó là bấm nhầm người, mà cú Not interested thì không hoàn tác được.
+
+    ⚠ NEO LÀ TÊN HIỂN THỊ, không phải @handle: feed TikTok không bày @handle ở đâu cả (đo: 0/13
+    bản chụp). Đọc từ cùng một nguồn với `read_video_info`.
     """
     if not author:
-        return False
+        return (False, "chua_doc_duoc")
     try:
-        attrs = _attrs_by_id(d.dump_hierarchy())
+        xml = d.dump_hierarchy()
     except Exception:
-        return False
+        return (False, "khong_doc_duoc")
+
+    attrs = _attrs_by_id(xml)
+
+    # Lạc khỏi feed thì mọi phép so tên đều vô nghĩa. `_o_tren_feed` là hàm DUY NHẤT phân biệt
+    # được feed / trình xem story / trang nhạc — bản cũ không hề gọi nó, nên "lạc màn hình" và
+    # "người khác" bị trộn làm một.
+    if "user_avatar" not in attrs and not _dang_live(attrs):
+        return (False, "khong_o_feed")
+
     hien_tai = _ten_tac_gia(attrs)
     if not hien_tai:
-        return False
-    # `author` có thể là "Tên @handle" do `read_video_info` ghép; so phần TÊN ở đầu.
-    return author.startswith(hien_tai) or hien_tai == author
+        return (False, "khong_doc_duoc")
 
+    # `author` có thể là "Tên @handle" do `read_video_info` ghép. So phần TÊN, đã chuẩn hoá.
+    a = _chuan_ten(author.split(" @")[0] if " @" in author else author)
+    b = _chuan_ten(hien_tai)
+    if not a or not b:
+        return (False, "khong_doc_duoc")
+    # So HAI CHIỀU: bản cũ chỉ chấp nhận chuỗi mới là tiền tố của chuỗi cũ, nên lần đọc sau dài
+    # hơn lần đầu (TikTok cắt tên theo bề rộng khác) là trượt oan.
+    if a == b or a.startswith(b) or b.startswith(a):
+        return (True, "")
+    return (False, "khac_nguoi")
 
 def _mo_trang_ca_nhan(d):
     """Mở trang cá nhân của chủ video: VUỐT PHẢI→TRÁI, kéo từng điểm một.
@@ -759,14 +847,14 @@ def open_profile_read_handle(d, log=lambda s: None, timeout=12):
             time.sleep(1.5)
         time.sleep(1.2)               # để feed dựng xong; vuốt vào lúc đang chuyển cảnh là mất
         if not _mo_trang_ca_nhan(d):
-            log("lan %d: chua o feed hoac vuot loi" % lan)
+            log("⚠ Lần %d: chưa về tới feed, hoặc cú vuốt không ăn." % lan)
             continue
 
         # Chờ trang tải theo ĐIỀU KIỆN, trong `doc_handle_tren_trang` — dùng chung với `do_visit`.
         h = doc_handle_tren_trang(d, timeout)
         if h:
             return h
-        log("lan %d: mo duoc man khac nhung khong thay @handle" % lan)
+        log("⚠ Lần %d: mở được một màn khác nhưng không thấy @handle." % lan)
     # ── HỎNG THÌ PHẢI NÓI ĐANG Ở ĐÂU, ĐỪNG ĐỂ ĐOÁN ──
     # "Không đọc được @handle" có ít nhất ba nguyên nhân khác hẳn nhau: (a) bấm avatar không mở
     # được gì, (b) mở đúng trang nhưng tải chậm, (c) mở nhầm một màn khác (TikTok hay chèn thông
@@ -779,11 +867,12 @@ def open_profile_read_handle(d, log=lambda s: None, timeout=12):
         # (tải chậm / sai màn) là một chuyện; TikTok bị đẩy ra nền là chuyện hoàn toàn khác —
         # nghĩa là cú vuốt bị hiểu thành thao tác thoát app.
         act = d.app_current()
-        log("ghe trang nhung khong doc duoc @handle sau %ds. app=%s/%s | Man hinh: %s | nut Follow: %s"
+        log("⛔ Vào trang nhưng không đọc được @handle sau %ds. Đang ở %s/%s · trên màn hình: %s · "
+            "nút Follow: %s"
             % (timeout, act.get("package", "?"), str(act.get("activity", "?")).split(".")[-1],
-               " / ".join(c[:24] for c in chu), co_nut))
+               " / ".join(c[:24] for c in chu), "có" if co_nut else "không"))
     except Exception:
-        log("ghe trang nhung khong doc duoc @handle sau %ds (va khong doc duoc man hinh)" % timeout)
+        log("⛔ Vào trang nhưng không đọc được @handle sau %ds, và cũng không đọc được màn hình." % timeout)
     return ""
 
 
@@ -809,7 +898,7 @@ def verify_follow_after_reload(d, log=lambda s: None, cho=3.0):
         # Vuốt xuống ở vùng trên = nạp lại trang cá nhân (pull-to-refresh).
         d.swipe(0.5, 0.35, 0.5, 0.85, 0.35)
     except Exception as e:
-        log("nap lai trang loi: %s" % str(e)[:80])
+        log("⚠ Nạp lại trang lỗi (%s)." % str(e)[:80])
         return "unknown"
 
     time.sleep(cho)
@@ -819,7 +908,7 @@ def verify_follow_after_reload(d, log=lambda s: None, cho=3.0):
         return "ok"
     if tim_nut_follow(d, RE_FOLLOW):
         return "reverted"
-    log("nap lai xong khong thay nut Follow lan Following -> khong ket luan duoc")
+    log("⚠ Nạp lại xong mà không thấy nút Follow lẫn Following — không kết luận được, coi như chưa rõ.")
     return "unknown"
 
 
@@ -860,10 +949,10 @@ def close_profile(d, log=lambda s: None):
         for _ in range(2):
             if not dang_trong_phong_live(d):
                 return True
-            log("dang o TRONG phong LIVE -> thoat ra")
+            log("⚠ Đang ở TRONG phòng LIVE — thoát ra.")
             d.press("back")
             time.sleep(1.5)
         return True
     except Exception as e:
-        log("quay lai feed loi: %s" % str(e)[:80])
+        log("⚠ Quay lại feed lỗi (%s)." % str(e)[:80])
         return False

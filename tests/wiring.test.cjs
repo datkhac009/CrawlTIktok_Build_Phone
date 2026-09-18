@@ -379,9 +379,9 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
 
   // Đây là cái vô hình nhất trong ba: hết trần đọc số post thì video bị loại y như bị lọc.
   check('13c. Hết giờ đọc số post có nói ra, không im lặng',
-    /het \{SETTLE:\.1f\}s ma chua doc duoc so post/.test(py));
-  check('13d. Tổng kết in ba số đó ra cùng tổng số video',
-    /TRUOT vi het gio/.test(py) && /tren tong \{count\} video/.test(py));
+    /số video chưa hiện sau \{SETTLE:\.1f\}s/.test(py));
+  check('13d. Tổng kết in hai số trượt kèm tổng số video',
+    /Trượt vì hết giờ chờ/.test(py) && /trên tổng \{count\} video/.test(py));
 }
 
 // ── 14. Ghé thăm phải THẬT SỰ vào trang, không phải vuốt một cái rồi về ──
@@ -471,6 +471,170 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     /bridge\.ask\(kind="visit_check", handle=handle\)/.test(py));
   check('15j. Python KHÔNG giữ bản sao sổ ghé thăm',
     !/visited_channels|visitbook|visitSkipDays/i.test(py + pa));
+}
+
+// ── 16. Log phải đọc được: tiếng Việt đủ dấu, không lộ giá trị nội bộ, không lặp ──
+// SỰ CỐ THẬT (2026-09-18): chủ dự án gửi ảnh chụp log kèm câu "bạn log cái gì vậy tôi nhìn khó
+// hiểu quá — mọi thứ phải follow theo giống app của PC". Ba bệnh cùng lúc: 58/58 dòng Python
+// không dấu; dòng `[tương tác] follow=skip_changed_video tym=skip_changed_video ...` in thẳng
+// giá trị nội bộ; và một dòng lặp 20 lần liền mạch đủ đẩy mọi thứ đáng đọc ra khỏi bộ đệm.
+{
+  const py = doc('scan_feed_sounds.py');
+  const pa = doc('phone_actions.py');
+  const ab = doc('askbridge.py');
+  const rn = doc('src/runner.cjs');
+
+  // ── 16a. Mọi chuỗi log Python phải có dấu ──
+  // Quét chính các lời gọi log, không quét cả file (chú thích thì không sao).
+  {
+    const xau = [];
+    for (const [ten, ma] of [['scan_feed_sounds.py', py], ['phone_actions.py', pa], ['askbridge.py', ab]]) {
+      const re = /(?:^|[^\w.])(?:log|log_han_che|self\._log)\(([\s\S]{0,260}?)\)\n/g;
+      let m;
+      while ((m = re.exec(ma))) {
+        const t = m[1];
+        // Bỏ qua lời gọi chỉ truyền biến/khoá, không có chuỗi chữ nào.
+        if (!/["']/.test(t)) continue;
+        // Lời gọi hạn chế có dạng `log_han_che(<khoá>, <thông điệp>)`. Khoá là MÃ, cố ý không
+        // dấu; chỉ xét phần thông điệp. Khoá có thể là chuỗi, hoặc ghép chuỗi với biến.
+        const phanChu = t.replace(/^\s*"[a-z_]+"(\s*\+\s*\w+)?\s*,/, '');
+        // Thông điệp là một biến (đã dựng sẵn bằng tiếng Việt ở trên) thì không có gì để xét.
+        if (/^\s*\w+\s*$/.test(phanChu)) continue;
+        if (!/[^\x00-\x7F]/.test(phanChu)) {
+          xau.push(`${ten}: ${phanChu.replace(/\s+/g, ' ').slice(0, 70)}`);
+        }
+      }
+    }
+    check('16a. Mọi dòng log Python đều có dấu tiếng Việt', xau.length === 0,
+      xau.length ? xau.slice(0, 4).join(' || ') : 'sạch');
+  }
+
+  // ── 16b. Không lộ giá trị nội bộ ra màn hình ──
+  // Bản PC có cả tá mã nội bộ ('nav', 'nofeed', 'same', 'empty') mà KHÔNG mã nào lọt ra log —
+  // đều dịch tại chỗ gọi. Đây là hàng rào giữ cho bản phone cũng vậy.
+  {
+    const MA = ['skip_changed_video', 'ok_no_grid', 'ok_unverified', 'skip_trung', 'not_needed'];
+    // Chỉ soi các dòng THẬT SỰ in ra: `log(...)`, `say(...)`, `line:`.
+    const dongIn = [];
+    for (const ma of [py, pa, rn]) {
+      const re = /(?:log|log_han_che|self\._log|say)\(([\s\S]{0,260}?)\)\n|line:\s*(`[^`]*`)/g;
+      let m;
+      while ((m = re.exec(ma))) dongIn.push(m[1] || m[2] || '');
+    }
+    const lo = [];
+    for (const d of dongIn) {
+      for (const ma of MA) {
+        // `${ten}` hay `${v}` thì không sao — chỉ báo khi CHÍNH chuỗi mã nằm trong dòng in.
+        if (d.includes(`'${ma}'`) || d.includes(`"${ma}"`) || new RegExp(`[=\s]${ma}\b`).test(d)) {
+          lo.push(`${ma}: ${d.replace(/\s+/g, ' ').slice(0, 60)}`);
+        }
+      }
+    }
+    // ⚠ 16b là hàng rào CHẶN TRƯỚC: bản cũ cũng xanh ở đây, vì nó rò bằng cách NỘI SUY BIẾN
+    // (`follow=${payload.follow}`) chứ không viết thẳng chuỗi. 16b1 ngay dưới mới là phép thử
+    // bắt đúng hình dạng đã hỏng thật.
+    check('16b. Không dòng log nào viết thẳng giá trị nội bộ', lo.length === 0,
+      lo.length ? lo.slice(0, 3).join(' || ') : 'sạch');
+
+    // Hình dạng ĐÃ HỎNG THẬT: nhét thẳng trường kết quả vào dòng log, không qua bảng dịch.
+    // Chính nó đẻ ra `[tương tác] follow=skip_changed_video tym=skip_changed_video ...`.
+    {
+      const noiSuy = (rn.match(/line:[^\n]*\$\{payload\.(follow|like|like_profile|visit|ni|why)\b/g) || [])
+        .concat(rn.match(/phan\.push\(`[^`]*\$\{payload\.\w+\}/g) || []);
+      check('16b1. runner KHÔNG nội suy thẳng trường kết quả vào dòng log',
+        noiSuy.length === 0, noiSuy.length ? noiSuy.slice(0, 3).join(' || ') : 'sạch');
+    }
+
+    // Bảng dịch phải tồn tại, nếu không thì 16b xanh vì chẳng in gì cả.
+    check('16b2. Có bảng dịch kết quả tương tác sang tiếng Việt',
+      /const KET_QUA_TUONG_TAC = \{/.test(rn) && /const VIEC_TUONG_TAC = \{/.test(rn));
+    check('16b3. Có bảng dịch lý do bấm Not interested', /_VI_SAO_NI = \{/.test(py));
+    check('16b4. Có bảng dịch kết quả ghé thăm', /_KQ_GHE = \{/.test(pa));
+  }
+
+  // ── 16c. Chặn dòng lặp ở NGUỒN ──
+  check('16c. Có bộ chặn dòng lặp', /def log_han_che\(khoa, msg\)/.test(py) && /LAP_TOI_DA = 3/.test(py));
+  check('16c2. Bộ đếm vẫn chạy sau khi ngừng in — tổng không mất',
+    /_DEM_LAP\[khoa\] = n/.test(py) && /if n <= LAP_TOI_DA/.test(py));
+  // Dòng "không có icon sound" từng lặp 20 lần liền mạch. Chủ dự án chốt bỏ hẳn.
+  // Soi ĐÚNG nhánh "video này không có icon sound": nó chỉ được tăng bộ đếm, không được in gì.
+  // Bắt theo chữ thì đỏ oan — chú thích trong mã vẫn nhắc tới cụm đó để giải thích, và còn một
+  // dòng log HỢP LỆ khác cũng chứa chữ "icon sound" ("bấm icon sound nhưng trang nhạc không mở").
+  {
+    const nhanh = /if icon is None:([\s\S]{0,700}?)return \(None, False\)/.exec(py);
+    check('16c3. Nhánh "không có icon sound" chỉ đếm, không in dòng nào',
+      !!nhanh && !/(?:^|[^\w.])log(?:_han_che)?\(/.test(nhanh[1]),
+      nhanh ? 'tìm thấy nhánh' : 'KHÔNG tìm thấy nhánh');
+  }
+
+  // ── 16d. Nhịp tim: im lặng không được phép mơ hồ ──
+  // Bản PC có dòng này vì người dùng từng thấy "0 sound" suốt 3 tiếng mà không biết feed còn
+  // chạy hay đã kẹt.
+  check('16d. Có nhịp tim theo số video', /NHIP_TIM = \d+/.test(py) && /Lướt \{_n\} video/.test(py));
+  check('16d2. Nhịp tim in ĐỘ CHÊNH và đặt lại mốc',
+    /count - moc\["count"\] >= NHIP_TIM/.test(py) && /moc = \{"count": count/.test(py));
+
+  // ── 16e. "Đã quét N sound..." chỉ in khi con số THẬT SỰ tăng ──
+  // Quy tắc bản PC: chặn lặp ở nguồn chứ không lọc ở đích, nhờ vậy không bao giờ có hai dòng
+  // giống hệt nhau liền nhau.
+  {
+    const khoiDat = /qualified \+= 1[\s\S]{0,400}?\n\n/.exec(py);
+    check('16e. Dòng "Đã quét N sound" nằm ngay sau chỗ tăng bộ đếm',
+      !!khoiDat && /Đã quét \{qualified\} sound\.\.\./.test(khoiDat[0]));
+    check('16e2. Và KHÔNG in ở chỗ nào khác',
+      (py.match(/Đã quét \{qualified\} sound/g) || []).length === 1);
+  }
+
+  // ── 16f. Mỗi kết quả chỉ vào log MỘT lần ──
+  // Bản cũ: Python `log()` rồi `emit_event`, và runner biến sự kiện thành một dòng nữa.
+  check('16f. runner KHÔNG in lại kết quả sound (Python đã in)',
+    !/kind: 'log', line: `DAT/.test(rn) && !/line: `LOAI/.test(rn));
+
+  // ── 16g. Đóng dấu giờ ở ĐÚNG MỘT chỗ ──
+  check('16g. Python không tự đóng dấu giờ', !/strftime\('%H:%M:%S'\)/.test(py));
+  check('16g2. Renderer đóng dấu giờ cho mọi dòng',
+    /toLocaleTimeString\('vi-VN', \{ hour12: false \}\)/.test(rend) && /line = `\[\$\{gio\}\] \$\{line\}`/.test(rend));
+
+  // ── 16h. Phép kiểm "video có đổi không" chỉ chạy khi ĐÃ rời feed ──
+  // Video không có icon sound thì máy chưa đi đâu cả — kiểm ở đó vừa vô nghĩa vừa in ra một câu
+  // sai, và tệ hơn: nó chặn luôn mọi tương tác.
+  check('16h. Chỉ kiểm khi đã rời feed', /if da_roi_feed and \(ans\.get\("ni"\)/.test(py));
+  check('16h2. check_current_video nói cho nơi gọi biết có rời feed hay không',
+    /return \(None, False\)/.test(py) && /return \(None, True\)/.test(py) && /return \(result, True\)/.test(py));
+  check('16h3. Nơi gọi nhận đủ cặp', /res, da_roi_feed = check_current_video\(d\)/.test(py));
+}
+
+// ── 17. Dòng "tương tác" phải đọc được, và im khi không có gì để nói ──
+// Đây là dòng chủ dự án nhìn thấy nhiều nhất trong một ca. Bản cũ in
+//     [tương tác] follow=skip_changed_video tym=skip_changed_video ghé=skip_changed_video ...
+// — 90 ký tự chỉ để nói "không làm gì cả", lặp ở mọi video. Phép thử này gọi hàm THẬT.
+{
+  const { kePhanTuongTac: ke } = require(path.join(R, 'src', 'runner.cjs'));
+
+  check('17. Không xin quyền gì -> im hẳn',
+    ke({ follow: 'not_needed', like: 'not_needed', visit: 'not_needed',
+         like_profile: 'not_needed', ni: 'skip' }) === '');
+
+  // Lượt bỏ vì không xác minh được video: Python đã in một câu đầy đủ giải thích vì sao.
+  check('17b. Bỏ lượt thì KHÔNG nói lại lần nữa',
+    ke({ follow: 'skip_changed_video', like: 'skip_changed_video', visit: 'skip_changed_video',
+         like_profile: 'skip_changed_video', ni: 'skip_changed_video' }) === '');
+
+  check('17c. Tym hai chỗ -> một câu tiếng Việt',
+    ke({ like: 'ok', like_profile: 'ok' }) === 'Tym xong · Tym video trong trang xong.');
+
+  // `do_visit` bên Python đã in kèm SỐ GIÂY THẬT. Kể lại ở đây là nói hai lần.
+  check('17d. Ghé trang KHÔNG kể lại (Python đã in kèm số giây)',
+    ke({ visit: 'ok', like: 'not_needed' }) === '' && ke({ visit: 'ok_no_grid' }) === '');
+
+  check('17e. Việc hỏng có dấu cảnh báo', ke({ like: 'fail' }) === '⚠ Tym hỏng.');
+  check('17f. Follow bị bật lại là cảnh báo', ke({ follow: 'reverted' }) === '⚠ Follow bị TikTok bật lại.');
+
+  // ⚠ Hàng rào quan trọng nhất: giá trị lạ thì BỎ QUA, không in ra dưới dạng mã. Bản cũ in thẳng
+  // bất cứ thứ gì nhận được, nên chỉ cần phía Python thêm một giá trị mới là nó hiện ngay ra màn
+  // hình — đúng cách `skip_changed_video` lọt ra.
+  check('17g. Giá trị lạ thì bỏ qua, không bày mã ra màn hình',
+    ke({ like: 'mot_gia_tri_chua_tung_co' }) === '');
 }
 
 const failed = results.filter((r) => !r.pass);

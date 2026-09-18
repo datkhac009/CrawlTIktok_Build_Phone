@@ -101,7 +101,14 @@ PROFILE_VID_MAX = float(os.environ.get("PROFILE_VID_SEC_MAX", "7") or 7)
 
 
 def log(msg):
-    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+    """In một dòng log. KHÔNG tự đóng dấu giờ.
+
+    ⚠ VÌ SAO (2026-09-18): trước đây Python tự thêm `[HH:MM:SS]`, còn các dòng do phía Node viết
+    thì không — nên nửa log có giờ, nửa không, nhìn như hai bản ghi trộn vào nhau. Bản PC đóng
+    dấu ở MỘT chỗ duy nhất là lúc hiển thị (`appendLog` trong renderer), nên mọi dòng đều có giờ
+    và giờ đó luôn cùng một đồng hồ.
+    """
+    print(msg, flush=True)
 
 
 def emit_event(type_, **fields):
@@ -144,7 +151,7 @@ def set_active_pkg(pkg):
     global ACTIVE_PKG
     ACTIVE_PKG = pkg or None
     if ACTIVE_PKG:
-        log(f"goi TikTok dang dung: {ACTIVE_PKG}")
+        log(f"Gói TikTok đang dùng: {ACTIVE_PKG}")
 
 
 def find_first(d, ids, timeout=0):
@@ -208,7 +215,7 @@ def kill_all_apps(d):
     try:
         installed = adb("shell", "pm", "list", "packages", "-3", serial=d.serial)
     except Exception as e:
-        log(f"khong lay duoc danh sach app de kill: {str(e)[:80]}")
+        log(f"⚠ Không đọc được danh sách app để tắt bớt ({str(e)[:80]}) — bỏ qua bước này, vẫn chạy tiếp.")
         return
     pkgs = [
         line.split(":", 1)[1].strip()
@@ -221,7 +228,7 @@ def kill_all_apps(d):
             adb("shell", "am", "force-stop", pkg, serial=d.serial)
         except Exception:
             pass
-    log(f"da dong {len(pkgs)} app truoc khi bat dau")
+    log(f"Đã tắt {len(pkgs)} app nền để nhường RAM cho TikTok.")
     emit_event("status", state="apps_killed", count=len(pkgs))
     time.sleep(1.5)
 
@@ -230,13 +237,13 @@ def ensure_tiktok_open(d):
     """Đảm bảo TikTok đang mở và ở tiền cảnh. Trả về package đang dùng."""
     cur = d.app_current().get("package", "")
     if cur in PKGS:
-        log(f"TikTok da mo san ({cur})")
+        log(f"TikTok đã mở sẵn ({cur}).")
         return cur
     installed = adb("shell", "pm", "list", "packages", serial=d.serial)
     pkg = next((p for p in PKGS if p in installed), None)
     if not pkg:
         raise RuntimeError("Khong tim thay TikTok (musically/trill) da cai tren may.")
-    log(f"Man hinh ngoai ({cur or 'home'}) -> dang mo TikTok ({pkg})...")
+    log(f"Đang ở màn hình khác ({cur or 'màn hình chính'}) — mở TikTok...")
     d.app_start(pkg)
     time.sleep(4)
     for _ in range(3):
@@ -320,25 +327,95 @@ def get_link(d):
 # "nhanh den muc bo sot" nhin tu log la mot.
 TRUOT = {"khong_icon": 0, "khong_vao_trang_nhac": 0, "het_gio_doc_so_post": 0}
 
+# Vì sao bỏ lượt tương tác. Bản cũ gộp cả bốn thành một dòng "video đã đổi" — sai ở ba trong bốn
+# trường hợp, và không có số nào để biết cái nào đang xảy ra.
+BO_LUOT = {"khac_nguoi": 0, "chua_doc_duoc": 0, "khong_doc_duoc": 0, "khong_o_feed": 0}
+
+# ── CHẶN DÒNG LẶP: in vài lần đầu, đếm tiếp, tổng hiện ở tổng kết ──
+#
+# Khuôn lấy nguyên từ bản PC: mọi loại lỗi hay lặp đều in tối đa 3 dòng rồi im, nhưng bộ đếm VẪN
+# chạy để con số đầy đủ hiện ở dòng tổng kết cuối ca. Chặn dòng, giữ tổng.
+#
+# ⚠ VÌ SAO CẦN: log chỉ giữ 500 dòng trong bộ nhớ. Một lỗi lặp mỗi video sẽ đẩy mọi dòng đáng đọc
+# ra ngoài trong vài phút — chủ dự án mở log lên chỉ thấy một câu lặp lại hàng chục lần.
+# ── NHỊP TIM: cứ bấy nhiêu video thì in một dòng tổng hợp ──
+#
+# ⚠ VÌ SAO PHẢI CÓ (chép từ bản PC): bản PC ghi lại một sự cố thật — người dùng thấy "0 sound"
+# suốt 3 tiếng và KHÔNG có cách nào biết feed đang chạy tốt mà toàn gặp sound đã có, hay feed đã
+# kẹt cứng ở một video. Hai chuyện khác hẳn nhau mà log không phân biệt được.
+#
+# Dòng này là câu trả lời: im lặng không bao giờ được phép mơ hồ. Nó cũng là chỗ chứa những con
+# số mà từng dòng lẻ đã bị bỏ đi (video không có sound, livestream).
+def _so(n):
+    """Chấm nghìn kiểu Việt: 1600000 -> "1.600.000".
+
+    Tự viết chứ không dùng `format(n, ",d")` rồi đổi dấu: bản PC cũng tự viết, với lý do ghi ngay
+    trong mã — không phụ thuộc vào cấu hình vùng của máy đang chạy.
+    """
+    try:
+        return f"{int(n):,}".replace(",", ".")
+    except Exception:
+        return str(n)
+
+
+# Lý do bấm "Not interested", dịch sang tiếng Việt NGAY TẠI CHỖ IN.
+#
+# ⚠ Bản PC có cả tá giá trị nội bộ ('nav', 'nofeed', 'same', 'empty') nhưng KHÔNG giá trị nào lọt
+# ra log — đều dịch tại chỗ gọi. Bản phone trước đây in thẳng `(ly do: lang)` ra màn hình.
+_VI_SAO_NI = {
+    "lang": "caption hoặc tên kênh dính bộ lọc ngôn ngữ",
+    "ai": "video gắn nhãn AI",
+    "live": "đang livestream",
+}
+
+NHIP_TIM = 25
+
+LAP_TOI_DA = 3
+_DEM_LAP = {}
+
+
+def log_han_che(khoa, msg):
+    """In `msg`, nhưng chỉ `LAP_TOI_DA` lần đầu cho mỗi `khoa`. Sau đó im, vẫn đếm."""
+    n = _DEM_LAP.get(khoa, 0) + 1
+    _DEM_LAP[khoa] = n
+    if n <= LAP_TOI_DA:
+        log(msg)
+    elif n == LAP_TOI_DA + 1:
+        log("   ↳ (dòng trên còn lặp lại — thôi không in nữa, tổng sẽ hiện ở dòng tổng kết)")
+
 
 def check_current_video(d):
-    """App đang ở feed, đứng tại 1 video. Trả về (link, posts) nếu ĐẠT, None nếu không.
-    Luôn back về feed trước khi return (trừ khi không tìm thấy icon sound -> vẫn ở feed)."""
+    """App đang ở feed, đứng tại 1 video.
+
+    Trả về CẶP `(ket_qua, da_roi_feed)`:
+      - `ket_qua`      = `(link, posts, ten)` nếu sound ĐẠT, `None` nếu không
+      - `da_roi_feed`  = có thật sự đi sang trang nhạc rồi quay về hay không
+
+    ⚠ VÌ SAO PHẢI TRẢ THÊM `da_roi_feed` (2026-09-18): nơi gọi có một phép kiểm "video có trôi
+    sang người khác trong lúc mình đi vắng không". Bản cũ chạy phép kiểm đó KỂ CẢ khi máy chưa hề
+    rời feed — video không có icon sound thì hàm này trả về ngay tại feed. Hậu quả là log in ra
+    "video đã đổi sau khi quay lại feed" cho một lượt chưa đi đâu cả: câu đó sai theo cấu trúc,
+    không phải sai lúc chạy.
+    """
     icon = find_first(d, SOUND_ICON_IDS, timeout=3)
     if icon is None:
+        # ⚠ KHÔNG in dòng nào ở đây (2026-09-18, chủ dự án chốt). Quảng cáo và bài ảnh đều rơi vào
+        # nhánh này và chúng đi thành cụm, nên bản cũ đẻ ra 20 dòng giống hệt nhau liền mạch — đủ
+        # để đẩy mọi dòng đáng đọc ra khỏi bộ đệm 500 dòng. Con số nằm ở dòng nhịp tim và tổng kết.
         TRUOT["khong_icon"] += 1
-        log("khong co icon sound tren video nay (bo qua)")
-        return None
+        return (None, False)
     icon.click()
 
     title_el = find_first(d, TITLE_IDS, timeout=WAIT_MUSIC_PAGE)
     if title_el is None:
         TRUOT["khong_vao_trang_nhac"] += 1
-        log(f"khong vao duoc trang nhac trong {WAIT_MUSIC_PAGE:.0f}s (bo qua video nay)")
+        log_han_che("khong_vao_trang_nhac",
+                    f"⚠ Bấm icon sound nhưng trang nhạc KHÔNG mở trong {WAIT_MUSIC_PAGE:.0f}s — "
+                    "bỏ qua video này. Dòng này lặp nhiều thì nới ô \"Chờ trang nhạc mở tối đa\".")
         if MUSIC_ACTIVITY in d.app_current().get("activity", ""):
             d.press("back")
             time.sleep(REST_AFTER_BACK)
-        return None
+        return (None, True)
 
     desc = (title_el.info.get("contentDescription") or title_el.get_text() or "").strip()
 
@@ -362,30 +439,47 @@ def check_current_video(d):
             # nhin vao log thi no giong het mot sound bi loai vi khong dat nguong - nen phai noi
             # ra o day, khong thi cu truot nay vo hinh.
             TRUOT["het_gio_doc_so_post"] += 1
-            log(f"het {SETTLE:.1f}s ma chua doc duoc so post -> video nay bi loai, CO THE la "
-                f"truot oan (noi rong o 'Cho so post hien ra toi da' neu dong nay nhieu)")
+            log_han_che(
+                "het_gio_doc_so_post",
+                f"⚠ Trang nhạc mở rồi nhưng số video chưa hiện sau {SETTLE:.1f}s — sound này bị "
+                "loại, CÓ THỂ là loại oan. Dòng này lặp nhiều thì nới ô \"Chờ số post hiện ra "
+                "tối đa\".")
             break
         time.sleep(0.2)
     is_original = not any(kw in desc.lower() for kw in REJECT_KEYWORDS)
     name = extract_sound_name(desc)
 
     result = None
+    _ten = name or "(không đọc được tên)"
     if (is_original or not ORIGINAL_ONLY) and posts is not None and MIN_POSTS < posts < MAX_POSTS:
         link = get_link(d)
         if link:
             result = (link, posts, name)
-            log(f"DAT  posts={posts:<8} {name} {link}")
+            # ⚠ Câu phán quyết theo khuôn bản PC: VIỆC "TÊN" (bằng chứng), KHÔNG dấu chấm cuối.
+            # Và KHÔNG in link: link đã nằm trong bảng kết quả, in thêm vào log chỉ làm dòng dài
+            # ra mà không nói thêm gì.
+            log(f'Lấy "{_ten}" ({_so(posts)} video)')
             emit_event("result", verdict="DAT", name=name, url=link, posts=posts)
         else:
-            log(f"DAT nhung khong lay duoc link (posts={posts})")
+            log(f'⚠ Bỏ "{_ten}" ({_so(posts)} video) — đạt bộ lọc nhưng KHÔNG lấy được link.')
             emit_event("result", verdict="ERROR", name=name, posts=posts, msg="khong lay duoc link")
     else:
-        log(f"LOAI original={is_original} posts={posts} desc={desc[:60]!r}")
+        # Mỗi lý do loại một câu riêng. Bản cũ in `original=True posts=None desc='...'` — đọc ra
+        # thì phải tự suy, mà suy sai thì không ai biết.
+        if posts is None:
+            _vi = "không đọc được số video"
+        elif not is_original and ORIGINAL_ONLY:
+            _vi = "không phải Original Sound"
+        elif posts <= MIN_POSTS:
+            _vi = f"{_so(posts)} < {_so(MIN_POSTS)} video"
+        else:
+            _vi = f"{_so(posts)} > {_so(MAX_POSTS)} video"
+        log(f'Bỏ "{_ten}" ({_vi})')
         emit_event("result", verdict="LOAI", name=name, posts=posts, original=is_original)
 
     d.press("back")
     time.sleep(REST_AFTER_BACK)
-    return result
+    return (result, True)
 
 
 def reset_service(d):
@@ -393,10 +487,10 @@ def reset_service(d):
     tien trinh Python, ban tren may van song -> lan sau tranh chap service -> treo)."""
     try:
         d.reset_uiautomator()
-        log("da reset uiautomator (service sach)")
+        log("Đã khởi động lại uiautomator2 (dịch vụ sạch).")
         return True
     except Exception as e:
-        log(f"reset uiautomator loi: {str(e)[:80]}")
+        log(f"⚠ Khởi động lại uiautomator2 lỗi ({str(e)[:80]}) — vẫn thử chạy tiếp.")
         return False
 
 
@@ -408,13 +502,13 @@ def setup_device(d):
             pkg = ensure_tiktok_open(d)
             return pkg
         except Exception as e:
-            log(f"setup lan {attempt} loi: {str(e)[:100]}")
+            log(f"⚠ Chuẩn bị máy lần {attempt} lỗi ({str(e)[:100]}) — thử lại...")
             reset_service(d)
             time.sleep(2)
     raise RuntimeError("Khong the mo TikTok sau 3 lan thu.")
 
 
-def _thi_hanh(d, bridge, aid, ans, info, res):
+def _thi_hanh(d, bridge, aid, ans, info, res, da_roi_feed=True):
     """Thi hanh phan quyet cua phia Node. KHONG quyet dinh gi o day.
 
     THU TU CO CHU Y:
@@ -429,10 +523,33 @@ def _thi_hanh(d, bridge, aid, ans, info, res):
     tac_gia = (info or {}).get("author", "")
     kq = {}
 
-    # Video da doi thi DUNG HET. Mac dinh an toan la khong bam.
-    if (ans.get("ni") or ans.get("follow") or ans.get("like") or ans.get("visit")):
-        if not PA.same_video(d, tac_gia):
-            log("video da doi sau khi quay lai feed -> KHONG bam gi (tranh bam nham nguoi)")
+    # ── VIDEO CÒN ĐÚNG NGƯỜI ĐÓ KHÔNG ──
+    #
+    # ⚠ CHỈ KIỂM KHI ĐÃ THẬT SỰ RỜI FEED (2026-09-18). Phép kiểm này sinh ra để chặn một rủi ro
+    # duy nhất: đi sang trang nhạc rồi quay về thì feed có thể đã trôi sang video khác, bấm lúc đó
+    # là bấm nhầm người. Video không có icon sound thì máy chưa đi đâu cả — chạy phép kiểm ở đó
+    # vừa vô nghĩa vừa in ra một câu sai ("sau khi quay lại feed"), và tệ hơn: nó chặn luôn mọi
+    # tương tác. Chủ dự án nhìn log thấy đúng cảnh đó ở MỌI video.
+    if da_roi_feed and (ans.get("ni") or ans.get("follow") or ans.get("like") or ans.get("visit")):
+        con_dung, ly_do = PA.same_video(d, tac_gia)
+        if not con_dung:
+            BO_LUOT[ly_do] = BO_LUOT.get(ly_do, 0) + 1
+            # Bốn lý do, bốn câu. Gộp lại thành một câu là chẩn đoán sai ba phần tư số lần —
+            # đúng bài học QĐ-31 của bản PC: chẩn đoán sai tệ hơn không chẩn đoán.
+            cau = {
+                "khac_nguoi":
+                    "Feed đã trôi sang video khác trong lúc đi xem trang nhạc — bỏ lượt tương tác "
+                    "này để khỏi bấm nhầm người.",
+                "chua_doc_duoc":
+                    "⚠ Lúc quét không đọc được tên chủ video, nên không có gì để đối chiếu — bỏ "
+                    "lượt tương tác này. Việc quét sound KHÔNG bị ảnh hưởng.",
+                "khong_doc_duoc":
+                    "⚠ Quay lại feed nhưng không đọc được tên chủ video — bỏ lượt tương tác này. "
+                    "Việc quét sound KHÔNG bị ảnh hưởng.",
+                "khong_o_feed":
+                    "⚠ Quay lại mà màn hình KHÔNG phải feed — bỏ lượt tương tác này.",
+            }.get(ly_do, "⚠ Không xác minh được video còn đúng người — bỏ lượt tương tác này.")
+            log_han_che("bo_luot_" + ly_do, cau)
             bridge.acted(aid, ni="skip_changed_video", follow="skip_changed_video",
                          like="skip_changed_video", visit="skip_changed_video",
                          like_profile="skip_changed_video")
@@ -462,7 +579,7 @@ def _thi_hanh(d, bridge, aid, ans, info, res):
                 if not handle_that:
                     kq["follow"] = "fail"
                 else:
-                    log(f"ghe trang: {handle_that} -> hoi lai phia app xem co duoc follow khong")
+                    log(f"Đã vào trang {handle_that} — hỏi app xem có được follow không...")
                     xn = bridge.ask(kind="follow_confirm", handle=handle_that,
                                     author=tac_gia, desc="", badges=[])
                     quyet = bridge.take(xn) if xn is not None else None
@@ -481,7 +598,8 @@ def _thi_hanh(d, bridge, aid, ans, info, res):
                         if kq["follow"] == "ok":
                             con = PA.verify_follow_after_reload(d, log)
                             if con == "reverted":
-                                log(f"follow {handle_that} da bi TikTok bat lai -> KHONG ghi so")
+                                log(f"⛔ TikTok đã BẬT LẠI cú follow {handle_that} — không ghi sổ. Lặp lại nhiều lần nghĩa là tài "
+            "khoản đang bị chặn hành vi tự động; nên tắt follow trên máy này một ngày.")
                                 kq["follow"] = "reverted"
                             elif con == "unknown":
                                 # Bam duoc va nut da doi, chi la nap lai khong ket luan duoc.
@@ -530,7 +648,7 @@ def _thi_hanh(d, bridge, aid, ans, info, res):
     if ans.get("ni"):
         kq["ni"] = PA.tap_not_interested(d, log)
         if kq["ni"] == "ok":
-            log("da bam 'Not interested' (ly do: %s)" % ans.get("why", "?"))
+            log("Đã bấm \"Not interested\" (%s)" % _VI_SAO_NI.get(ans.get("why", ""), "không rõ lý do"))
 
     if kq:
         bridge.acted(aid, **kq)
@@ -569,9 +687,9 @@ def main():
     adb_port = os.environ.get("ANDROID_ADB_SERVER_PORT", "5037")
     try:
         import uiautomator2.base as _b
-        log(f"ADB server cong {adb_port} (dung chung voi app), HTTP_TIMEOUT={_b.HTTP_TIMEOUT}")
+        log(f"Dùng chung ADB server cổng {adb_port} với app (chờ RPC tối đa {_b.HTTP_TIMEOUT}s).")
     except Exception:
-        log(f"ADB server cong {adb_port} (dung chung voi app)")
+        log(f"Dùng chung ADB server cổng {adb_port} với app.")
 
     # ── CHI `connect` KHI THAT SU CHUA CO MAY ──
     #
@@ -584,21 +702,21 @@ def main():
     if serial and ":" in serial:
         try:
             if serial in list_devices():
-                log(f"{serial} da co san tren adb server {adb_port} -> bo qua buoc connect")
+                log(f"Máy {serial} đã có sẵn trên ADB server — bỏ qua bước kết nối.")
             else:
-                log(f"{serial} chua co tren adb server {adb_port} -> dang connect...")
+                log(f"Máy {serial} chưa có trên ADB server — đang kết nối...")
                 # Timeout NGAN co chu y: da biet may khong nam trong danh sach thi `connect`
                 # hoac an ngay, hoac treo vi mot host khac dang giu `adbd` cua may — cho them
                 # 50 giay nua khong doi duoc ket qua, chi lam nguoi dung tuong app da treo.
                 out = adb("connect", serial, timeout=10)
-                log(f"adb connect: {out or '(khong noi gi)'}")
+                log(f"adb connect: {out or '(không nói gì)'}")
         except Exception as e:
             # KHONG dung o day: connect hong chua chac la khong dieu khien duoc may. De
             # connect(serial) ben duoi bao loi that, va bao dung cai loi that.
-            log(f"adb connect loi: {str(e)[:80]} (van thu ket noi tiep)")
+            log(f"⚠ adb connect lỗi ({str(e)[:80]}) — vẫn thử kết nối tiếp.")
 
     d = connect(serial)
-    log(f"Ket noi: {d.serial}")
+    log(f"✅ Đã kết nối {d.serial}.")
     emit_event("status", state="connected", serial=d.serial)
     reset_service(d)
     pkg = setup_device(d)
@@ -615,35 +733,38 @@ def main():
     # do duoc, khong phai doan.
     recover_count = 0
     live_bo_qua = 0     # so video livestream da bo qua (yeu cau 2026-09-16)
+    # Mốc của lần in nhịp tim gần nhất, để in ĐỘ CHÊNH chứ không in tổng luỹ kế. Tổng luỹ kế đọc
+    # không ra nhịp: "đã quét 300 video" lần nào cũng đúng, kể cả khi feed vừa kẹt 20 phút.
+    moc = {"count": 0, "qualified": 0, "khong_icon": 0, "live": 0}
 
     # Cay cau hoi/dap voi phia Node. Tat thi moi thu chay y het truoc khi co tinh nang nay.
     bridge = AskBridge(enabled=ASK_ON, log=log)
     if ASK_ON:
-        log("loc & tuong tac: BAT (phan xet o phia app, may chi doc man hinh va thi hanh)")
+        log("Lọc và tương tác: BẬT — app phán xét, máy chỉ đọc màn hình và thi hành.")
 
     # Han chu ky. Het gio thi THOAT SACH de nha khe cho may dang xep hang.
     han_chu_ky = (time.time() + CYCLE_SCAN_MIN * 60) if CYCLE_ON else None
     if han_chu_ky:
-        log("chu ky: quet %.0f phut roi tu dung, nhuong may khac" % CYCLE_SCAN_MIN)
+        log("Chu kỳ: quét %.0f phút rồi tự dừng, nhường khe cho máy khác..." % CYCLE_SCAN_MIN)
 
     with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
         while True:
             if limit and count >= limit:
                 break
             if han_chu_ky and time.time() >= han_chu_ky:
-                log("het ca chu ky -> dung, nha khe cho may dang cho")
+                log("Hết ca — dừng và nhả khe cho máy đang xếp hàng.")
                 emit_event("status", state="cycle_done")
                 break
             # Tien trinh cha da chet: truoc khi co kenh stdin, Electron chet la cac tien trinh
             # Python MO COI cu vuot may that mai mai, khong ai don. Gio phat hien duoc.
             if bridge.parent_gone:
-                log("tien trinh cha da dong -> thoat")
+                log("App đã đóng — thoát.")
                 break
             count += 1
             t_video = time.time()
             try:
                 if dismiss_popups(d):
-                    log("da bo qua 1 popup")
+                    log("Đã đóng một hộp thoại chen ngang.")
                     time.sleep(1)
 
                 # ── HOI TRUOC KHI BAM ICON SOUND ──
@@ -662,8 +783,9 @@ def main():
                 # LIVE hay khong — van quet nhu cu, va `check_current_video` tu bo qua vi khong
                 # co icon sound. Khong con duong nao khac ma cung khong hai gi.
                 if info and info.get("live"):
+                    # Không in dòng nào: livestream đi thành cụm y như quảng cáo, và con số đã
+                    # nằm ở dòng nhịp tim lẫn dòng tổng kết.
                     live_bo_qua += 1
-                    log("video dang LIVE -> bo qua, khong hoi khong bam")
                     emit_event("progress", checked=count, qualified=qualified)
                     time.sleep(random.uniform(1.0, 2.0))
                     d.swipe(0.5, 0.85, 0.5, 0.15, random.uniform(0.15, 0.3))
@@ -672,28 +794,28 @@ def main():
 
                 aid = bridge.ask(**info) if info else None
 
-                res = check_current_video(d)
+                res, da_roi_feed = check_current_video(d)
                 consecutive_fail = 0
 
                 # ── LAY PHAN QUYET VA THI HANH ──
                 if aid is not None:
                     ans = bridge.take(aid)
-                    _thi_hanh(d, bridge, aid, ans, info, res)
+                    _thi_hanh(d, bridge, aid, ans, info, res, da_roi_feed)
             except Exception as e:
                 consecutive_fail += 1
-                log(f"loi video #{count}: {str(e)[:100]} (loi lien tiep {consecutive_fail})")
+                log(f"⚠ Lỗi ở video #{count} ({str(e)[:100]}) — lỗi liên tiếp {consecutive_fail}.")
                 res = None
                 # Loi lien tiep -> service co the wedged: reset + mo lai TikTok (main thread,
                 # hieu qua vi khong con cu RPC nao dang treo o day).
                 if consecutive_fail >= 3:
                     recover_count += 1
-                    log(f"phuc hoi lan {recover_count}: reset service + mo lai TikTok...")
+                    log(f"⚠ Phục hồi lần {recover_count} — khởi động lại dịch vụ và mở lại TikTok...")
                     emit_event("status", state="recover", n=recover_count)
                     reset_service(d)
                     try:
                         setup_device(d)
                     except Exception as e2:
-                        log(f"phuc hoi loi: {str(e2)[:80]}")
+                        log(f"⛔ Phục hồi lỗi ({str(e2)[:80]}) — nếu lặp lại thì máy này đang có vấn đề thật.")
                     consecutive_fail = 0
                     continue
 
@@ -702,8 +824,25 @@ def main():
                 f.write(f"{link}\t{posts}\n")
                 f.flush()
                 qualified += 1
+                # ⚠ Chỉ in khi con số THẬT SỰ tăng — chặn lặp ở NGUỒN, không lọc ở đích. Đây là
+                # quy tắc của bản PC: nhờ nó không bao giờ có hai dòng giống hệt nhau liền nhau.
+                log(f"Đã quét {qualified} sound...")
 
             emit_event("progress", checked=count, qualified=qualified)
+
+            # ── NHỊP TIM ──
+            if count - moc["count"] >= NHIP_TIM:
+                _n = count - moc["count"]
+                _phan = [f"{qualified - moc['qualified']} sound đạt"]
+                _khong = TRUOT["khong_icon"] - moc["khong_icon"]
+                _live = live_bo_qua - moc["live"]
+                if _khong:
+                    _phan.append(f"{_khong} video không có sound (quảng cáo/ảnh)")
+                if _live:
+                    _phan.append(f"{_live} livestream")
+                log(f"Lướt {_n} video: " + ", ".join(_phan) + ".")
+                moc = {"count": count, "qualified": qualified,
+                       "khong_icon": TRUOT["khong_icon"], "live": live_bo_qua}
 
             # dwell ngau nhien truoc khi sang video ke (tranh bi TikTok coi la bot)
             try:
@@ -711,7 +850,7 @@ def main():
                 d.swipe(0.5, 0.85, 0.5, 0.15, random.uniform(0.15, 0.3))
                 time.sleep(random.uniform(0.8, 1.4))
             except Exception as e:
-                log(f"loi swipe #{count}: {str(e)[:100]} (bo qua, thu tiep)")
+                log(f"⚠ Vuốt sang video kế lỗi ở #{count} ({str(e)[:100]}) — bỏ qua, thử tiếp.")
 
             # ── DAU HIEU NGHEN, PHAI THAY DUOC NGAY ──
             # Mot vong binh thuong ~10-20 giay (dwell 3-6s + mo trang nhac + back). Vuot 90 giay
@@ -723,20 +862,48 @@ def main():
             # doi den luc may dung han roi ngoi doan, nhu lan truoc.
             _mat = time.time() - t_video
             if _mat > 60:
-                log(f"CHAM BAT THUONG: video #{count} mat {_mat:.0f}s (binh thuong ~5-20s) "
-                    f"- adb server cong {adb_port} co the dang nghen")
+                log_han_che(
+                    "cham_bat_thuong",
+                    f"⚠ Video #{count} mất {_mat:.0f}s (bình thường 5-20s) — ADB server cổng "
+                    f"{adb_port} có thể đang nghẽn vì nhiều máy chạy cùng lúc.")
 
-    log(f"XONG. Da check {count} video, DAT {qualified}, bo qua {live_bo_qua} LIVE, "
-        f"phuc hoi {recover_count} lan. Ket qua: {OUTPUT_FILE}")
+    # ── TỔNG KẾT ──
+    # Khuôn bản PC: một câu nền, rồi CÁC MẢNH GHÉP THÊM chỉ khi khác 0. Nhờ vậy bật thêm một tính
+    # năng không viết lại dòng cũ, và số 0 không chiếm chỗ của số đáng đọc.
+    _p = [f"quét {count} video", f"lấy {qualified} sound"]
+    if live_bo_qua:
+        _p.append(f"bỏ qua {live_bo_qua} livestream")
+    if TRUOT["khong_icon"]:
+        _p.append(f"{TRUOT['khong_icon']} video không có sound")
+    if recover_count:
+        _p.append(f"phục hồi {recover_count} lần")
+    log("✅ Xong ca: " + ", ".join(_p) + ".")
 
-    # Hai so sau cung la thuoc do cua cau hoi "nhip quet da qua tay chua". `khong_icon` thi vo
-    # hai (quang cao, anh - von khong co sound), nhung hai so con lai la sound CO THAT ma may
-    # khong kip doc. Chung deo bam theo `count`: vai phan tram thi binh thuong, hai chu so tro
-    # len la nhip dang an vao ket qua.
-    log(f"TRUOT vi het gio: khong icon sound {TRUOT['khong_icon']}"
-        f" | khong vao duoc trang nhac {TRUOT['khong_vao_trang_nhac']}"
-        f" | khong kip doc so post {TRUOT['het_gio_doc_so_post']}"
-        f"  (tren tong {count} video)")
+    # Hai số dưới đây là thước đo của câu hỏi "nhịp quét đã quá tay chưa": đó là sound CÓ THẬT mà
+    # máy không kịp đọc. Đeo bám theo tổng số video — vài phần trăm thì bình thường, hai chữ số
+    # trở lên là nhịp đang ăn vào kết quả.
+    _t = []
+    if TRUOT["khong_vao_trang_nhac"]:
+        _t.append(f"{TRUOT['khong_vao_trang_nhac']} lần không vào được trang nhạc")
+    if TRUOT["het_gio_doc_so_post"]:
+        _t.append(f"{TRUOT['het_gio_doc_so_post']} lần không kịp đọc số video")
+    if _t:
+        log(f"⚠ Trượt vì hết giờ chờ: " + ", ".join(_t)
+            + f" (trên tổng {count} video) — nới hai ô \"Chờ trang nhạc mở tối đa\" và \"Chờ số "
+              "post hiện ra tối đa\" nếu số này lớn.")
+
+    # Vì sao bỏ lượt tương tác. Bằng 0 hết là tốt; `chua_doc_duoc` cao nghĩa là máy đọc tên tác
+    # giả không kịp — đúng lỗi đã làm mọi tương tác ngừng chạy suốt nhiều ca.
+    _bo = [f"{v} lần {k}" for k, v in (
+        ("feed đã trôi sang video khác", BO_LUOT["khac_nguoi"]),
+        ("không đọc được tên lúc quét", BO_LUOT["chua_doc_duoc"]),
+        ("không đọc lại được tên", BO_LUOT["khong_doc_duoc"]),
+        ("lạc khỏi feed", BO_LUOT["khong_o_feed"]),
+    ) if v]
+    if _bo:
+        log("⚠ Bỏ lượt tương tác: " + ", ".join(_bo) + ".")
+
+    log(f"Kết quả ghi vào {OUTPUT_FILE}")
     emit_event("status", state="done", checked=count, qualified=qualified)
 
 

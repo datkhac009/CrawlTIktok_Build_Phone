@@ -61,6 +61,60 @@ function isRunning(deviceId) {
   return _active.has(deviceId);
 }
 
+// ── DỊCH KẾT QUẢ TỪNG CÚ BẤM SANG TIẾNG VIỆT ──
+//
+// ⚠ SỰ CỐ THẬT (2026-09-18): bản cũ in thẳng giá trị nội bộ ra màn hình —
+//     [tương tác] follow=skip_changed_video tym=skip_changed_video ghé=skip_changed_video
+// Chủ dự án gửi ảnh chụp kèm câu "bạn log cái gì vậy tôi nhìn khó hiểu quá". Một dòng 90 ký tự
+// chỉ để nói "không làm gì cả", và lặp ở mọi video.
+//
+// Bản PC không bao giờ làm thế: mã nội bộ của nó ('nav', 'nofeed', 'same', 'empty') đều được
+// dịch thành câu tiếng Việt ngay tại chỗ gọi, không giá trị nào lọt ra log.
+// Việc nào do AI kể. `visit` KHÔNG có trong bảng: `do_visit` bên Python đã tự in một dòng đầy
+// đủ kèm SỐ GIÂY THẬT và lý do ("👀 Đã ghé một kênh (14.3s)"), kể lại ở đây là nói hai lần cùng
+// một chuyện — đúng cái làm log cũ dài gấp đôi.
+const VIEC_TUONG_TAC = {
+  follow: 'Follow',
+  like: 'Tym',
+  like_profile: 'Tym video trong trang',
+  ni: 'Not interested',
+};
+
+const KET_QUA_TUONG_TAC = {
+  ok: 'xong',
+  ok_unverified: 'xong (chưa kiểm lại được)',
+  fail: 'hỏng',
+  reverted: 'bị TikTok bật lại',
+};
+
+const VI_SAO_HOI_HONG = {
+  timeout: 'app trả lời quá chậm',
+  eof: 'app đã đóng kênh',
+  badjson: 'câu trả lời hỏng định dạng',
+  version: 'lệch phiên bản giao thức',
+  error: 'lỗi khi đọc câu trả lời',
+};
+
+// Dựng một câu cho cả lượt tương tác, hoặc '' nếu không có gì đáng nói.
+//
+// ⚠ GIÁ TRỊ LẠ THÌ BỎ QUA, KHÔNG IN RA. Bản cũ in thẳng bất cứ thứ gì nhận được, nên một giá trị
+// mới thêm ở phía Python là lập tức hiện ra màn hình dưới dạng mã. Ở đây, không dịch được thì
+// không kể — thà thiếu một mẩu còn hơn bày mã nội bộ cho người dùng đọc.
+//
+// `not_needed` (không xin quyền) và `skip_changed_video` (đã bỏ lượt, Python đã giải thích vì
+// sao) đều không có trong bảng nên tự rơi ra.
+function kePhanTuongTac(payload) {
+  const phan = [];
+  for (const [khoa, ten] of Object.entries(VIEC_TUONG_TAC)) {
+    const ketQua = KET_QUA_TUONG_TAC[payload[khoa]];
+    if (!ketQua) continue;
+    phan.push(`${ten} ${ketQua}`);
+  }
+  if (!phan.length) return '';
+  const hong = phan.some((t) => /hỏng|bật lại/.test(t));
+  return `${hong ? '⚠ ' : ''}${phan.join(' · ')}.`;
+}
+
 function startDevice(params, onData, onStatus) {
   const { deviceId, serial, minPosts, maxPosts, dwellMin, dwellMax, originalOnly, limit } = params;
   const cfg = params.cfg || {};
@@ -222,25 +276,22 @@ function startDevice(params, onData, onStatus) {
         // channelstore.cjs:182-184 cảnh báo: ghi lúc BẤM thì kênh bị đánh dấu đã follow dù
         // follow hỏng, và bị bỏ qua VĨNH VIỄN.
         brain.noteActed(payload);
-        const phan = [];
-        if (payload.follow && payload.follow !== 'not_needed') phan.push(`follow=${payload.follow}`);
-        if (payload.like && payload.like !== 'not_needed') phan.push(`tym=${payload.like}`);
-        if (payload.like_profile && payload.like_profile !== 'not_needed') phan.push(`tym-trang=${payload.like_profile}`);
-        if (payload.visit && payload.visit !== 'not_needed') phan.push(`ghé=${payload.visit}`);
-        if (payload.ni && payload.ni !== 'skip') phan.push(`not-interested=${payload.ni}`);
-        if (phan.length) onStatus(deviceId, { kind: 'log', line: `[tương tác] ${phan.join(' ')}` });
+        const phan = kePhanTuongTac(payload);
+        if (phan) onStatus(deviceId, { kind: 'log', line: phan });
       } else if (payload.type === 'askfail') {
         brain.noteAskFail();
-        onStatus(deviceId, { kind: 'log', line: `[hỏi/đáp] lượt ${payload.id} hỏng: ${payload.why} — bỏ qua, không bấm gì` });
+        onStatus(deviceId, {
+          kind: 'log',
+          line: `⚠ Không nhận được phán quyết cho một video (${VI_SAO_HOI_HONG[payload.why]
+            || 'lỗi không rõ'}) — bỏ qua, không bấm gì.`,
+        });
       } else if (payload.type === 'result') {
+        // ⚠ CHỈ đẩy dữ liệu, KHÔNG in log ở đây (2026-09-18). Python đã in câu phán quyết
+        // (`Lấy "X" (3.300 video)` / `Bỏ "X" (1.600.000 > 100.000 video)`) ngay khi đọc xong
+        // trang nhạc. Bản cũ in thêm một dòng nữa ở đây, nên MỌI kết quả nằm trong log hai lần,
+        // hai định dạng khác nhau — chủ dự án đọc log tưởng máy làm hai lượt.
         if (payload.verdict === 'DAT') {
           onData(deviceId, { name: payload.name, url: payload.url, posts: payload.posts });
-          onStatus(deviceId, { kind: 'log', line: `DAT  ${payload.posts} posts  ${payload.name}` });
-        } else {
-          onStatus(deviceId, {
-            kind: 'log',
-            line: `LOAI ${payload.name || ''} posts=${payload.posts ?? '?'}`,
-          });
         }
       }
       return;
@@ -288,4 +339,6 @@ function stopAll() {
   runningIds().forEach(stopDevice);
 }
 
-module.exports = { startDevice, stopDevice, stopAll, runningIds, isRunning };
+// `kePhanTuongTac` mở ra CHỈ để phép thử gọi được: đây là dòng người dùng nhìn thấy nhiều nhất
+// trong ca chạy, nên nó phải kiểm được mà không cần cắm điện thoại.
+module.exports = { startDevice, stopDevice, stopAll, runningIds, isRunning, kePhanTuongTac };

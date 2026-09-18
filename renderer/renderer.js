@@ -163,9 +163,15 @@ function onCrawlStatus(payload) {
   }
 }
 
+// ⚠ ĐÓNG DẤU GIỜ Ở ĐÂY, MỘT CHỖ DUY NHẤT (2026-09-18).
+// Trước đây Python tự thêm `[HH:MM:SS]` còn các dòng do Node viết thì không, nên nửa log có giờ
+// nửa không. Đóng dấu lúc hiển thị thì mọi dòng đều có giờ, và đều theo đồng hồ của máy tính —
+// không lệch theo đồng hồ từng điện thoại. Bản PC làm đúng chỗ này.
 function appendLog(deviceId, line) {
   const st = deviceState[deviceId];
   if (!st) return;
+  const gio = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+  line = `[${gio}] ${line}`;
   st.log.push(line);
   if (st.log.length > MAX_LOG_LINES) st.log.shift();
   if (currentLogDeviceId === deviceId) {
