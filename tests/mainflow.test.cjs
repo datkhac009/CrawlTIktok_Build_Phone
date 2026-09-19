@@ -485,8 +485,9 @@ const start = (id, serial, cfg = {}) => handlers.get('device-start')({}, { devic
     tabPendingGia = '';
   }
 
-  // ── N. TIẾN TRÌNH PYTHON CHẾT (mã lỗi) → TỰ CHẠY LẠI, giãn dần, Dừng huỷ được (2026-09-19) ──
-  // Chủ dự án muốn treo máy: bản cũ để máy nằm "Lỗi" tới khi có người bấm Chạy.
+  // ── N. TIẾN TRÌNH PYTHON CHẾT (mã lỗi) → TỰ CHẠY LẠI SAU ĐÚNG 1 PHÚT, Dừng huỷ được (2026-09-19) ──
+  // Chủ dự án muốn treo máy: bản cũ để máy nằm "Lỗi" tới khi có người bấm Chạy. Và chốt thêm:
+  // "nếu lỗi … tôi chỉ muốn 1 phút thôi" — lần nào cũng 1 phút, không giãn dần.
   {
     const ID = 'dLoi';   // 'dN' đã dùng ở mục I
     const hen = () => sent.filter(([c, p]) => c === 'crawl-status' && p.deviceId === ID && p.state === 'resting');
@@ -510,8 +511,8 @@ const start = (id, serial, cfg = {}) => handlers.get('device-start')({}, { devic
     check("N3. Hết giờ hẹn → máy tự chạy lại, không cần ai bấm", lanChay(ID).length === 2, `${lanChay(ID).length} lượt`);
 
     chet(lanChay(ID)[1]);
-    check('N4. Chết lần hai ngay sau đó → giãn ra 2 phút (lần 2)',
-      henDai[1] === 120000 && /\(lần 2\)/.test(hen().pop()[1].msg));
+    check('N4. Chết lần hai ngay sau đó → VẪN 1 phút (không giãn ra), bảng ghi "lần 2"',
+      henDai[1] === 60000 && /\(lần 2\)/.test(hen().pop()[1].msg), `${henDai[1]} ms`);
     await nghi(40);
 
     // Lượt chạy được ≥ 10 phút rồi mới chết = máy đã khoẻ lại → đếm lại từ bậc đầu.
@@ -532,6 +533,8 @@ const start = (id, serial, cfg = {}) => handlers.get('device-start')({}, { devic
     check('N6. Tới giờ mà khởi động lại hỏng → tự hẹn lần nữa, không bỏ máy',
       hen().some(([, p]) => /điện thoại đang bận/.test(p.msg)), hen().map(([, p]) => p.msg).slice(-2).join(' | '));
     await nghi(40);
+    check('N6b. Hỏng liền nhiều lần (tới "lần 4", "lần 5"…) → lần nào cũng đúng 1 phút',
+      henDai.length >= 5 && henDai.every((ms) => ms === 60000), henDai.join(','));
     const soLan = lanChay(ID).length;
 
     // Bấm Dừng khi đang chờ chạy lại → huỷ hẳn.

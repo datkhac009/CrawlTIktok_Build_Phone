@@ -136,7 +136,7 @@ Mọi kiểu hỏng đều có đường quay lại, mỗi lần phục hồi in
 | Feed không sang video mới | Vòng sau kéo từng điểm; 4 vòng liền cùng một video thì khởi động lại TikTok |
 | Dịch vụ điều khiển trên máy đứt (`Remote end closed connection`) | Khởi động lại dịch vụ ngay, rồi `ve_feed` |
 | Mất kết nối ADB (`device offline` / `not found`) | Dừng quét, tự `adb connect` (15 → 60 giây), nối lại thì mở lại TikTok và quét tiếp; bảng Thiết bị hiện "Mất kết nối" |
-| Phục hồi tại chỗ hỏng 3 lần liền | Python thoát mã 1 → app tự chạy lại máy đó sau 1 → 2 → 5 → 10 → 15 phút (không bỏ cuộc; Dừng là huỷ) |
+| Phục hồi tại chỗ hỏng 3 lần liền, hoặc tiến trình chết | Python thoát mã 1 → app tự chạy lại máy đó sau **đúng 1 phút**, lần nào cũng vậy (không bỏ cuộc; Dừng là huỷ) |
 
 Nhận biết feed (`phone_actions.o_feed`): loại theo activity (trang nhạc, trình phát) rồi mới xét
 tab "For You" và `_o_tren_feed`. Đo trên 41 bản chụp thật: tab "For You" có ở 14/14 bản chụp

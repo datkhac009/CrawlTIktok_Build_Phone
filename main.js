@@ -96,12 +96,13 @@ function huyNghi(deviceId) {
 // (xem scan_feed_sounds.py: "TREO MAY KHONG BI DUNG") — đó là tín hiệu để ở đây chạy lại một tiến
 // trình MỚI từ đầu.
 //
-// Giãn dần để lỗi thật (máy hỏng hẳn) không bị gõ cửa liên tục, nhưng KHÔNG BỎ CUỘC: sau bậc cuối
-// cứ 15 phút thử một lần, tới khi người dùng bấm Dừng. Lượt nào chạy được ≥ 10 phút thì coi như máy
-// đã khoẻ lại: lần lỗi sau đếm lại từ bậc đầu.
+// LUÔN CHỜ ĐÚNG 1 PHÚT rồi chạy lại, lần nào cũng vậy, KHÔNG BỎ CUỘC tới khi người dùng bấm Dừng.
+// Chủ dự án chốt (2026-09-19): "nếu lỗi … tôi chỉ muốn 1 phút thôi" — bản v0.1.11 giãn dần
+// 1 → 2 → 5 → 10 → 15 phút. Số "lần n" hiện trên bảng vẫn đếm các lần lỗi LIỀN NHAU (lượt nào chạy
+// được ≥ 10 phút thì đếm lại từ 1), để nhìn là biết máy đang hỏng lặp lại hay chỉ vấp một lần.
 const _batDau = new Map();          // deviceId -> lúc lượt đang chạy khởi động (ms)
 const _loiLien = new Map();         // deviceId -> số lần lỗi liên tiếp của các lượt ngắn
-const GIAN_LOI_PHUT = [1, 2, 5, 10, 15];
+const CHO_CHAY_LAI_MS = 60 * 1000;
 const LUOT_KHOE_MS = 10 * 60000;
 
 function henChayLaiSauLoi(deviceId, lyDo) {
@@ -110,7 +111,7 @@ function henChayLaiSauLoi(deviceId, lyDo) {
   const chayDuoc = Date.now() - (_batDau.get(deviceId) || 0);
   const n = chayDuoc >= LUOT_KHOE_MS ? 1 : (_loiLien.get(deviceId) || 0) + 1;
   _loiLien.set(deviceId, n);
-  const ms = GIAN_LOI_PHUT[Math.min(n, GIAN_LOI_PHUT.length) - 1] * 60000;
+  const ms = CHO_CHAY_LAI_MS;
   const luc = new Date(Date.now() + ms)
     .toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
   sendToRenderer('crawl-status', {
@@ -585,7 +586,7 @@ ipcMain.handle('device-start', async (_e, params) => {
   // Bấm Chạy tay luôn bắt đầu từ pha ĐẦU (Quét), giống bản PC. Mốc xem tiếp thì GIỮ — nó nằm
   // trên đĩa, riêng cho từng máy.
   _pha.set(params.deviceId, 0);
-  _loiLien.delete(params.deviceId);     // bấm tay là bắt đầu lại từ đầu, kể cả bậc giãn khi lỗi
+  _loiLien.delete(params.deviceId);     // bấm tay là bắt đầu lại từ đầu, kể cả số "lần" lỗi
   return chayMot(params);
 });
 
