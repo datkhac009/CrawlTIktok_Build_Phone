@@ -220,7 +220,7 @@ print("@@KQ@@" + json.dumps({"a": a, "b": b, "c": c, "ly_do": goi[0] if goi else
 // ── 4. Chờ nối lại khi mất kết nối ADB ──
 {
   const r = chay('cho_noi_lai', `
-def lam_adb(tra_loi):
+def lam_adb(tra_loi, hw=""):
     goi = []
     def adb_gia(*args, serial=None, timeout=60):
         goi.append(args[0])
@@ -229,6 +229,8 @@ def lam_adb(tra_loi):
             if not ok:
                 raise RuntimeError("adb lỗi: get-state\\nerror: device offline")
             return "device"
+        if args[:3] == ("shell", "getprop", "ro.serialno"):
+            return hw
         return "connected"
     return adb_gia, goi
 out = {}
@@ -238,30 +240,43 @@ S.adb, g = lam_adb([])
 bat_dau = time.time()
 out["het_ca"] = [S.cho_noi_lai("192.168.5.121:5555", han=bat_dau + 100), time.time() - bat_dau]
 S.adb, g = lam_adb([False] * 60 + [True])
-out["lau"] = [S.cho_noi_lai("192.168.5.121:5555")]
+bat_dau = time.time()
+out["lau"] = [S.cho_noi_lai("192.168.5.121:5555"), time.time() - bat_dau]
 S.adb, g = lam_adb([False, False, True])
 out["usb"] = [S.cho_noi_lai("R58M12345"), g.count("connect")]
 S.adb, g = lam_adb([])
 out["app_dong"] = [S.cho_noi_lai("192.168.5.121:5555", dung=lambda: True)]
+# Noi lai duoc, nhung IP do gio la mot dien thoai KHAC (DHCP cap lai sau khi khoi dong lai).
+S.MAY["hw"] = "HW-CUA-MINH"
+S.adb, g = lam_adb([False, True], hw="HW-MAY-KHAC")
+out["khac_may"] = [S.cho_noi_lai("192.168.5.115:5555")]
+S.adb, g = lam_adb([False, True], hw="HW-CUA-MINH")
+out["dung_may"] = [S.cho_noi_lai("192.168.5.115:5555")]
 out["dem"] = S.PHUC_HOI["mat_ket_noi"]
 print("@@KQ@@" + json.dumps(out), flush=True)
 `);
   check('4. Chạy được', !!r.kq, r.loi);
   if (r.kq) {
     const log = r.log.join('\n');
-    check('4a. Máy quay lại → trả True, có tự "adb connect" (máy nối qua mạng)',
-      r.kq.noi_lai[0] === true && r.kq.noi_lai[1] >= 1, JSON.stringify(r.kq.noi_lai));
-    check('4b. Mất kết nối nói ĐÚNG MỘT dòng lúc đầu và MỘT dòng lúc nối lại — không in lỗi mỗi vòng',
-      (log.match(/⛔ Mất kết nối ADB tới máy/g) || []).length === 5
+    check('4a. Máy quay lại → "noi_lai", có tự "adb connect" (máy nối qua mạng)',
+      r.kq.noi_lai[0] === 'noi_lai' && r.kq.noi_lai[1] >= 1, JSON.stringify(r.kq.noi_lai));
+    check('4b. Mất kết nối nói ĐÚNG MỘT dòng lúc đầu và MỘT dòng lúc kết thúc — không in lỗi mỗi vòng',
+      (log.match(/⛔ Mất kết nối ADB tới máy/g) || []).length === 7
       && (log.match(/✅ Nối lại được sau/g) || []).length === 3, log);
     // Thoát NGAY lúc hết hạn (trong 1 giây), không đợi hết lượt chờ 15–60 giây: hết ca là phải nhả
     // khe cho máy đang xếp hàng.
-    check('4c. Hết hạn ca khi đang chờ → trả False NGAY lúc hết hạn (không treo, không đợi hết lượt chờ)',
-      r.kq.het_ca[0] === false && r.kq.het_ca[1] >= 100 && r.kq.het_ca[1] <= 101, JSON.stringify(r.kq.het_ca));
-    check('4d. Mất kết nối lâu → cứ 10 phút nhắc một dòng "vẫn mất kết nối"',
-      r.kq.lau[0] === true && (log.match(/vẫn mất kết nối/g) || []).length >= 2, log.split('\n').filter((l) => /vẫn/.test(l)).join(' | '));
-    check('4e. Máy cắm USB → chỉ chờ, không gọi "adb connect"', r.kq.usb[0] === true && r.kq.usb[1] === 0);
-    check('4f. App đóng trong lúc chờ → trả False ngay', r.kq.app_dong[0] === false);
+    check('4c. Hết hạn ca khi đang chờ → "het" NGAY lúc hết hạn (không treo, không đợi hết lượt chờ)',
+      r.kq.het_ca[0] === 'het' && r.kq.het_ca[1] >= 100 && r.kq.het_ca[1] <= 101, JSON.stringify(r.kq.het_ca));
+    // Điện thoại khởi động lại thường nhận IP MỚI: chờ mãi ở IP cũ là chờ một địa chỉ có thể không
+    // bao giờ quay lại. Quá 2 phút thì thoát để Node dò lại IP rồi chạy lại sau 1 phút.
+    check('4d. Mất kết nối quá 2 phút → "thoat" (để app dò lại IP), đúng mốc 2 phút, nói rõ lý do',
+      r.kq.lau[0] === 'thoat' && r.kq.lau[1] >= 120 && r.kq.lau[1] <= 121
+      && /Mất kết nối quá 2 phút — thoát để app dò lại IP/.test(log), JSON.stringify(r.kq.lau));
+    check('4e. Máy cắm USB → chỉ chờ, không gọi "adb connect"', r.kq.usb[0] === 'noi_lai' && r.kq.usb[1] === 0);
+    check('4f. App đóng trong lúc chờ → "het" ngay', r.kq.app_dong[0] === 'het');
+    check('4h. Nối lại được nhưng IP đó giờ là MỘT ĐIỆN THOẠI KHÁC → "thoat", không lái nhầm máy',
+      r.kq.khac_may[0] === 'thoat' && /giờ là MỘT ĐIỆN THOẠI KHÁC \(số máy HW-MAY-KHAC\)/.test(log));
+    check('4i. Nối lại đúng chiếc điện thoại cũ → quét tiếp', r.kq.dung_may[0] === 'noi_lai');
     const ev = r.su_kien.filter((e) => e.type === 'status').map((e) => e.state);
     check('4g. Báo giao diện "offline" lúc mất, "running" lúc nối lại', ev.includes('offline') && ev.includes('running'), ev.join(','));
   }
@@ -334,12 +349,15 @@ def setup_gia(d):
     return TT
 S.setup_device = setup_gia
 get_state = []
+HW_THAT = ""                   # so may phan cung cua dien thoai dang o IP nay
 def adb_gia(*args, serial=None, timeout=60):
     if args[0] == "get-state":
         ok = get_state.pop(0) if get_state else MAC_DINH_KET_NOI
         if not ok:
             raise RuntimeError("adb lỗi: get-state\\nerror: device offline")
         return "device"
+    if args[:3] == ("shell", "getprop", "ro.serialno"):
+        return HW_THAT
     return ""
 S.adb = adb_gia
 S.OUTPUT_FILE = os.path.join(os.environ["TMPDIR_TEST"], "sound_links.txt")
@@ -500,6 +518,41 @@ PA.read_video_info = doc_gia
       v.join(','));
     check('5f3. Feed chạy lại bình thường → quay về cú vuốt thường', v.slice(4).every((x) => x === 'vuot') && v.length >= 6, v.join(','));
   }
+}
+
+// 5g–5i. MÁY ĐỔI IP (2026-09-19): khởi động lượt chạy trên đúng / sai điện thoại.
+{
+  const r = chayVong('sai_may', `
+SETUP_HONG = False
+MAC_DINH_KET_NOI = True
+HW_THAT = "HW-GM1911"
+`, { LIMIT: '5', DEVICE_HW: 'HW-V2031' });
+  check('5g. IP giờ là MỘT ĐIỆN THOẠI KHÁC ngay lúc khởi động → thoát mã 1, KHÔNG quét trên máy đó',
+    !!r.kq && r.kq.ma === 1 && r.kq.dem.setup === 0 && r.kq.viec.length === 0
+    && r.log.some((l) => /giờ là MỘT ĐIỆN THOẠI KHÁC \(số máy HW-GM1911, không phải HW-V2031\)/.test(l)),
+    r.loi || r.log.slice(-3).join(' | '));
+}
+{
+  const r = chayVong('khong_online', `
+SETUP_HONG = False
+MAC_DINH_KET_NOI = True
+def connect_hong(serial):
+    raise Exception("device 192.168.5.148:5555 not online")
+S.connect = connect_hong
+`, { LIMIT: '5' });
+  check('5h. Điện thoại không online lúc khởi động (log 11:40) → MỘT dòng nói rõ, thoát mã 1, không có traceback',
+    !!r.kq && r.kq.ma === 1 && r.log.some((l) => /⛔ Không kết nối được điện thoại .*not online.*thử lại sau 1 phút/.test(l))
+    && !/Traceback/.test(r.loi), r.loi.slice(-300) || r.log.slice(-3).join(' | '));
+}
+{
+  const r = chayVong('mat_lau', `
+SETUP_HONG = False
+MAC_DINH_KET_NOI = False
+kq_video[:] = ["icon", ("loi", Exception("device offline"))]
+`, { LIMIT: '0' });
+  check('5i. Mất kết nối giữa ca quá 2 phút → thoát mã 1 để app dò lại IP (máy có thể vừa đổi IP)',
+    !!r.kq && r.kq.ma === 1 && r.log.some((l) => /Mất kết nối quá 2 phút — thoát để app dò lại IP/.test(l)),
+    r.loi || r.log.slice(-3).join(' | '));
 }
 
 try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (_) {}

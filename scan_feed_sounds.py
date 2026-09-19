@@ -865,23 +865,40 @@ def _con_ket_noi(serial):
         return False
 
 
-def cho_noi_lai(serial, han=None, dung=lambda: False):
-    """BAC 4: mat ket noi ADB — DUNG quet, cho dien thoai quay lai.
+# Mat ket noi lau hon chung nay thi THOI CHO o day: thoat ma 1 de phia Node do lai IP cua may
+# (dien thoai khoi dong lai thuong nhan IP MOI tu DHCP — su co 2026-09-19) roi chay lai sau 1 phut.
+# Cho mai o IP cu la cho mot dia chi co the khong bao gio quay lai.
+CHO_MAT_KET_NOI_TOI_DA = 120
 
-    Tra True khi noi lai duoc; False khi het han ca hoac app da dong (noi goi de dau vong xu ly).
-    Khong dem video, khong in loi moi vong: mot dong luc bat dau, mot dong moi 10 phut, mot dong
-    luc noi lai duoc.
+# So may phan cung (`ro.serialno`) cua dien thoai luot nay dang lai — doc luc khoi dong.
+MAY = {"hw": ""}
+
+
+def _doc_hw(serial):
+    """So may phan cung cua dien thoai dang o `serial`, hoac '' neu khong doc duoc."""
+    try:
+        return adb("shell", "getprop", "ro.serialno", serial=serial, timeout=10).strip()
+    except Exception:
+        return ""
+
+
+def cho_noi_lai(serial, han=None, dung=lambda: False):
+    """BAC 4: mat ket noi ADB — DUNG quet, cho dien thoai quay lai. Tra:
+        'noi_lai'  — noi lai duoc, DUNG chiec dien thoai cu: quet tiep
+        'het'      — het han ca / app da dong: dau vong quet tu thoat dung cach
+        'thoat'    — mat qua `CHO_MAT_KET_NOI_TOI_DA` giay, HOAC noi lai thi IP do da la mot dien
+                     thoai KHAC: thoat ma 1 de phia Node do lai IP roi chay lai sau 1 phut
+    Khong dem video, khong in loi moi vong: mot dong luc bat dau, mot dong luc ket thuc.
     """
     t0 = time.time()
     PHUC_HOI["mat_ket_noi"] += 1
     log("⛔ Mất kết nối ADB tới máy — tạm dừng quét, tự nối lại (thử mỗi 15–60 giây)…")
     emit_event("status", state="offline")
     cho = 15.0
-    lan_bao = t0
     try:
         while True:
             if dung() or (han and time.time() >= han):
-                return False
+                return "het"
             if _con_ket_noi(serial):
                 break
             # May noi qua MANG (ip:port) thi tu goi `adb connect`, dung cach luc khoi dong (xem
@@ -894,21 +911,29 @@ def cho_noi_lai(serial, han=None, dung=lambda: False):
                     pass
                 if _con_ket_noi(serial):
                     break
-            if time.time() - lan_bao >= 600:
-                lan_bao = time.time()
-                log(f"… vẫn mất kết nối ({_thoi_luong(time.time() - t0)}), vẫn đang chờ.")
-            het = time.time() + cho
+            if time.time() - t0 >= CHO_MAT_KET_NOI_TOI_DA:
+                log(f"⛔ Mất kết nối quá {_thoi_luong(CHO_MAT_KET_NOI_TOI_DA)} — thoát để app dò lại IP của "
+                    "máy (điện thoại vừa khởi động lại thường nhận IP mới) rồi chạy lại sau 1 phút.")
+                return "thoat"
+            het = min(time.time() + cho, t0 + CHO_MAT_KET_NOI_TOI_DA)
             while time.time() < het:
                 if dung() or (han and time.time() >= han):
-                    return False
+                    return "het"
                 time.sleep(1.0)
             cho = min(60.0, cho * 2)
     finally:
         PHUC_HOI["giay_mat_ket_noi"] += time.time() - t0
+    # Noi lai duoc — nhung co dung chiec dien thoai cu khong? DHCP co the vua cap IP nay cho mot
+    # may KHAC trong farm (dung chuyen dong "V2031" lai nham chiec GM1911 ngay 2026-09-19).
+    hw = _doc_hw(serial)
+    if MAY["hw"] and hw and hw != MAY["hw"]:
+        log(f"⛔ Nối lại được, nhưng {serial} giờ là MỘT ĐIỆN THOẠI KHÁC (số máy {hw}) — không lái máy đó. "
+            "Thoát để app dò lại IP của máy này rồi chạy lại sau 1 phút.")
+        return "thoat"
     log(f"✅ Nối lại được sau {_thoi_luong(time.time() - t0)} — khởi động lại dịch vụ, mở lại TikTok, "
         "quét tiếp.")
     emit_event("status", state="running")
-    return True
+    return "noi_lai"
 
 
 # Trang thai cua canh gac — cap module de phep thu goi thang `canh_gac` duoc.
@@ -1247,11 +1272,29 @@ def main():
             # connect(serial) ben duoi bao loi that, va bao dung cai loi that.
             log(f"⚠ adb connect lỗi ({str(e)[:80]}) — vẫn thử kết nối tiếp.")
 
-    d = connect(serial)
+    try:
+        d = connect(serial)
+    except Exception as e:
+        # Mot dong noi ro thay cho ca trang traceback (log 2026-09-19: "device … not online").
+        log(f"⛔ Không kết nối được điện thoại {serial} ({str(e)[:120]}) — app sẽ dò lại IP của máy "
+            "này và thử lại sau 1 phút.")
+        sys.exit(1)
+    # DUNG MAY chua? IP co the da ve tay mot dien thoai khac (DHCP cap lai sau khi khoi dong lai).
+    hw_that = _doc_hw(d.serial)
+    hw_mong = os.environ.get("DEVICE_HW", "").strip()
+    if hw_mong and hw_that and hw_that != hw_mong:
+        log(f"⛔ {d.serial} giờ là MỘT ĐIỆN THOẠI KHÁC (số máy {hw_that}, không phải {hw_mong}) — không "
+            "chạy trên máy đó. App sẽ dò lại IP của máy này và thử lại sau 1 phút.")
+        sys.exit(1)
+    MAY["hw"] = hw_that or hw_mong
     log(f"✅ Đã kết nối {d.serial}.")
     emit_event("status", state="connected", serial=d.serial)
     reset_service(d)
-    pkg = setup_device(d)
+    try:
+        pkg = setup_device(d)
+    except Exception as e:
+        log(f"⛔ Không mở được TikTok ({str(e)[:120]}) — app sẽ thử lại sau 1 phút.")
+        sys.exit(1)
     # Ghi nho goi dang chay -> `find_first` chi cho MOT goi thay vi ca hai (xem chu thich o do).
     set_active_pkg(pkg)
     emit_event("status", state="app_open", pkg=pkg)
@@ -1372,7 +1415,11 @@ def main():
                 # mot chuyen bang nhieu cau khac nhau.
                 if la_loi_mat_ket_noi(e) or not _con_ket_noi(d.serial):
                     count -= 1
-                    if not cho_noi_lai(d.serial, han_chu_ky, lambda: bridge.parent_gone):
+                    kq_noi = cho_noi_lai(d.serial, han_chu_ky, lambda: bridge.parent_gone)
+                    if kq_noi == "thoat":
+                        thoat_loi = True    # Node do lai IP roi chay lai sau 1 phut
+                        break
+                    if kq_noi != "noi_lai":
                         continue            # het ca / app da dong: dau vong se thoat dung cach
                     reset_service(d)
                     try:

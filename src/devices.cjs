@@ -43,13 +43,21 @@ function addDevice({ name, serial, note }) {
   return device;
 }
 
-function updateDevice({ id, name, serial, note }) {
+function updateDevice({ id, name, serial, note, hw, model }) {
   const list = loadDevices();
   const dev = list.find((d) => d.id === id);
   if (!dev) throw new Error('Không tìm thấy thiết bị.');
   if (name !== undefined) dev.name = name;
-  if (serial !== undefined) dev.serial = serial;
+  if (serial !== undefined && serial !== dev.serial) {
+    dev.serial = serial;
+    // Người dùng tự sửa IP = tự khẳng định "máy này ở IP kia". Danh tính cũ không còn đúng nữa,
+    // bỏ đi để lần chạy sau đọc lại từ chính IP mới.
+    delete dev.hw;
+    delete dev.model;
+  }
   if (note !== undefined) dev.note = note;
+  if (hw !== undefined) dev.hw = hw;
+  if (model !== undefined) dev.model = model;
   saveDevices(list);
   return dev;
 }
@@ -110,6 +118,141 @@ function listAdbSerials() {
   });
 }
 
+// ══════════════════ MÁY ĐỔI IP — DÒ THEO SỐ MÁY PHẦN CỨNG (2026-09-19) ══════════════════
+//
+// ⚠ SỰ CỐ THẬT: cả farm khởi động lại, DHCP cấp IP MỚI cho 6 máy (.148→.158, .106→.115,
+// .115→.125, .127→.137, .139→.149, .140→.150). App vẫn gọi IP cũ: 5 dòng báo "device … not
+// online" rồi tự chạy lại mãi, còn dòng "V2031" (.115) lại đang lái chiếc GM1911 vừa nhận đúng IP
+// đó — kết quả của GM1911 bị ghi tên V2031.
+//
+// IP chỉ là thứ DHCP cấp, không phải danh tính của máy. Danh tính thật là `ro.serialno` — số máy
+// phần cứng, phân biệt được cả hai máy CÙNG ĐỜI (farm có hai Redmi K20 Pro). Lưu nó vào trường
+// `hw` của từng máy, rồi dò theo nó.
+//
+// Máy thêm từ trước khi có trường này thì chưa có `hw`: nhận theo ĐỜI MÁY (`ro.product.model`) —
+// tên trong danh sách vốn là đời máy, hoặc đời máy + hậu tố ("Redmi K20 Pro1"). Nhận được một lần
+// là ghi `hw` luôn, lần sau dò bằng `hw`.
+
+function _chuan(s) {
+  return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Tên trong danh sách có phải đời máy này không: trùng hẳn, hoặc đời máy + hậu tố ("Redmi K20 Pro1").
+function khopTen(ten, model) {
+  const a = _chuan(ten);
+  const b = _chuan(model);
+  return !!b && (a === b || a.startsWith(b));
+}
+
+// Ghép danh sách máy với các máy ĐANG ONLINE. Hàm THUẦN: không đụng đĩa, không gọi adb.
+//   ds        danh sách trong devices.json
+//   online    [{ serial, model, hwSerial }] — chỉ máy ở trạng thái `device`
+//   dangChay  Map(deviceId → serial) của các máy đang có tiến trình chạy: KHÔNG đổi IP của chúng,
+//             và KHÔNG giao IP chúng đang giữ cho máy khác (hai tiến trình cùng lái một điện thoại)
+// Trả { ds: bản mới, doi: [{ id, name, cu, moi }], khongThay: [{ id, name, serial, viSao }], ghiThem }
+//   ghiThem = số máy vừa được ghi thêm `hw` (không đổi IP) — để biết có cần lưu đĩa không.
+function ghepMay(ds, online, dangChay = new Map()) {
+  const moi = ds.map((d) => Object.assign({}, d));
+  const daNhan = new Set();                 // serial đã có chủ trong lượt ghép này
+  const xong = new Set();                   // id máy đã xếp xong
+  const doi = [];
+  const khongThay = [];
+  let ghiThem = 0;
+  const onlineTheoSerial = new Map(online.map((o) => [o.serial, o]));
+
+  // 0. Máy đang chạy: giữ nguyên.
+  for (const d of moi) {
+    if (dangChay.has(d.id)) {
+      daNhan.add(dangChay.get(d.id));
+      xong.add(d.id);
+    }
+  }
+  const ganIp = (d, o) => {
+    if (o.serial !== d.serial) {
+      doi.push({ id: d.id, name: d.name, cu: d.serial, moi: o.serial });
+      d.serial = o.serial;
+    } else if (!d.hw && o.hwSerial) {
+      ghiThem++;
+    }
+    if (o.hwSerial) d.hw = o.hwSerial;
+    if (o.model) d.model = o.model;
+    daNhan.add(o.serial);
+    xong.add(d.id);
+  };
+
+  // 1. Đã có số máy phần cứng: tìm đúng số đó, ở bất cứ IP nào.
+  for (const d of moi) {
+    if (xong.has(d.id) || !d.hw) continue;
+    const o = online.find((x) => x.hwSerial === d.hw && !daNhan.has(x.serial));
+    if (o) ganIp(d, o);
+  }
+  // 2. Chưa có số máy, IP cũ vẫn đúng đời máy: giữ, và ghi số máy luôn.
+  for (const d of moi) {
+    if (xong.has(d.id) || d.hw) continue;
+    const o = onlineTheoSerial.get(d.serial);
+    if (o && !daNhan.has(o.serial) && khopTen(d.name, o.model)) ganIp(d, o);
+  }
+  // 3. Chưa có số máy, IP cũ không còn đúng: tìm đời máy đó trong các máy CHƯA CÓ CHỦ. Chỉ nhận
+  //    khi có ĐÚNG MỘT ứng viên — hai máy cùng đời chưa ai có chủ thì không đoán.
+  for (const d of moi) {
+    if (xong.has(d.id) || d.hw) continue;
+    const ungVien = online.filter((x) => !daNhan.has(x.serial) && khopTen(d.name, x.model));
+    if (ungVien.length === 1) ganIp(d, ungVien[0]);
+  }
+  // 4. Những máy còn lại: nói rõ vì sao không tìm thấy.
+  for (const d of moi) {
+    if (xong.has(d.id)) continue;
+    const o = onlineTheoSerial.get(d.serial);
+    const cungDoi = d.hw ? 0 : online.filter((x) => !daNhan.has(x.serial) && khopTen(d.name, x.model)).length;
+    let viSao;
+    if (cungDoi > 1) {
+      viSao = `có ${cungDoi} máy cùng đời đang online, chưa rõ máy nào là máy này — bấm ✎ sửa IP một lần là app nhớ luôn`;
+    } else if (!o) {
+      viSao = `máy không online ở ${d.serial}, cũng không thấy ở IP nào khác`;
+    } else if (d.hw && o.hwSerial && o.hwSerial !== d.hw) {
+      viSao = `${d.serial} giờ là một điện thoại khác (${o.model || '?'}), còn máy này chưa thấy online`;
+    } else if (!d.hw && !khopTen(d.name, o.model)) {
+      viSao = `${d.serial} giờ là ${o.model || 'máy khác'}, không phải ${d.name}`;
+    } else {
+      viSao = `IP ${d.serial} đang được máy khác trong danh sách dùng`;
+    }
+    khongThay.push({ id: d.id, name: d.name, serial: d.serial, viSao });
+  }
+  return { ds: moi, doi, khongThay, ghiThem };
+}
+
+// Đọc danh tính của máy đang ở một IP: { online, model, hw }. Không ném.
+async function docDanhTinh(serial) {
+  const ADB_PATH = adbPath();
+  if (!ADB_PATH || !serial) return { online: false, model: '', hw: '' };
+  const [model, hw] = await Promise.all([
+    _getprop(ADB_PATH, serial, 'ro.product.model'),
+    _getprop(ADB_PATH, serial, 'ro.serialno'),
+  ]);
+  return { online: !!(model || hw), model, hw };
+}
+
+// Dò lại IP cho CẢ danh sách rồi lưu. Trả kết quả `ghepMay` (thêm `loi` nếu không đọc được adb).
+async function dongBoIp({ dangChay = new Map() } = {}) {
+  const online = (await listAdbSerials()).filter((x) => x.state === 'device');
+  const ds = loadDevices();
+  const r = ghepMay(ds, online, dangChay);
+  if (r.doi.length || r.ghiThem) {
+    // Đọc lại NGAY TRƯỚC khi ghi: người dùng có thể vừa thêm / xoá máy trong lúc đang dò. Chỉ
+    // chép sang đúng những trường vừa dò được, không ghi đè cả danh sách.
+    const hienTai = loadDevices();
+    for (const d of hienTai) {
+      const m = r.ds.find((x) => x.id === d.id);
+      if (!m) continue;
+      d.serial = m.serial;
+      if (m.hw) d.hw = m.hw;
+      if (m.model) d.model = m.model;
+    }
+    saveDevices(hienTai);
+  }
+  return r;
+}
+
 // Làm một máy TỰ LỘ DIỆN trên màn hình soi: kéo thanh thông báo xuống rồi thu lại sau vài giây.
 //
 // VÌ SAO CẦN: hai máy cùng đời (farm có hai chiếc Redmi K20 Pro) thì `ro.product.model` giống
@@ -158,4 +301,8 @@ module.exports = {
   listAdbSerials,
   identifyDevice,
   checkDevice,
+  khopTen,
+  ghepMay,
+  docDanhTinh,
+  dongBoIp,
 };

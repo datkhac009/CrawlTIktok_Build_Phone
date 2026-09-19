@@ -142,7 +142,34 @@ Module._load = function (request, parent, isMain) {
   if (request === 'electron-store') return FakeStore;
   return origLoad.apply(this, arguments);
 };
-for (const [ten, exp] of [['runner.cjs', fakeRunner], ['sheets.cjs', fakeSheets]]) {
+
+// ── Danh sách máy + farm giả (2026-09-19: main.js dò IP của máy ngay trước mỗi lần chạy) ──
+// Dùng ĐÚNG hàm ghép thuần `ghepMay` / `khopTen` của devices.cjs thật; chỉ thay phần đọc đĩa và
+// gọi adb. `mayGia` = devices.json; `farmGia` = điện thoại đang online: serial → { model, hw }.
+const devicesThat = require(path.join(ROOT, 'src', 'devices.cjs'));
+const mayGia = new Map();
+const farmGia = new Map();
+const fakeDevices = Object.assign({}, devicesThat, {
+  loadDevices: () => Array.from(mayGia.values()).map((d) => Object.assign({}, d)),
+  updateDevice: ({ id, ...doi }) => {
+    const d = mayGia.get(id);
+    if (!d) throw new Error('Không tìm thấy thiết bị.');
+    for (const [k, v] of Object.entries(doi)) if (v !== undefined) d[k] = v;
+    return Object.assign({}, d);
+  },
+  deleteDevice: ({ id }) => { mayGia.delete(id); return { ok: true }; },
+  docDanhTinh: async (serial) => {
+    const o = farmGia.get(serial);
+    return o ? { online: true, model: o.model, hw: o.hw } : { online: false, model: '', hw: '' };
+  },
+  dongBoIp: async ({ dangChay = new Map() } = {}) => {
+    const online = Array.from(farmGia.entries()).map(([serial, o]) => ({ serial, model: o.model, hwSerial: o.hw }));
+    const r = devicesThat.ghepMay(fakeDevices.loadDevices(), online, dangChay);
+    for (const d of r.ds) if (mayGia.has(d.id)) Object.assign(mayGia.get(d.id), d);
+    return r;
+  },
+});
+for (const [ten, exp] of [['runner.cjs', fakeRunner], ['sheets.cjs', fakeSheets], ['devices.cjs', fakeDevices]]) {
   const p = require.resolve(path.join(ROOT, 'src', ten));
   require.cache[p] = { id: p, filename: p, loaded: true, exports: exp };
 }
@@ -154,7 +181,15 @@ const soDong = () => sent.filter(([c]) => c === 'crawl-data').length;
 const coLog = (id, re) => sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === id
   && re.test(String(p.line || p.msg || '')));
 const lanChay = (id) => started.filter((s) => s.params.deviceId === id);
-const start = (id, serial, cfg = {}) => handlers.get('device-start')({}, { deviceId: id, serial, cfg });
+// Bấm Chạy cho một máy. Máy chưa có trong danh sách giả thì thêm vào, kèm một điện thoại online
+// đúng ở IP đó (tên = đời máy) — y như farm bình thường.
+const start = (id, serial, cfg = {}) => {
+  if (!mayGia.has(id)) mayGia.set(id, { id, name: id, serial, note: '' });
+  if (!farmGia.has(serial) && !Array.from(farmGia.values()).some((o) => o.model === id)) {
+    farmGia.set(serial, { model: id, hw: 'hw-' + id });
+  }
+  return handlers.get('device-start')({}, { deviceId: id, serial, cfg });
+};
 
 (async () => {
   await nghi(20);   // cho app.whenReady() chạy xong: nạp kho link, tạo cửa sổ giả
@@ -404,8 +439,10 @@ const start = (id, serial, cfg = {}) => handlers.get('device-start')({}, { devic
     await handlers.get('device-update-params')({}, { deviceId: 'dQ', serial: '192.168.5.118:5555',
       cfg: { ...cfg, cycleScanHours: 0 } });
     await nghi(400);
-    check('L. Không chạy lại được → báo "Không chạy lại được" kèm lý do',
-      coLog('dQ', /Không chạy lại được: .*cả hai pha/));
+    // Từ 2026-09-19: không bỏ máy nữa — nói rõ lý do VÀ hẹn thử lại sau 1 phút như mọi lỗi khác.
+    check('L. Không chạy lại được → nói rõ lý do và hẹn thử lại sau 1 phút (không bỏ máy)',
+      coLog('dQ', /Lỗi \(.*cả hai pha.*\) — tự chạy lại lúc \d\d:\d\d/));
+    await handlers.get('device-stop')({}, 'dQ');
   }
 
   // ── M. GOOGLE SHEET: Service Account dạng chuỗi, tab Pending, kho link cục bộ ──
@@ -551,6 +588,56 @@ const start = (id, serial, cfg = {}) => handlers.get('device-start')({}, { devic
     await handlers.get('device-stop')({}, ID);
     cuoi.onStatus(ID, { kind: 'status', state: 'stopped', msg: '' });
     check('N8. Dừng tay (không phải lỗi) → không hẹn chạy lại', henDai.length === dem);
+    tuaNhanh = false;
+  }
+
+  // ── O. MÁY ĐỔI IP (2026-09-19): cả farm khởi động lại, DHCP xáo IP ──
+  // Sự cố thật: M2010J19SG .148 → .158 (app báo "device … not online" và chạy lại mãi), còn dòng
+  // "V2031" (.115) lại đang lái chiếc GM1911 vừa nhận IP .115.
+  {
+    tuaNhanh = true;
+    // O1. Máy đã có số máy phần cứng, sang IP mới → chạy đúng IP mới, lưu lại, báo ra.
+    mayGia.set('dMi', { id: 'dMi', name: 'M2010J19SG', serial: '192.168.5.148:5555', note: '', hw: 'HW-MI' });
+    farmGia.set('192.168.5.158:5555', { model: 'M2010J19SG', hw: 'HW-MI' });
+    const r1 = await handlers.get('device-start')({}, { deviceId: 'dMi', serial: '192.168.5.148:5555', cfg: {} });
+    const l1 = lanChay('dMi')[0];
+    check('O1. IP cũ không còn → tìm theo số máy phần cứng, chạy ĐÚNG IP mới',
+      r1.ok === true && !!l1 && l1.params.serial === '192.168.5.158:5555' && l1.params.hw === 'HW-MI',
+      l1 && JSON.stringify({ serial: l1.params.serial, hw: l1.params.hw }));
+    check('O2. Lưu IP mới vào danh sách, và báo ra (log trên máy + nạp lại bảng)',
+      mayGia.get('dMi').serial === '192.168.5.158:5555'
+      && coLog('dMi', /Máy M2010J19SG đổi IP 192\.168\.5\.148:5555 → 192\.168\.5\.158:5555/)
+      && sent.some(([c, p]) => c === 'crawl-status' && p.kind === 'devices-changed'));
+    ketThuc(l1, false);
+
+    // O3. Hai máy CŨ (chưa có số máy) bị DHCP tráo IP cho nhau — đúng cảnh V2031 / GM1911.
+    mayGia.set('dV', { id: 'dV', name: 'V2031', serial: '192.168.5.115:5555', note: '' });
+    mayGia.set('dG', { id: 'dG', name: 'GM1911', serial: '192.168.5.106:5555', note: '' });
+    farmGia.set('192.168.5.115:5555', { model: 'GM1911', hw: 'HW-GM' });
+    farmGia.set('192.168.5.125:5555', { model: 'V2031', hw: 'HW-V' });
+    await handlers.get('device-start')({}, { deviceId: 'dV', serial: '192.168.5.115:5555', cfg: {} });
+    const lV = lanChay('dV')[0];
+    check('O3. "V2031" không lái nhầm chiếc GM1911 đang ở .115 — chạy đúng máy V2031 ở .125',
+      !!lV && lV.params.serial === '192.168.5.125:5555' && lV.params.hw === 'HW-V', lV && lV.params.serial);
+    check('O4. Cùng lượt dò đó, "GM1911" cũng được chuyển sang .115 (nhận theo đời máy, ghi luôn số máy)',
+      mayGia.get('dG').serial === '192.168.5.115:5555' && mayGia.get('dG').hw === 'HW-GM');
+    ketThuc(lV, false);
+
+    // O5. Điện thoại chưa online ở đâu cả → KHÔNG mở Python, nói rõ, hẹn dò lại sau 1 phút.
+    mayGia.set('dOff', { id: 'dOff', name: 'Redmi Note 8 Pro', serial: '192.168.5.140:5555', note: '', hw: 'HW-RN8' });
+    const henTruoc = henDai.length;
+    const r5 = await handlers.get('device-start')({}, { deviceId: 'dOff', serial: '192.168.5.140:5555', cfg: {} });
+    check('O5. Máy chưa online ở đâu cả → không mở tiến trình, báo "Không tìm thấy máy", hẹn dò lại sau 1 phút',
+      r5.ok === false && /Không tìm thấy máy Redmi Note 8 Pro/.test(r5.msg || '') && lanChay('dOff').length === 0
+      && henDai.length === henTruoc + 1 && henDai[henDai.length - 1] === 60000, r5.msg);
+    // Máy lên lại với IP mới → lần dò sau tìm ra và chạy.
+    farmGia.set('192.168.5.150:5555', { model: 'Redmi Note 8 Pro', hw: 'HW-RN8' });
+    await nghi(60);
+    const lOff = lanChay('dOff')[0];
+    check('O6. Điện thoại lên lại với IP mới → lần dò sau tự tìm ra và chạy, không cần ai bấm',
+      !!lOff && lOff.params.serial === '192.168.5.150:5555', lOff && lOff.params.serial);
+    if (lOff) ketThuc(lOff, false);
+    await handlers.get('device-stop')({}, 'dOff');
     tuaNhanh = false;
   }
 

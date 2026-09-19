@@ -53,7 +53,7 @@ const ID = '-7633696888679598855';
 function chay(params) {
   const nhan = [];
   const log = [];
-  runner.startDevice(Object.assign({ deviceId: 'dT', serial: 'SERIAL-T', minPosts: 1000, maxPosts: 100000 }, params),
+  runner.startDevice(Object.assign({ deviceId: 'dT', serial: 'SERIAL-T', minPosts: 1000, maxPosts: 100000, hw: 'HW-TEST' }, params),
     (_id, data) => nhan.push(data),
     (_id, st) => { if (st.kind === 'log') log.push(st.line); });
   const { proc, env } = lanSpawn;
@@ -70,6 +70,9 @@ function chay(params) {
   {
     const r = chay({ pendingOn: true, cfg: { niBlockCollect: true, niScripts: ['arabic'] } });
     check('1. Bật Pending → Python nhận PENDING_ON=1', r.env.PENDING_ON === '1', r.env.PENDING_ON);
+    // Máy đổi IP (2026-09-19): Python phải biết số máy phần cứng của điện thoại lượt này PHẢI lái.
+    check('1z. Số máy phần cứng xuống tới Python (DEVICE_HW) — để không lái nhầm máy khi IP đổi chủ',
+      r.env.DEVICE_HW === 'HW-TEST', r.env.DEVICE_HW);
 
     r.viet({ type: 'result', verdict: 'DAT', name: 'thật huy', title: 'Original Sound thật huy',
       url: M + 'original-sound-that-huy' + ID, posts: 13900 });

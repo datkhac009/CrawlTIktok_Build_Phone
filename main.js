@@ -105,6 +105,45 @@ const _loiLien = new Map();         // deviceId -> số lần lỗi liên tiếp
 const CHO_CHAY_LAI_MS = 60 * 1000;
 const LUOT_KHOE_MS = 10 * 60000;
 
+// ── MÁY ĐỔI IP (2026-09-19) — xem devices.cjs: "MÁY ĐỔI IP" ──
+// Báo lên giao diện những máy vừa được dò ra IP mới: một dòng log trên chính máy đó, và một sự
+// kiện để giao diện nạp lại danh sách (cột Serial phải hiện IP mới).
+function baoDoiIp(r) {
+  if (!r || !r.doi || !r.doi.length) return;
+  for (const x of r.doi) {
+    sendToRenderer('crawl-status', {
+      deviceId: x.id, kind: 'log',
+      line: `Máy ${x.name} đổi IP ${x.cu} → ${x.moi} (điện thoại vừa khởi động lại / nhận IP mới) — đã cập nhật.`,
+    });
+  }
+  sendToRenderer('crawl-status', { deviceId: null, kind: 'devices-changed', doi: r.doi });
+}
+
+// Máy `id` đang ở IP nào. Trả `{ serial, hw }`, hoặc `{ loi }` nếu không tìm thấy.
+//   • Đường nhanh (mọi lần chạy): IP cũ còn online VÀ đúng máy — theo số máy phần cứng nếu đã
+//     biết, theo đời máy nếu chưa. Chỉ tốn hai lệnh getprop.
+//   • Đường chậm (khi IP cũ hỏng / đã là máy khác): dò lại cả farm bằng `devices.dongBoIp`.
+async function timMay(id) {
+  const d = devices.loadDevices().find((x) => x.id === id);
+  if (!d) return { loi: 'Máy này không còn trong danh sách.' };
+  const tt = await devices.docDanhTinh(d.serial);
+  const dungMay = tt.online && (d.hw ? tt.hw === d.hw : devices.khopTen(d.name, tt.model));
+  if (dungMay) {
+    if (!d.hw && tt.hw) {
+      try { devices.updateDevice({ id, hw: tt.hw, model: tt.model }); } catch (_) {}
+    }
+    return { serial: d.serial, hw: tt.hw || d.hw || '' };
+  }
+  const dangChay = runner.dangChayMap ? runner.dangChayMap() : new Map();
+  const r = await devices.dongBoIp({ dangChay });
+  baoDoiIp(r);
+  const kt = r.khongThay.find((x) => x.id === id);
+  if (kt) return { loi: `Không tìm thấy máy ${d.name}: ${kt.viSao}.` };
+  const d2 = devices.loadDevices().find((x) => x.id === id);
+  if (!d2) return { loi: 'Máy này không còn trong danh sách.' };
+  return { serial: d2.serial, hw: d2.hw || '' };
+}
+
 function henChayLaiSauLoi(deviceId, lyDo) {
   // Người dùng đã bấm Dừng/Xoá (không còn tham số), hoặc đã hẹn rồi ('error' có thể tới hai lần).
   if (!_lastParams.has(deviceId) || _restTimers.has(deviceId)) return;
@@ -409,9 +448,36 @@ function tenThietBi(deviceId) {
 ipcMain.handle('app-version', () => app.getVersion());
 
 // ---- Devices CRUD ----
-ipcMain.handle('devices-list', () => devices.loadDevices());
-ipcMain.handle('devices-add', (_e, data) => devices.addDevice(data));
-ipcMain.handle('devices-update', (_e, data) => devices.updateDevice(data));
+// Lần ĐẦU giao diện hỏi danh sách (lúc mở app): dò lại IP cả farm trước khi trả — farm vừa khởi
+// động lại là DHCP có thể đã xáo IP (devices.cjs: "MÁY ĐỔI IP"). Chờ vài giây lúc mở app còn hơn
+// hiện một danh sách IP sai rồi chạy nhầm máy.
+let _daDongBoIp = false;
+ipcMain.handle('devices-list', async () => {
+  if (!_daDongBoIp) {
+    _daDongBoIp = true;
+    try {
+      const r = await devices.dongBoIp({ dangChay: runner.dangChayMap ? runner.dangChayMap() : new Map() });
+      // Để giao diện kịp dựng bảng rồi mới báo.
+      if (r.doi.length) setTimeout(() => baoDoiIp(r), 1500);
+    } catch (e) {
+      console.error('[devices] dò lại IP lỗi:', e.message);
+    }
+  }
+  return devices.loadDevices();
+});
+// Thêm / sửa máy = người dùng khẳng định "máy này ở IP kia": đọc luôn số máy phần cứng ở IP đó để
+// lần sau máy đổi IP thì app tự dò ra. Không chờ — đọc hỏng thì lần chạy đầu sẽ đọc lại.
+function ghiDanhTinh(dev) {
+  if (!dev || !dev.id) return dev;
+  devices.docDanhTinh(dev.serial).then((tt) => {
+    if (tt.hw) {
+      try { devices.updateDevice({ id: dev.id, hw: tt.hw, model: tt.model }); } catch (_) {}
+    }
+  }, () => {});
+  return dev;
+}
+ipcMain.handle('devices-add', (_e, data) => ghiDanhTinh(devices.addDevice(data)));
+ipcMain.handle('devices-update', (_e, data) => ghiDanhTinh(devices.updateDevice(data)));
 ipcMain.handle('devices-delete', (_e, data) => {
   // ⚠ XOÁ PHẢI DỌN ĐỦ NHƯ DỪNG (2026-09-18).
   // Bản cũ chỉ gọi `runner.stopDevice` — hàm đó KHÔNG làm gì khi máy đang nghỉ giữa ca hoặc
@@ -468,11 +534,23 @@ async function chayMot(params) {
       return { ok: false, msg: 'Đã huỷ trước khi kịp khởi động.' };
     }
 
+    // ── MÁY ĐANG Ở IP NÀO — dò ngay trước khi chạy (2026-09-19) ──
+    // DHCP có thể đã cấp IP mới sau khi máy khởi động lại (xem devices.cjs). Không tìm thấy máy
+    // thì KHÔNG mở tiến trình Python chỉ để nó chết với một trang traceback — trả lỗi gọn, và nhánh
+    // tự chạy lại sẽ dò lại sau 1 phút.
+    const may = await timMay(id);
+    if (!may.serial) {
+      devslot.release(id);
+      return { ok: false, msg: may.loi, khongThayMay: true };
+    }
+
     // ── GẮN PHA (chế độ Quét ⇄ Xem) ──
     const kh = keHoachPha(params.cfg);
     // Tab Pending có bật không. Tắt thì Python KHÔNG tốn 2–3 giây lấy link cho sound không đọc
     // được số video — không có chỗ nào để cất nó (bản PC: "để trống = tắt, bỏ link luôn").
     let chay = Object.assign({}, params, {
+      serial: may.serial,
+      hw: may.hw || '',
       pendingOn: !!(sheets.isEnabled() && String(cfg.pendingTab || '').trim()),
     });
     if (kh) {
@@ -557,13 +635,11 @@ async function chayMot(params) {
               // Người dùng có thể đã xoá máy hoặc bấm Dừng trong lúc nghỉ.
               if (!_lastParams.has(deviceId)) return;
               // Không chạy lại được thì NÓI RA — bản cũ nuốt kết quả, máy dừng chu kỳ trong im lặng.
+              // Không chạy lại được (vd điện thoại đang khởi động lại, chưa online) thì hẹn thử lại sau
+              // 1 phút như mọi lỗi khác — bản cũ báo "Không chạy lại được" rồi để máy đứng luôn.
               chayMot(_lastParams.get(deviceId)).then((r) => {
-                if (r && !r.ok) {
-                  sendToRenderer('crawl-status', {
-                    deviceId, kind: 'status', state: 'stopped', msg: `Không chạy lại được: ${r.msg}`,
-                  });
-                }
-              }, () => {});
+                if (r && !r.ok) henChayLaiSauLoi(deviceId, r.msg);
+              }, () => henChayLaiSauLoi(deviceId, 'không khởi động được'));
             }, ms);
             _restTimers.set(deviceId, t);
           }
@@ -587,7 +663,11 @@ ipcMain.handle('device-start', async (_e, params) => {
   // trên đĩa, riêng cho từng máy.
   _pha.set(params.deviceId, 0);
   _loiLien.delete(params.deviceId);     // bấm tay là bắt đầu lại từ đầu, kể cả số "lần" lỗi
-  return chayMot(params);
+  const r = await chayMot(params);
+  // Bấm Chạy lúc điện thoại chưa online (đang khởi động lại, đổi IP chưa kịp hiện) thì cũng không
+  // bỏ máy: hẹn dò lại sau 1 phút như mọi lỗi khác.
+  if (r && !r.ok && r.khongThayMay) henChayLaiSauLoi(params.deviceId, r.msg);
+  return r;
 });
 
 // Cài đặt vừa Lưu cho một máy đang bận (chạy / nghỉ / xếp hàng) → lượt chạy KẾ TIẾP dùng bản

@@ -257,6 +257,10 @@ function startDevice(params, onData, onStatus) {
     // Tab Pending có bật không (main.js quyết theo cấu hình Sheet). Bật thì sound không đọc được
     // số video được lấy link để cất vào Pending thay vì bỏ.
     PENDING_ON: params.pendingOn ? '1' : '0',
+    // Số máy phần cứng (`ro.serialno`) của điện thoại mà lượt này PHẢI lái. Python so với máy đang
+    // thật sự ở IP đó: khác là IP đã về tay một điện thoại khác (DHCP cấp lại sau khi khởi động
+    // lại) → thoát ngay, không lái nhầm máy. Rỗng = chưa biết, bỏ qua phép so.
+    DEVICE_HW: String(params.hw || ''),
     // Phía Python dùng ĐÚNG adb mà phía Node đã chọn. Hai bên tự dò riêng là có ngày mỗi bên
     // một binary khác phiên bản, và chúng sẽ thay nhau giết adb server của nhau.
     ADB_PATH,
@@ -446,4 +450,9 @@ function stopAll() {
 
 // `kePhanTuongTac` mở ra CHỈ để phép thử gọi được: đây là dòng người dùng nhìn thấy nhiều nhất
 // trong ca chạy, nên nó phải kiểm được mà không cần cắm điện thoại.
-module.exports = { startDevice, stopDevice, stopAll, runningIds, isRunning, kePhanTuongTac, soNguyen, RE_GOC_SLUG, RE_GOC_TEN };
+// Máy nào đang chạy ở IP nào — để việc dò lại IP không giao IP đang có người lái cho máy khác.
+function dangChayMap() {
+  return new Map(Array.from(_active.entries()).map(([id, e]) => [id, e.serial]));
+}
+
+module.exports = { startDevice, stopDevice, stopAll, runningIds, isRunning, dangChayMap, kePhanTuongTac, soNguyen, RE_GOC_SLUG, RE_GOC_TEN };

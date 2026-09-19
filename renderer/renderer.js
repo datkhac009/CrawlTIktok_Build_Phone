@@ -197,6 +197,8 @@ function onCrawlStatus(payload) {
   if (kind === 'sheet-error') { toast(`Sheet: ${payload.msg}`, false); return; }
   // Một sound vừa được cất vào tab Pending (không đọc được số post).
   if (kind === 'pending') { if (payload.ok) { soPending++; renderPendingChip(); } return; }
+  // Máy vừa được dò ra IP mới (main.js: baoDoiIp) — nạp lại danh sách để cột Serial hiện IP mới.
+  if (kind === 'devices-changed') { napLaiDanhSachMay(payload.doi || []); return; }
 
   const st = deviceState[deviceId];
   if (!st) return;
@@ -264,6 +266,25 @@ function renderDeviceTable() {
   tbody.innerHTML = '';
   placeholder.style.display = devices.length > 0 ? 'none' : 'flex';
   devices.forEach((d) => tbody.appendChild(buildDeviceRow(d)));
+}
+
+// Nạp lại danh sách máy từ đĩa khi app vừa dò ra IP mới cho vài máy (2026-09-19: DHCP xáo IP sau
+// khi cả farm khởi động lại). Giữ nguyên trạng thái chạy và các ô đã tích — chỉ cột Serial đổi.
+async function napLaiDanhSachMay(doi) {
+  const daTich = new Set(Array.from(document.querySelectorAll('#deviceTableBody .row-check:checked'))
+    .map((el) => el.dataset.id));
+  devices = await window.api.devicesList();
+  devices.forEach((d) => {
+    if (!deviceState[d.id]) deviceState[d.id] = { status: 'stop', checked: 0, qualified: 0, log: [] };
+  });
+  renderDeviceTable();
+  document.querySelectorAll('#deviceTableBody .row-check').forEach((el) => {
+    if (daTich.has(el.dataset.id)) el.checked = true;
+  });
+  if (doi.length) {
+    toast(`Đã cập nhật IP cho ${doi.length} máy (điện thoại nhận IP mới): `
+      + doi.map((x) => `${x.name} → ${String(x.moi).split(':')[0]}`).join(', '), true);
+  }
 }
 
 function buildDeviceRow(d) {

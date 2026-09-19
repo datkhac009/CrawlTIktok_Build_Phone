@@ -897,6 +897,20 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     /if \(status\.state === 'error'\) \{\s*\n\s*_cycleDone\.delete\(deviceId\);\s*\n\s*henChayLaiSauLoi\(deviceId, status\.msg\);/.test(mj));
 }
 
+// ── 25. Máy đổi IP (2026-09-19) ──
+// Hành vi do `doiip.test.cjs` (ghép máy với farm thật hôm đó) và `mainflow.test.cjs` mục O chạy thật.
+{
+  const mj = doc('main.js');
+  const rj = doc('renderer/renderer.js');
+  check('25a. Mở app: lần đầu giao diện hỏi danh sách máy thì dò lại IP cả farm trước khi trả',
+    /ipcMain\.handle\('devices-list', async \(\) => \{\s*\n\s*if \(!_daDongBoIp\) \{[\s\S]{0,300}devices\.dongBoIp\(/.test(mj));
+  check('25b. Thêm / sửa máy → ghi luôn số máy phần cứng ở IP đó',
+    /'devices-add', \(_e, data\) => ghiDanhTinh\(devices\.addDevice\(data\)\)/.test(mj)
+    && /'devices-update', \(_e, data\) => ghiDanhTinh\(devices\.updateDevice\(data\)\)/.test(mj));
+  check('25c. Giao diện nạp lại danh sách khi app vừa dò ra IP mới',
+    /kind === 'devices-changed'\) \{ napLaiDanhSachMay\(/.test(rj) && /async function napLaiDanhSachMay\(doi\)/.test(rj));
+}
+
 // Hàm làm tròn: chạy thật, không soi chữ.
 {
   const { soNguyen } = require('../src/runner.cjs');
