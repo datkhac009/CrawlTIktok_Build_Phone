@@ -555,5 +555,87 @@ kq_video[:] = ["icon", ("loi", Exception("device offline"))]
     r.loi || r.log.slice(-3).join(' | '));
 }
 
+// ── 7. ĐIỆN THOẠI VẪN NỐI ADB, NHƯNG ANDROID TRÊN MÁY ĐÃ TREO (2026-09-19, GM1901 .110) ──
+// Log thật: "⛔ Không kết nối được điện thoại 192.168.5.110:5555 (('server not ready', …)) — app sẽ
+// dò lại IP…" mỗi phút. Câu đó SAI HƯỚNG: IP đúng, còn `ps` trên máy cho "Z [system_server]".
+// Lỗi dựng bằng ĐÚNG lớp lỗi của uiautomator2; `ps` / `settings` là adb giả, ghi vào `m.viec`.
+const TREO = `
+import subprocess
+from uiautomator2.exceptions import LaunchUiAutomationError, AccessibilityServiceAlreadyRegisteredError
+SETUP_HONG = False
+MAC_DINH_KET_NOI = True
+LOI_KET_NOI = LaunchUiAutomationError("server not ready", "[server] INFO: [UiAutomator2Server] Starting Server\\n")
+def connect_hong(serial):
+    raise LOI_KET_NOI
+S.connect = connect_hong
+PS_KHOE = "S NAME\\n" + "\\n".join("S tien_trinh_%d" % i for i in range(60)) + "\\nS system_server\\nS com.android.systemui\\n"
+PS = PS_KHOE
+SETTINGS_TREO = False
+_adb_vong = S.adb
+def adb_may(*args, serial=None, timeout=60):
+    if len(args) == 2 and args[0] == "shell" and (args[1].startswith("ps ") or args[1].startswith("settings ")):
+        m.viec.append(args[1].split()[0])
+        if args[1].startswith("ps "):
+            return PS
+        if SETTINGS_TREO:
+            raise subprocess.TimeoutExpired(["adb"], timeout)
+        return "1"
+    return _adb_vong(*args, serial=serial, timeout=timeout)
+S.adb = adb_may
+`;
+const coDong = (r, re) => r.log.some((l) => re.test(l));
+const khongVet = (r) => !/Traceback/.test(r.loi);
+{
+  const r = chayVong('treo_chet', TREO + `
+PS = PS_KHOE.replace("S system_server", "Z [system_server]")
+`, { LIMIT: '5' });
+  check('7a. Lõi Android đã chết (ps: "Z [system_server]", đúng như máy .110) → nói thẳng máy TREO, phải KHỞI ĐỘNG LẠI',
+    !!r.kq && r.kq.ma === 1 && r.kq.dem.setup === 0 && khongVet(r)
+    && coDong(r, /⛔ .*điện thoại vẫn nối ADB nhưng ANDROID TRÊN MÁY ĐANG TREO \(lõi Android đã chết\).*Cần KHỞI ĐỘNG LẠI điện thoại này/),
+    r.loi || r.log.slice(-3).join(' | '));
+  check('7b. …và KHÔNG còn câu sai hướng "dò lại IP"; `ps` đủ kết luận nên không hỏi thêm lệnh nào',
+    !!r.kq && !coDong(r, /dò lại IP/) && JSON.stringify(r.kq.viec) === '["ps"]', r.kq && JSON.stringify(r.kq.viec));
+}
+{
+  const r = chayVong('treo_khong_tra_loi', TREO + `
+SETTINGS_TREO = True
+`, { LIMIT: '5' });
+  check('7c. system_server còn sống nhưng lệnh hệ thống không trả lời → cũng là máy TREO',
+    !!r.kq && r.kq.ma === 1 && khongVet(r) && coDong(r, /ANDROID TRÊN MÁY ĐANG TREO \(lệnh hệ thống không trả lời\)/)
+    && JSON.stringify(r.kq.viec) === '["ps","settings"]', r.loi || r.log.slice(-3).join(' | '));
+}
+{
+  const r = chayVong('treo_khoe', TREO, { LIMIT: '5' });
+  check('7d. Android khoẻ mà dịch vụ vẫn không lên → nói đúng là dịch vụ điều khiển, KHÔNG đổ cho máy treo',
+    !!r.kq && r.kq.ma === 1 && khongVet(r)
+    && coDong(r, /dịch vụ điều khiển \(uiautomator2\) trên máy không khởi động được \(server not ready\)\. App thử lại sau 1 phút/)
+    && !coDong(r, /ĐANG TREO|dò lại IP/), r.loi || r.log.slice(-3).join(' | '));
+}
+{
+  const r = chayVong('treo_ps_cu', TREO + `
+PS = "bad -o\\n"
+SETTINGS_TREO = True
+`, { LIMIT: '5' });
+  check('7e. Máy không hiểu "ps -o" → không kết luận bừa từ đó, vẫn hỏi "settings" để biết máy treo',
+    !!r.kq && coDong(r, /ĐANG TREO \(lệnh hệ thống không trả lời\)/) && JSON.stringify(r.kq.viec) === '["ps","settings"]',
+    r.kq && JSON.stringify(r.kq.viec));
+}
+{
+  const r = chayVong('treo_dang_ky', TREO + `
+LOI_KET_NOI = AccessibilityServiceAlreadyRegisteredError("[server] INFO: Starting Server\\njava.lang.IllegalStateException: UiAutomationService x already registered!")
+`, { LIMIT: '5' });
+  check('7f. "already registered" → nói rõ có công cụ khác đang giữ quyền đọc màn hình',
+    !!r.kq && r.kq.ma === 1 && coDong(r, /không khởi động được \(đang có công cụ khác giữ quyền đọc màn hình\)/),
+    r.loi || r.log.slice(-3).join(' | '));
+}
+{
+  const r = chayVong('khong_online_khong_hoi', TREO + `
+LOI_KET_NOI = Exception("device 192.168.5.148:5555 not online")
+`, { LIMIT: '5' });
+  check('7g. Máy KHÔNG online (lỗi khác hẳn) → giữ câu "dò lại IP", không đi hỏi ps / settings vô ích',
+    !!r.kq && r.kq.ma === 1 && coDong(r, /⛔ Không kết nối được điện thoại .*not online.*dò lại IP/)
+    && r.kq.viec.length === 0, r.kq && JSON.stringify(r.kq.viec));
+}
+
 try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (_) {}
 done();

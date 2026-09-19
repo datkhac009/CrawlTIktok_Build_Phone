@@ -232,6 +232,22 @@ async function docDanhTinh(serial) {
   return { online: !!(model || hw), model, hw };
 }
 
+// `adb connect` lại MỘT máy nối qua mạng (ip:port). Không ném; true nếu adb báo đã nối.
+//
+// VÌ SAO (2026-09-19, GM1901 .110): điện thoại khởi động lại thì rơi khỏi ADB server, kể cả khi vẫn
+// giữ IP cũ — máy lên lại hơn một phút mà `adb devices` vẫn không có nó. Lượt chạy lại mỗi phút chỉ
+// đọc máy ĐANG CÓ trên ADB server, nên cứ báo "không online" mãi dù máy đã sẵn sàng. Bước
+// `adb connect` lúc khởi động của scan_feed_sounds.py không cứu được: bước dò máy ở main.js chặn
+// trước, Python không bao giờ được mở.
+function noiLai(serial, timeoutMs = 10000) {
+  return new Promise((resolve) => {
+    const ADB_PATH = adbPath();
+    if (!ADB_PATH || !/^[\d.]+:\d+$/.test(serial || '')) return resolve(false);
+    execFile(ADB_PATH, ['connect', serial], { timeout: timeoutMs, encoding: 'utf-8' },
+      (err, stdout) => resolve(!err && /connected to/i.test(String(stdout || ''))));
+  });
+}
+
 // Dò lại IP cho CẢ danh sách rồi lưu. Trả kết quả `ghepMay` (thêm `loi` nếu không đọc được adb).
 async function dongBoIp({ dangChay = new Map() } = {}) {
   const online = (await listAdbSerials()).filter((x) => x.state === 'device');
@@ -304,5 +320,6 @@ module.exports = {
   khopTen,
   ghepMay,
   docDanhTinh,
+  noiLai,
   dongBoIp,
 };

@@ -69,7 +69,7 @@ Theo thứ tự, dừng ở cái đầu tiên thấy được:
 ```bash
 npm install
 npm start           # hoặc start.bat
-npm test            # ~610 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
+npm test            # ~625 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
 ```
 
 Trong app, bấm **🔌 Kiểm tra** ở dòng một máy. Nó kiểm từng mục và **mục nào đỏ thì in ra đúng
@@ -138,6 +138,8 @@ Mọi kiểu hỏng đều có đường quay lại, mỗi lần phục hồi in
 | Mất kết nối ADB (`device offline` / `not found`) | Dừng quét, tự `adb connect` (15 → 60 giây), nối lại thì mở lại TikTok và quét tiếp; bảng Thiết bị hiện "Mất kết nối" |
 | Điện thoại khởi động lại và nhận **IP mới** (DHCP) | Dò theo **số máy phần cứng** (`ro.serialno`, lưu ở trường `hw` trong `devices.json`): lúc mở app, và ngay trước mỗi lần chạy một máy. Máy cũ chưa có số máy thì nhận theo đời máy một lần rồi ghi luôn. Python so số máy lúc khởi động và sau khi nối lại — IP đã về tay điện thoại khác thì thoát, không lái nhầm |
 | Mất kết nối quá 2 phút | Python thoát để app dò lại IP rồi chạy lại sau 1 phút |
+| Điện thoại khởi động lại, **giữ IP cũ** nhưng rơi khỏi ADB server | Trước mỗi lần chạy, máy không có trên ADB server thì app `adb connect` lại đúng IP cũ một lần (tối đa 10 giây) rồi mới đi dò IP khác |
+| **Android trên máy treo** (dịch vụ uiautomator2 báo `server not ready`) | App không chữa được, nhưng nói đúng bệnh: `ps` trên máy cho `Z [system_server]` (lõi Android đã chết) hoặc `settings get` không trả lời → log "ANDROID TRÊN MÁY ĐANG TREO … Cần KHỞI ĐỘNG LẠI điện thoại này". Vẫn thử lại mỗi phút, nên máy khởi động lại xong là tự chạy tiếp (đừng bấm Dừng) |
 | Phục hồi tại chỗ hỏng 3 lần liền, hoặc tiến trình chết | Python thoát mã 1 → app tự chạy lại máy đó sau **đúng 1 phút**, lần nào cũng vậy (không bỏ cuộc; Dừng là huỷ) |
 
 Nhận biết feed (`phone_actions.o_feed`): loại theo activity (trang nhạc, trình phát) rồi mới xét

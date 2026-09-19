@@ -23,6 +23,7 @@ import json
 import os
 import random
 import re
+import subprocess
 import sys
 import time
 from adb_helper import connect, adb, list_devices
@@ -882,6 +883,70 @@ def _doc_hw(serial):
         return ""
 
 
+# ── DIEN THOAI VAN NOI ADB, NHUNG ANDROID TREN MAY DA TREO (2026-09-19, GM1901 .110) ──
+#
+# Log: "⛔ Không kết nối được điện thoại 192.168.5.110:5555 (('server not ready', …)) — app sẽ dò
+# lại IP…" moi phut mot lan, 19 may kia chay binh thuong. Cau do SAI HUONG: IP dung, ADB van thong
+# (app thay may tren ADB server). Do that tren may:
+#   - `ps`: system_server (loi Android: Cai dat, cai app, cho app khac dieu khien) la ZOMBIE
+#     "Z [system_server]" — 22 may con lai deu "S system_server".
+#   - event log 14:24:34 `watchdog: Blocked in handler on main thread / android.fg / android.io`:
+#     Android tu giet system_server nhung khong dung lai duoc, vi luong "PackageManager" ket trong
+#     nhan (trang thai D). May vua khoi dong lai luc 14:18, 6 phut sau treo lai.
+#   - `settings get …`, `pm list packages` treo mai; dich vu uiautomator2 in "Starting Server" roi
+#     ket o lenh binder dau tien, 30 giay khong len -> "server not ready".
+# App khong chua duoc cai nay — phai khoi dong lai dien thoai. Nen noi DUNG benh, DUNG viec can lam.
+_RE_DICH_VU_KHONG_LEN = re.compile(
+    r"server not ready|server quit unexpect|already registered|LaunchUiAutomation", re.I)
+
+
+def android_treo(serial):
+    """Android tren may co dang treo khong. Tra:
+        'chet'          — system_server da chet (zombie) hoac khong con
+        'khong_tra_loi' — con song nhung lenh he thong khong tra loi
+        ''              — binh thuong, HOAC khong hoi duoc (khong ket luan bua)
+    Hoi `ps` truoc: lenh do khong di qua binder, may treo van tra loi ngay."""
+    try:
+        out = adb("shell", "ps -A -o S,NAME", serial=serial, timeout=10)
+    except subprocess.TimeoutExpired:
+        return ""           # ca lenh khong qua binder cung treo: ADB hong, khong phai benh nay
+    except Exception:
+        out = ""
+    dong = [l.split() for l in out.splitlines() if l.strip()]
+    if len(dong) >= 20:     # may cu co the khong hieu `-o` — khi do chi con cach hoi `settings`
+        ss = [p for p in dong if len(p) >= 2 and p[1].strip("[]") == "system_server"]
+        if not ss or ss[0][0] == "Z":
+            return "chet"
+    try:
+        adb("shell", "settings get global device_provisioned", serial=serial, timeout=8)
+    except subprocess.TimeoutExpired:
+        return "khong_tra_loi"
+    except Exception:
+        pass
+    return ""
+
+
+def cau_khong_ket_noi(serial, e):
+    """MOT dong noi dung benh khi `connect` hong luc khoi dong."""
+    loi = str(e)
+    if not _RE_DICH_VU_KHONG_LEN.search(f"{type(e).__name__} {loi}"):
+        return (f"⛔ Không kết nối được điện thoại {serial} ({loi[:120]}) — app sẽ dò lại IP của "
+                "máy này và thử lại sau 1 phút.")
+    benh = android_treo(serial)
+    if benh:
+        vi_sao = "lõi Android đã chết" if benh == "chet" else "lệnh hệ thống không trả lời"
+        return (f"⛔ {serial}: điện thoại vẫn nối ADB nhưng ANDROID TRÊN MÁY ĐANG TREO ({vi_sao}), app "
+                "không điều khiển được. Cần KHỞI ĐỘNG LẠI điện thoại này — app vẫn tự thử lại mỗi phút, "
+                "máy lên lại là chạy tiếp.")
+    if "already registered" in loi:
+        ly_do = "đang có công cụ khác giữ quyền đọc màn hình"
+    else:
+        ly_do = next((a for a in getattr(e, "args", ()) if isinstance(a, str)), loi).strip()[:60]
+    return (f"⛔ {serial}: điện thoại vẫn nối ADB nhưng dịch vụ điều khiển (uiautomator2) trên máy không "
+            f"khởi động được ({ly_do}). App thử lại sau 1 phút; lặp lại mãi thì khởi động lại điện "
+            "thoại này.")
+
+
 def cho_noi_lai(serial, han=None, dung=lambda: False):
     """BAC 4: mat ket noi ADB — DUNG quet, cho dien thoai quay lai. Tra:
         'noi_lai'  — noi lai duoc, DUNG chiec dien thoai cu: quet tiep
@@ -1275,9 +1340,9 @@ def main():
     try:
         d = connect(serial)
     except Exception as e:
-        # Mot dong noi ro thay cho ca trang traceback (log 2026-09-19: "device … not online").
-        log(f"⛔ Không kết nối được điện thoại {serial} ({str(e)[:120]}) — app sẽ dò lại IP của máy "
-            "này và thử lại sau 1 phút.")
+        # Mot dong noi ro thay cho ca trang traceback (log 2026-09-19: "device … not online"), va
+        # noi DUNG benh: may mat / doi IP, hay may con do nhung Android tren may da treo.
+        log(cau_khong_ket_noi(serial, e))
         sys.exit(1)
     # DUNG MAY chua? IP co the da ve tay mot dien thoai khac (DHCP cap lai sau khi khoi dong lai).
     hw_that = _doc_hw(d.serial)

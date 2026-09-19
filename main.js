@@ -126,7 +126,10 @@ function baoDoiIp(r) {
 async function timMay(id) {
   const d = devices.loadDevices().find((x) => x.id === id);
   if (!d) return { loi: 'Máy này không còn trong danh sách.' };
-  const tt = await devices.docDanhTinh(d.serial);
+  let tt = await devices.docDanhTinh(d.serial);
+  // Không có trên ADB server ở IP cũ (vd điện thoại vừa khởi động lại): nối lại đúng IP đó MỘT lần
+  // rồi mới đi dò IP khác — xem `noiLai` trong devices.cjs.
+  if (!tt.online && await devices.noiLai(d.serial)) tt = await devices.docDanhTinh(d.serial);
   const dungMay = tt.online && (d.hw ? tt.hw === d.hw : devices.khopTen(d.name, tt.model));
   if (dungMay) {
     if (!d.hw && tt.hw) {

@@ -109,7 +109,54 @@ check('2e. Khớp tên: đời máy + hậu tố ("Redmi K20 Pro1") khớp; đ�
   khopTen('Redmi K20 Pro1', 'Redmi K20 Pro') && khopTen('redmi  k20 pro', 'Redmi K20 Pro')
   && !khopTen('V2036', 'V2031') && !khopTen('GM1911', ''));
 
-const failed = results.filter((x) => !x.pass);
-console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);
-if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));
-process.exit(failed.length ? 1 : 0);
+// ── 3. `noiLai`: điện thoại vừa khởi động lại, GIỮ IP cũ nhưng rơi khỏi ADB server (GM1901, 2026-09-19) ──
+// Chạy ĐÚNG hàm thật trong devices.cjs; chỉ thay `execFile` (không gọi adb thật) và đường dẫn adb.
+async function thuNoiLai() {
+  const cp = require('child_process');
+  const execFileGoc = cp.execFile;
+  const goi = [];
+  let traLoi = '';
+  cp.execFile = (file, args, opt, cb) => {
+    goi.push({ file, args, opt });
+    setImmediate(() => (traLoi === 'LOI' ? cb(new Error('Command failed'), '', '') : cb(null, traLoi, '')));
+    return {};
+  };
+  const pDev = require.resolve(path.join(__dirname, '..', 'src', 'devices.cjs'));
+  const pAdb = require.resolve(path.join(__dirname, '..', 'src', 'adbpath.cjs'));
+  const adbThat = require(pAdb);
+  delete require.cache[pDev];
+  require.cache[pAdb] = { id: pAdb, filename: pAdb, loaded: true,
+    exports: Object.assign({}, adbThat, { adbPath: () => 'C:/adb/adb.exe' }) };
+  try {
+    const { noiLai } = require(pDev);
+    const kq = {};
+    for (const [ten, tl] of [['da_noi', 'already connected to 192.168.5.110:5555\n'],
+      ['vua_noi', 'connected to 192.168.5.110:5555\n'],
+      ['hong', "failed to connect to '192.168.5.110:5555': Connection timed out\n"], ['loi', 'LOI']]) {
+      traLoi = tl;
+      kq[ten] = await noiLai('192.168.5.110:5555');
+    }
+    const g = goi[0] || {};
+    check('3a. Nối lại đúng IP cũ bằng "adb connect", có hạn chờ (máy đang khởi động thì không treo lượt chạy lại)',
+      g.file === 'C:/adb/adb.exe' && JSON.stringify(g.args) === '["connect","192.168.5.110:5555"]'
+      && g.opt && g.opt.timeout > 0 && g.opt.timeout <= 15000, JSON.stringify(g));
+    check('3b. "connected to" / "already connected to" → nối được; "failed to connect" / lỗi → không',
+      kq.da_noi === true && kq.vua_noi === true && kq.hong === false && kq.loi === false, JSON.stringify(kq));
+    const truoc = goi.length;
+    const usb = await noiLai('R58M123ABC');
+    const rong = await noiLai('');
+    check('3c. Máy cắm USB (serial không phải ip:port) → không gọi "adb connect"',
+      usb === false && rong === false && goi.length === truoc);
+  } finally {
+    cp.execFile = execFileGoc;
+    require.cache[pAdb] = { id: pAdb, filename: pAdb, loaded: true, exports: adbThat };
+    delete require.cache[pDev];
+  }
+}
+
+thuNoiLai().catch((e) => check('3. noiLai chạy được', false, e && e.stack)).then(() => {
+  const failed = results.filter((x) => !x.pass);
+  console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);
+  if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));
+  process.exit(failed.length ? 1 : 0);
+});

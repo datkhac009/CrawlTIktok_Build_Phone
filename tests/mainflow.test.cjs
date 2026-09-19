@@ -149,7 +149,19 @@ Module._load = function (request, parent, isMain) {
 const devicesThat = require(path.join(ROOT, 'src', 'devices.cjs'));
 const mayGia = new Map();
 const farmGia = new Map();
+// Điện thoại đã lên lại ở IP đó nhưng CHƯA có trên ADB server (vừa khởi động lại): chỉ `adb connect`
+// mới đưa nó vào `farmGia`. `daNoiLai` ghi lại mọi lần app gọi `adb connect`.
+const roiAdb = new Map();
+const daNoiLai = [];
 const fakeDevices = Object.assign({}, devicesThat, {
+  noiLai: async (serial) => {
+    daNoiLai.push(serial);
+    const o = roiAdb.get(serial);
+    if (!o) return false;
+    roiAdb.delete(serial);
+    farmGia.set(serial, o);
+    return true;
+  },
   loadDevices: () => Array.from(mayGia.values()).map((d) => Object.assign({}, d)),
   updateDevice: ({ id, ...doi }) => {
     const d = mayGia.get(id);
@@ -638,6 +650,40 @@ const start = (id, serial, cfg = {}) => {
       !!lOff && lOff.params.serial === '192.168.5.150:5555', lOff && lOff.params.serial);
     if (lOff) ketThuc(lOff, false);
     await handlers.get('device-stop')({}, 'dOff');
+    tuaNhanh = false;
+  }
+
+  // ── P. ĐIỆN THOẠI VỪA KHỞI ĐỘNG LẠI: GIỮ IP CŨ NHƯNG RƠI KHỎI ADB SERVER (2026-09-19, GM1901 .110) ──
+  // Android trên máy treo → người dùng khởi động lại máy → app đang thử lại mỗi phút phải tự chạy
+  // tiếp, không cần ai bấm, kể cả khi chưa ai `adb connect` máy đó.
+  {
+    tuaNhanh = true;
+    mayGia.set('dOn', { id: 'dOn', name: 'HD1911', serial: '192.168.5.212:5555', note: '', hw: 'HW-HD' });
+    farmGia.set('192.168.5.212:5555', { model: 'HD1911', hw: 'HW-HD' });
+    const noiTruoc = daNoiLai.length;
+    await handlers.get('device-start')({}, { deviceId: 'dOn', serial: '192.168.5.212:5555', cfg: {} });
+    const lOn = lanChay('dOn')[0];
+    check('P1. Máy đang online ở đúng IP → chạy luôn, KHÔNG gọi "adb connect" thừa',
+      !!lOn && lOn.params.serial === '192.168.5.212:5555' && daNoiLai.length === noiTruoc,
+      JSON.stringify(daNoiLai.slice(noiTruoc)));
+    if (lOn) ketThuc(lOn, false);
+
+    // P2. Máy đang khởi động (chưa nối được) → không mở Python, hẹn thử lại sau 1 phút.
+    mayGia.set('dGm', { id: 'dGm', name: 'GM1901', serial: '192.168.5.210:5555', note: '', hw: 'HW-GM1901' });
+    const henTruoc = henDai.length;
+    const r2 = await handlers.get('device-start')({}, { deviceId: 'dGm', serial: '192.168.5.210:5555', cfg: {} });
+    check('P2. Điện thoại đang khởi động lại → thử "adb connect" đúng IP cũ, chưa được thì hẹn lại sau 1 phút',
+      r2.ok === false && lanChay('dGm').length === 0 && daNoiLai[daNoiLai.length - 1] === '192.168.5.210:5555'
+      && henDai.length === henTruoc + 1 && henDai[henDai.length - 1] === 60000, JSON.stringify(r2));
+    // P3. Máy lên lại, vẫn IP cũ, nhưng không có trên ADB server → lượt thử lại tự nối rồi chạy.
+    roiAdb.set('192.168.5.210:5555', { model: 'GM1901', hw: 'HW-GM1901' });
+    await nghi(60);
+    const lGm = lanChay('dGm')[0];
+    check('P3. Máy lên lại (vẫn IP cũ, chưa có trên ADB server) → lượt thử lại tự nối và CHẠY, không cần ai bấm',
+      !!lGm && lGm.params.serial === '192.168.5.210:5555' && lGm.params.hw === 'HW-GM1901',
+      lGm ? lGm.params.serial : JSON.stringify(daNoiLai.slice(-3)));
+    if (lGm) ketThuc(lGm, false);
+    await handlers.get('device-stop')({}, 'dGm');
     tuaNhanh = false;
   }
 
