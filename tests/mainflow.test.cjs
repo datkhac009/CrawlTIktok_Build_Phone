@@ -25,6 +25,18 @@ function check(name, pass, detail) {
   results.push({ name, pass });
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`);
 }
+// Hẹn giờ DÀI (≥ 1 phút) của main.js: ghi lại độ dài, và khi bật `tuaNhanh` thì cho nổ sau vài
+// mili-giây — để thử "tự chạy lại sau lỗi" (hẹn 1–15 phút) mà không phải chờ thật (mục N).
+const _setTimeoutGoc = global.setTimeout;
+const henDai = [];
+let tuaNhanh = false;
+global.setTimeout = function (fn, ms, ...a) {
+  if (typeof ms === 'number' && ms >= 60000) {
+    henDai.push(ms);
+    if (tuaNhanh) return _setTimeoutGoc(fn, 5, ...a);
+  }
+  return _setTimeoutGoc(fn, ms, ...a);
+};
 const nghi = (ms) => new Promise((r) => setTimeout(r, ms));
 // Chờ một lời hứa, quá hạn thì trả `{ ok: 'TREO' }` thay vì chờ mãi.
 const toiDa = (p, ms) => Promise.race([p, nghi(ms).then(() => ({ ok: 'TREO', msg: `treo quá ${ms} ms` }))]);
@@ -471,6 +483,72 @@ const start = (id, serial, cfg = {}) => handlers.get('device-start')({}, { devic
     FakeStore.last.set('sheets_config', { enabled: false });
     sheetBat = false;
     tabPendingGia = '';
+  }
+
+  // ── N. TIẾN TRÌNH PYTHON CHẾT (mã lỗi) → TỰ CHẠY LẠI, giãn dần, Dừng huỷ được (2026-09-19) ──
+  // Chủ dự án muốn treo máy: bản cũ để máy nằm "Lỗi" tới khi có người bấm Chạy.
+  {
+    const ID = 'dLoi';   // 'dN' đã dùng ở mục I
+    const hen = () => sent.filter(([c, p]) => c === 'crawl-status' && p.deviceId === ID && p.state === 'resting');
+    // Đúng thứ runner thật làm khi tiến trình đóng với mã khác 0.
+    const chet = (entry, msg = 'exit code 1') => {
+      running.delete(ID);
+      entry.onStatus(ID, { kind: 'status', state: 'error', msg });
+    };
+    tuaNhanh = true;
+    henDai.length = 0;
+    await start(ID, '192.168.5.130:5555');
+    chet(lanChay(ID)[0]);
+    const h1 = hen().pop();
+    check('N1. Tiến trình chết → hẹn tự chạy lại sau 1 phút, nói rõ giờ và lần thứ mấy',
+      henDai[0] === 60000 && !!h1 && h1[1].loi === true
+        && /Lỗi \(exit code 1\) — tự chạy lại lúc \d\d:\d\d \(lần 1\)/.test(h1[1].msg), h1 && h1[1].msg);
+    // Tiến trình phát 'error' rồi 'close' — hai sự kiện lỗi cho MỘT lần chết.
+    lanChay(ID)[0].onStatus(ID, { kind: 'status', state: 'error', msg: 'exit code 1' });
+    check('N2. Lỗi báo hai lần cho một lần chết → vẫn chỉ MỘT hẹn giờ', henDai.length === 1, `${henDai.length} hẹn`);
+    await nghi(40);
+    check("N3. Hết giờ hẹn → máy tự chạy lại, không cần ai bấm", lanChay(ID).length === 2, `${lanChay(ID).length} lượt`);
+
+    chet(lanChay(ID)[1]);
+    check('N4. Chết lần hai ngay sau đó → giãn ra 2 phút (lần 2)',
+      henDai[1] === 120000 && /\(lần 2\)/.test(hen().pop()[1].msg));
+    await nghi(40);
+
+    // Lượt chạy được ≥ 10 phút rồi mới chết = máy đã khoẻ lại → đếm lại từ bậc đầu.
+    const nowGoc = Date.now;
+    Date.now = () => nowGoc() + 11 * 60000;
+    chet(lanChay(ID)[2]);
+    Date.now = nowGoc;
+    check('N5. Lượt trước chạy được hơn 10 phút → lần lỗi này đếm lại từ đầu (1 phút, lần 1)',
+      henDai[2] === 60000 && /\(lần 1\)/.test(hen().pop()[1].msg), `${henDai[2]} ms`);
+    await nghi(40);
+
+    // Tới giờ mà chưa khởi động lại được → hẹn tiếp, KHÔNG bỏ máy.
+    const startGoc = fakeRunner.startDevice;
+    fakeRunner.startDevice = () => { throw new Error('điện thoại đang bận'); };
+    chet(lanChay(ID)[3]);
+    await nghi(40);
+    fakeRunner.startDevice = startGoc;
+    check('N6. Tới giờ mà khởi động lại hỏng → tự hẹn lần nữa, không bỏ máy',
+      hen().some(([, p]) => /điện thoại đang bận/.test(p.msg)), hen().map(([, p]) => p.msg).slice(-2).join(' | '));
+    await nghi(40);
+    const soLan = lanChay(ID).length;
+
+    // Bấm Dừng khi đang chờ chạy lại → huỷ hẳn.
+    chet(lanChay(ID)[soLan - 1]);
+    const r = await handlers.get('device-stop')({}, ID);
+    await nghi(40);
+    check('N7. Bấm Dừng lúc đang chờ chạy lại → huỷ hẹn, máy KHÔNG tự chạy nữa',
+      lanChay(ID).length === soLan && r && r.ok !== false, JSON.stringify(r));
+
+    // Người dùng bấm Dừng khi máy ĐANG CHẠY: runner báo 'stopped' chứ không 'error' → không hẹn gì.
+    await start(ID, '192.168.5.130:5555');
+    const dem = henDai.length;
+    const cuoi = lanChay(ID)[lanChay(ID).length - 1];
+    await handlers.get('device-stop')({}, ID);
+    cuoi.onStatus(ID, { kind: 'status', state: 'stopped', msg: '' });
+    check('N8. Dừng tay (không phải lỗi) → không hẹn chạy lại', henDai.length === dem);
+    tuaNhanh = false;
   }
 
   _xong = true;

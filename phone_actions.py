@@ -485,12 +485,44 @@ def _o_tren_feed(d):
     Chinh `desc` la thu tach feed-LIVE khoi story viewer.
     """
     try:
-        attrs = _attrs_by_id(d.dump_hierarchy())
+        return _la_feed(d.dump_hierarchy())
     except Exception:
         return False
+
+
+def _la_feed(xml_str):
+    """Phan xet cua `_o_tren_feed` tren mot ban chup CO SAN (khong chup lai)."""
+    attrs = _attrs_by_id(xml_str)
     if "user_avatar" in attrs and "videomusiccoverblock" in attrs:
         return True
     return attrs.get("long_press_layout", {}).get("desc", "").strip().upper() == "LIVE"
+
+
+def o_feed(d):
+    """Đang đứng ở feed For You không — bản dùng cho việc PHỤC HỒI (`ve_feed` bên
+    `scan_feed_sounds.py`). Hụt ở đây nghĩa là BẤM BACK NGAY GIỮA FEED, nên nó chặt hơn
+    `_o_tren_feed` ở một chỗ và nới hơn ở một chỗ, cả hai đều đo trên bản chụp thật (2026-09-19):
+
+      • CHẶT HƠN — loại theo tên activity trước. Trình phát mở từ trang nhạc hay trang cá nhân
+        (`DetailActivity`) cũng có `user_avatar` + `videomusiccoverblock` y như feed (bản chụp
+        `probe_view_..._3_trinh_phat.xml`), nên `_o_tren_feed` nhận nhầm nó là feed.
+      • NỚI HƠN — thêm dấu hiệu tab "For You" ở thanh trên cùng: 14/14 bản chụp feed có, kể cả
+        thẻ LIVE và thẻ tin tức (nơi `_o_tren_feed` hụt); 0/27 bản chụp ngoài feed có (trang nhạc,
+        lưới video, trình phát, trang cá nhân, menu nhấn giữ, màn hình Tako). Menu nhấn giữ che
+        mất tab này, nên đang mở menu thì bị coi là "chưa ở feed" và một cú Back đóng nó — đúng
+        ý. Tab mang chữ tiếng Anh: máy để ngôn ngữ khác thì dấu hiệu này im lặng và còn lại đúng
+        phép xét cũ.
+    """
+    act = _activity(d)
+    if act.endswith(ACT_TRANG_NHAC) or act.endswith(ACT_TRINH_PHAT):
+        return False
+    try:
+        xml = d.dump_hierarchy()
+    except Exception:
+        return False
+    if 'content-desc="For You"' in xml:
+        return True
+    return _la_feed(xml)
 
 
 def _ve_feed(d, log=lambda s: None):
@@ -987,8 +1019,16 @@ def close_profile(d, log=lambda s: None):
 VUOT_TU, VUOT_DEN = 0.60, 0.15
 
 
-def vuot_video_ke(d):
-    """Vuốt lên sang video kế — dùng chung cho feed, pha Xem, và lúc bỏ qua livestream."""
+def vuot_video_ke(d, manh=False):
+    """Vuốt lên sang video kế — dùng chung cho feed, pha Xem, và lúc bỏ qua livestream.
+
+    `manh=True`: cách DỰ PHÒNG khi feed không chịu sang video mới — kéo TỪNG ĐIỂM (như
+    `_keo_doc`) từ 45% lên 10%. Đo thật trên máy .117 (2026-09-19): một bài ảnh "Trend Master"
+    giữ feed đứng yên qua 8 vòng quét liền, 10 cú `d.swipe` từ 60% và 45% đều không nhúc nhích.
+    """
+    if manh:
+        _keo_doc(d, tu=0.45, den=0.10, buoc=10)
+        return
     d.swipe(0.5, VUOT_TU, 0.5, VUOT_DEN, random.uniform(0.15, 0.3))
 
 

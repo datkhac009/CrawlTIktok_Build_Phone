@@ -716,13 +716,13 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     && !/await (seedKnownLinks|napSheetDauPhien)/.test(mj));
   check('19g. Nút Xoá đi qua cùng đường dọn dẹp với nút Dừng',
     /'devices-delete'[\s\S]{0,700}dungHan\(data\.id\)/.test(mj)
-    && /function dungHan[\s\S]{0,200}huyNghi\(deviceId\)[\s\S]{0,60}_lastParams\.delete\(deviceId\)[\s\S]{0,60}devslot\.cancel\(deviceId\)/.test(mj));
+    && /function dungHan[\s\S]{0,200}huyNghi\(deviceId\)[\s\S]{0,60}_lastParams\.delete\(deviceId\)[\s\S]{0,120}devslot\.cancel\(deviceId\)/.test(mj));
 
   // Giao diện: hai trạng thái bản cũ vẽ thành "Đã dừng".
   check('19h. Giao diện nhận trạng thái XẾP HÀNG và NGHỈ',
     /state === 'queued'\) \{ st\.status = 'queue'/.test(rj) && /state === 'resting'\) \{\s*st\.status = 'rest'/.test(rj));
-  check('19i. Máy xếp hàng / đang nghỉ hiện nút Dừng, không hiện nút Chạy',
-    /TRANG_THAI_BAN = new Set\(\['run', 'queue', 'rest'\]\)/.test(rj)
+  check('19i. Máy xếp hàng / đang nghỉ / đang chờ nối lại hiện nút Dừng, không hiện nút Chạy',
+    /TRANG_THAI_BAN = new Set\(\['run', 'queue', 'rest', 'offline'\]\)/.test(rj)
     && /dangBan\(id\) \? stopDeviceById\(id\) : startDeviceById\(id\)/.test(rj));
   check('19j. "Chạy đã chọn" bỏ qua máy đang bận',
     /ids\.filter\(\(id\) => !dangBan\(id\)\)\.forEach\(startDeviceById\)/.test(rj));
@@ -876,6 +876,25 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     /payload\.verdict === 'DAT' \|\| laPending/.test(rn) && /pending: true \}/.test(rn));
   check('23j. Python cất Pending CHỈ khi bật, và vẫn xét Original Sound',
     /elif posts is None and PENDING_ON:[\s\S]{0,600}goc = la_sound_goc\(url_that, tieu_de\)\s*\n\s*if ORIGINAL_ONLY and CO_LUAT_GOC and not goc:[\s\S]{0,1200}verdict="PENDING"/.test(py));
+}
+
+// ── 24. Treo máy không bị đứng (2026-09-19) ──
+// Hành vi do `phuchoi.test.cjs` (Python, cả vòng quét thật) và `mainflow.test.cjs` mục N (Node)
+// chạy thật. Ở đây canh hai chỗ gọi `ve_feed` mà phép thử hành vi không đi qua, và phần giao diện.
+{
+  const py = doc('scan_feed_sounds.py');
+  const rj = doc('renderer/renderer.js');
+  const mj = doc('main.js');
+  check('24a. Quay lại mà không phải feed → ĐƯA VỀ feed (bản cũ chỉ "bỏ lượt tương tác")',
+    /if ly_do == "khong_o_feed":\s*\n\s*ve_feed\(d, /.test(py));
+  check('24b. Trang nhạc mở quá chậm (máy yếu) → kiểm và đưa về feed',
+    /TRUOT\["khong_vao_trang_nhac"\] \+= 1[\s\S]{0,900}ve_feed\(d, "bấm icon sound nhưng trang nhạc mở quá chậm"\)\s*\n\s*return \(None, True\)/.test(py));
+  check('24c. Giao diện hiện "Mất kết nối" khi Python đang chờ nối lại',
+    /state === 'offline'\) st\.status = 'offline'/.test(rj) && /st\.status === 'offline'\) return 'Mất kết nối/.test(rj));
+  check('24d. Giao diện phân biệt "nghỉ vì lỗi, sẽ tự chạy lại" với nghỉ giữa ca',
+    /st\.restLoi = !!payload\.loi/.test(rj) && /if \(st\.restLoi\) return `Lỗi → tự chạy lại/.test(rj));
+  check('24e. Tiến trình chết → hẹn tự chạy lại (chỉ ở nhánh LỖI)',
+    /if \(status\.state === 'error'\) \{\s*\n\s*_cycleDone\.delete\(deviceId\);\s*\n\s*henChayLaiSauLoi\(deviceId, status\.msg\);/.test(mj));
 }
 
 // Hàm làm tròn: chạy thật, không soi chữ.

@@ -237,7 +237,7 @@ print("@@KQ@@" + json.dumps({"kq": kq, "viec": m.viec, "log": dong}, ensure_asci
   check('7b. Vòng quét gỡ cờ tako TRƯỚC khi gọi bridge.ask(**info) (thừa khoá là TypeError)',
     iPop > 0 && iAsk > iPop && scan.indexOf('aid = bridge.ask(**info)', iAsk + 1) === -1);
   check('7c. Soi Tako ngay trước mỗi cú vuốt sang video kế',
-    /xu_ly_tako\(d\)\s*\n[^\n]*time\.sleep[^\n]*\n\s*BUOC\["v"\] = "vuốt sang video kế"\s*\n\s*PA\.vuot_video_ke\(d\)/.test(scan));
+    /xu_ly_tako\(d\)\s*\n[^\n]*time\.sleep[^\n]*\n\s*BUOC\["v"\] = "vuốt sang video kế"\s*\n[\s\S]{0,900}?PA\.vuot_video_ke\(d, manh=/.test(scan));
   check('7d. Lùi không ra → ném lỗi để vào nhánh phục hồi sẵn có',
     /if xu_ly_tako\(d\) == "ket":[\s\S]{0,300}raise RuntimeError/.test(scan));
   check('7e. Tổng kết cuối ca có số lần lọt vào Tako', /TRUOT\["tako"\][\s\S]{0,120}lọt vào TikTok Tako/.test(scan));

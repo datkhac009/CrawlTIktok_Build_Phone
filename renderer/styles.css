@@ -195,6 +195,7 @@ body {
 /* Xếp hàng / nghỉ giữa ca: KHÁC màu "Đã dừng" để không ai tưởng máy đã tắt hẳn rồi bấm Xoá. */
 .pstat-badge.queue { color: #f5b942; }
 .pstat-badge.rest { color: #7aa7ff; }
+.pstat-badge.offline { color: #f5b942; }
 
 /* Placeholder */
 .placeholder {

@@ -218,6 +218,29 @@ def find_first(d, ids, timeout=0):
     return None
 
 
+# ⚠ PHAN TU "CU" — StaleObjectException (do tren may .117, 2026-09-19: 4 lan trong 14 video).
+# Trang nhac VE LAI ngay sau khi mo, nen phan tu vua tim thay da cu luc doc chu. Ban cu de loi bay
+# ra ngoai: mat sound do, va — truoc khi co thang phuc hoi — may dung luon o trang nhac. Tim lai
+# roi doc lai.
+def _la_phan_tu_cu(e):
+    return "StaleObjectException" in str(e)
+
+
+def _doc_tieu_de(d, el):
+    """Doc ten sound tren trang nhac, chiu duoc trang vua ve lai (tim lai phan tu, toi da 3 lan)."""
+    for lan in range(3):
+        try:
+            if el is None:
+                return ""
+            return (el.info.get("contentDescription") or el.get_text() or "").strip()
+        except Exception as e:
+            if not _la_phan_tu_cu(e) or lan == 2:
+                raise
+            time.sleep(0.3)
+            el = find_first(d, TITLE_IDS, timeout=2)
+    return ""
+
+
 POPUP_BUTTON_TEXTS = (
     "Got it", "OK", "Allow", "Continue", "I agree", "Accept", "Accept all",
     "Skip", "Not now", "Bỏ qua", "Để sau", "Đóng", "Đồng ý",
@@ -526,9 +549,13 @@ def check_current_video(d):
         if MUSIC_ACTIVITY in d.app_current().get("activity", ""):
             d.press("back")
             time.sleep(REST_AFTER_BACK)
+        # May yeu (Nokia 2.3, log 2026-09-19): trang nhac mo CHAM hon tran cho, tuc la no mo ra
+        # SAU phep kiem ngay tren — may dung lai tren trang nhac. Da o feed thi `ve_feed` khong
+        # lam gi va khong in gi.
+        ve_feed(d, "bấm icon sound nhưng trang nhạc mở quá chậm")
         return (None, True)
 
-    desc = (title_el.info.get("contentDescription") or title_el.get_text() or "").strip()
+    desc = _doc_tieu_de(d, title_el)
 
     # ── CHO SO POST THEO DIEU KIEN, KHONG NGU MU ──
     # Ban cu `time.sleep(SETTLE)` voi SETTLE=2,5: ngu du 2,5 giay KE CA khi so da hien tu lau.
@@ -542,7 +569,12 @@ def check_current_video(d):
     posts = None
     while True:
         count_el = find_first(d, COUNT_IDS)
-        posts = parse_count(count_el.get_text()) if count_el else None
+        try:
+            posts = parse_count(count_el.get_text()) if count_el else None
+        except Exception as e:
+            if not _la_phan_tu_cu(e):
+                raise
+            posts = None        # trang vua ve lai — vong sau tim lai phan tu roi doc lai
         if posts:
             break
         if time.time() >= het_settle:
@@ -678,6 +710,257 @@ def setup_device(d):
     raise RuntimeError("Khong the mo TikTok sau 3 lan thu.")
 
 
+# ════════════════════ TREO MAY KHONG BI DUNG (2026-09-19) ════════════════════
+#
+# ⚠ HAI SU CO THAT, chu du an gui log:
+#   1. Loi `Remote end closed connection without response` o video #91, roi 3 TIENG lien "0 sound
+#      dat, 25 video khong co sound" cho toi khi bam Dung. Nhip tim 06:04:43 phu video #76-#100 va
+#      dem dung 9 video khong co sound = dung #92-#100: may dung NGAY tu luc loi. TikTok khong crash
+#      (event log moi may tu 05:34 toi 09:07 chi co cac lan tat do chinh app). Loi roi vao GIUA mot
+#      video (dang o trang nhac / bang Share) va khong buoc nao dua may ve feed; con "khong thay
+#      icon sound" thi khong phai loi, nen nhanh phuc hoi (can 3 loi lien tiep) khong bao gio chay.
+#   2. May .121 mat ket noi ADB ("device offline" roi "not found"). Nhanh phuc hoi thu 3x3 lan
+#      trong 10 giay, hong het, roi vong quet quay tit moi 4 giay in loi — khong cho may quay lai.
+#
+# Nen gio co mot THANG PHUC HOI, moi bac mot duong ve, moi lan dung MOT dong log:
+#   Bac 1  `ve_feed`       — sau moi loi, khi quay lai ma khong phai feed, va khi CANH GAC thay
+#                            8 video lien khong co icon sound.
+#   Bac 2  `reset_service` — 3 loi lien tiep (da co tu truoc), hoac NGAY khi dich vu tren may dut.
+#   Bac 3  thoat ma 1      — phuc hoi hong 3 lan lien: phia Node chay lai tien trinh moi tu dau.
+#   Bac 4  `cho_noi_lai`   — mat ket noi ADB: dung quet, cho, tu `adb connect`, noi lai thi chay tiep.
+
+# Cau loi cua adb / adbutils khi dien thoai KHONG CON tren ADB server. Khop theo CUM TU, khong theo
+# chu "not found" tron: loi `UiObjectNotFoundError` cua uiautomator2 cung co chu "not found".
+_RE_MAT_KET_NOI = re.compile(
+    r"device offline|device '[^']*' not found|device not found|no devices|unauthorized|"
+    r"device still (?:connecting|authorizing)", re.I)
+
+# Dich vu uiautomator2 TREN DIEN THOAI dut ket noi giua chung.
+# ⚠ uiautomator2 3.7.0 tu khoi dong lai dich vu khi gap `HTTPError`, nhung `_http_request` cua no
+# chi bat loi cua thu vien `requests` — trong khi no goi thang `http.client`. Nen `RemoteDisconnected`
+# di thang ra ngoai va KHONG AI khoi dong lai dich vu o lenh do (da doc ma nguon, core.py:117-166).
+_RE_DUT_DICH_VU = re.compile(
+    r"remote end closed|remotedisconnected|connection reset|connection aborted|broken pipe", re.I)
+
+# Canh gac: bao nhieu video LIEN khong thay icon sound thi di xem may dang o dau. Feed binh thuong
+# co quang cao / bai anh xen ke, nhung 8 video lien khong co cai nao la dau hieu may da lac.
+CANH_GAC_KHONG_ICON = 8
+
+# Dem cho dong tong ket cuoi ca.
+PHUC_HOI = {"ve_feed": 0, "mo_lai_tiktok": 0, "mat_ket_noi": 0, "giay_mat_ket_noi": 0.0}
+
+
+def la_loi_mat_ket_noi(e):
+    return bool(_RE_MAT_KET_NOI.search(str(e)))
+
+
+def la_loi_dut_dich_vu(e):
+    return bool(_RE_DUT_DICH_VU.search(f"{type(e).__name__} {e}"))
+
+
+def _thoi_luong(giay):
+    """125 -> "2 phút 5 giây"; 3900 -> "1 giờ 5 phút"."""
+    giay = int(max(0, giay))
+    if giay < 60:
+        return f"{giay} giây"
+    phut, giay = divmod(giay, 60)
+    if phut < 60:
+        return f"{phut} phút {giay} giây" if giay else f"{phut} phút"
+    gio, phut = divmod(phut, 60)
+    return f"{gio} giờ {phut} phút" if phut else f"{gio} giờ"
+
+
+def _ten_man_hinh(goi, act):
+    """Ten NGAN cua man hinh dang dung — de dong log noi duoc may lac o dau."""
+    if not goi:
+        return "không đọc được màn hình"
+    if goi not in PKGS:
+        if "launcher" in goi.lower():
+            return "màn hình chính (TikTok không ở trước mặt)"
+        return f"app khác ({goi})"
+    if act.endswith(PA.ACT_TRANG_NHAC):
+        return "trang nhạc"
+    if act.endswith(PA.ACT_TRINH_PHAT):
+        return "trình phát video"
+    return "một màn hình khác trong TikTok"
+
+
+def ve_feed(d, ly_do):
+    """BAC 1: dua may ve feed For You. Tra 'o_feed' | 'mo_app' | 'back' | 'mo_lai' | 'khong_ve_duoc'.
+
+    Da o feed thi KHONG lam gi va KHONG in gi — canh gac goi ham nay ca khi feed binh thuong.
+    ⚠ Chi bam Back va mo lai app, KHONG cham vao thu gi tren man hinh la: may dang lac o dau thi
+    chua biet, bam mu la dung bai hoc QD-31 cua ban PC.
+    """
+    pkg = ACTIVE_PKG or PKGS[0]
+    try:
+        cur = d.app_current() or {}
+    except Exception:
+        cur = {}
+    goi, act = cur.get("package") or "", cur.get("activity") or ""
+    if goi in PKGS and PA.o_feed(d):
+        return "o_feed"
+
+    truoc = _ten_man_hinh(goi, act)
+    viec = []
+    kq = "khong_ve_duoc"
+    # 1. TikTok khong o truoc mat: mot cu Back dong hop thoai he thong (vd "Storage low" — dang thay
+    #    tren may .185), roi goi TikTok len. Khong `stop`: TikTok con song thi ve dung cho cu.
+    if goi not in PKGS:
+        d.press("back")
+        time.sleep(1.0)
+        if ((d.app_current() or {}).get("package") or "") in PKGS:
+            viec.append("bấm Back đóng hộp thoại")
+        else:
+            d.app_start(pkg)
+            time.sleep(5)
+            viec.append("mở lại TikTok")
+        if PA.o_feed(d):
+            kq = "mo_app"
+    # 2. Lui TUNG NHIP, kiem lai sau moi nhip. Tako co cach lui rieng (chi Back — xem PA.thoat_tako).
+    if kq == "khong_ve_duoc":
+        so_back = 0
+        for _ in range(3):
+            if PA.thoat_tako(d, pkg):
+                viec.append("thoát TikTok Tako")
+            else:
+                d.press("back")
+                so_back += 1
+                time.sleep(1.2)
+            if PA.o_feed(d):
+                kq = "back"
+                break
+        if so_back:
+            viec.append(f"bấm Back {so_back} lần")
+    # 3. Van chua ve: khoi dong lai TikTok tu dau.
+    if kq == "khong_ve_duoc":
+        d.app_start(pkg, stop=True)
+        time.sleep(6)
+        for _ in range(2):
+            if not dismiss_popups(d):
+                break
+        PHUC_HOI["mo_lai_tiktok"] += 1
+        viec.append("khởi động lại TikTok")
+        if PA.o_feed(d):
+            kq = "mo_lai"
+
+    PHUC_HOI["ve_feed"] += 1
+    # Moi LOAI man hinh in vai lan dau roi im (van dem, tong hien o dong tong ket): lac cung mot
+    # kieu moi 2 phut suot ca ma dong nao cung in thi day het dong dang doc ra khoi bo dem log.
+    if kq == "khong_ve_duoc":
+        log_han_che("ve_feed_hong_" + truoc,
+                    f"⛔ Lạc khỏi feed ({ly_do}) — đang ở {truoc}; {', '.join(viec)} mà vẫn chưa về "
+                    "được feed. Vòng sau thử tiếp.")
+    else:
+        log_han_che("ve_feed_" + truoc,
+                    f"⚠ Lạc khỏi feed ({ly_do}) — đang ở {truoc} → {', '.join(viec)}, đã về feed.")
+    return kq
+
+
+def _con_ket_noi(serial):
+    """Dien thoai con tren ADB server khong (`adb get-state` tra `device`)."""
+    try:
+        return adb("get-state", serial=serial, timeout=10).strip() == "device"
+    except Exception:
+        return False
+
+
+def cho_noi_lai(serial, han=None, dung=lambda: False):
+    """BAC 4: mat ket noi ADB — DUNG quet, cho dien thoai quay lai.
+
+    Tra True khi noi lai duoc; False khi het han ca hoac app da dong (noi goi de dau vong xu ly).
+    Khong dem video, khong in loi moi vong: mot dong luc bat dau, mot dong moi 10 phut, mot dong
+    luc noi lai duoc.
+    """
+    t0 = time.time()
+    PHUC_HOI["mat_ket_noi"] += 1
+    log("⛔ Mất kết nối ADB tới máy — tạm dừng quét, tự nối lại (thử mỗi 15–60 giây)…")
+    emit_event("status", state="offline")
+    cho = 15.0
+    lan_bao = t0
+    try:
+        while True:
+            if dung() or (han and time.time() >= han):
+                return False
+            if _con_ket_noi(serial):
+                break
+            # May noi qua MANG (ip:port) thi tu goi `adb connect`, dung cach luc khoi dong (xem
+            # main). CUNG binary va CUNG server 5037 voi 效卫, nen day chi la nhac lai viec 效卫
+            # van lam, khong gianh may cua nhau. May cam USB thi `connect` vo nghia — chi cho.
+            if serial and ":" in serial:
+                try:
+                    adb("connect", serial, timeout=10)
+                except Exception:
+                    pass
+                if _con_ket_noi(serial):
+                    break
+            if time.time() - lan_bao >= 600:
+                lan_bao = time.time()
+                log(f"… vẫn mất kết nối ({_thoi_luong(time.time() - t0)}), vẫn đang chờ.")
+            het = time.time() + cho
+            while time.time() < het:
+                if dung() or (han and time.time() >= han):
+                    return False
+                time.sleep(1.0)
+            cho = min(60.0, cho * 2)
+    finally:
+        PHUC_HOI["giay_mat_ket_noi"] += time.time() - t0
+    log(f"✅ Nối lại được sau {_thoi_luong(time.time() - t0)} — khởi động lại dịch vụ, mở lại TikTok, "
+        "quét tiếp.")
+    emit_event("status", state="running")
+    return True
+
+
+# Trang thai cua canh gac — cap module de phep thu goi thang `canh_gac` duoc.
+CANH_GAC = {"chuoi": 0, "vong_o_feed": 0, "lan_mo_lai": None}
+
+
+def canh_gac(d, khong_icon):
+    """CANH GAC: `CANH_GAC_KHONG_ICON` video LIEN khong thay icon sound thi di xem may dang o dau.
+
+    Feed binh thuong co quang cao / bai anh xen ke, nhung khong bao gio lien 8 cai. Lien nhu the la
+    may da lac (trang nhac, trang ca nhan, app khac...) — dung canh 3 tieng trong log 2026-09-19 —
+    hoac TikTok vua doi giao dien. Tra ket qua `ve_feed` neu vua kiem, '' neu chua toi luot kiem.
+    """
+    CANH_GAC["chuoi"] = CANH_GAC["chuoi"] + 1 if khong_icon else 0
+    if not khong_icon:
+        CANH_GAC["vong_o_feed"] = 0
+    if CANH_GAC["chuoi"] < CANH_GAC_KHONG_ICON:
+        return ""
+    CANH_GAC["chuoi"] = 0
+    try:
+        kq = ve_feed(d, f"{CANH_GAC_KHONG_ICON} video liền không thấy icon sound")
+    except Exception:
+        return ""               # loi that (vd mat ket noi) — vong quet sau xu ly dung nhanh cua no
+    if kq != "o_feed":
+        CANH_GAC["vong_o_feed"] = 0
+        return kq
+    # 3 vong lien ma may VAN o feed: khong phai lac, ma la khong doc duoc icon sound.
+    CANH_GAC["vong_o_feed"] += 1
+    if CANH_GAC["vong_o_feed"] < 3:
+        return kq
+    CANH_GAC["vong_o_feed"] = 0
+    n = 3 * CANH_GAC_KHONG_ICON
+    if CANH_GAC["lan_mo_lai"] is None or time.time() - CANH_GAC["lan_mo_lai"] >= 1800:
+        CANH_GAC["lan_mo_lai"] = time.time()
+        log(f"⚠ {n} video liền không thấy icon sound dù đang ở feed — khởi động lại TikTok.")
+        try:
+            d.app_start(ACTIVE_PKG or PKGS[0], stop=True)
+            time.sleep(6)
+            dismiss_popups(d)
+            PHUC_HOI["mo_lai_tiktok"] += 1
+        except Exception:
+            pass
+        return "mo_lai"
+    # Da khoi dong lai trong 30 phut qua ma van the: nhieu kha nang TikTok doi ten nut icon sound
+    # (resource-id bi lam roi, doi theo ban) — khoi dong lai them cung vo ich, chi can NOI RA.
+    log_han_che(
+        "doi_giao_dien",
+        f"⛔ {n} video liền không thấy icon sound dù đang ở feed, khởi động lại TikTok cũng không "
+        "đỡ — có thể TikTok vừa đổi giao diện. Cần dò lại bằng probe_screen.py.")
+    return kq
+
+
 def _thi_hanh(d, bridge, aid, ans, info, res, da_roi_feed=True):
     """Thi hanh phan quyet cua phia Node. KHONG quyet dinh gi o day.
 
@@ -723,6 +1006,10 @@ def _thi_hanh(d, bridge, aid, ans, info, res, da_roi_feed=True):
             bridge.acted(aid, ni="skip_changed_video", follow="skip_changed_video",
                          like="skip_changed_video", visit="skip_changed_video",
                          like_profile="skip_changed_video")
+            # Biet ro la khong con o feed ma chi "bo luot" thi vong sau van dung sai cho — log cua
+            # may .121 (2026-09-19) cho thay dung canh do tren may yeu. Dua ve feed ngay tai day.
+            if ly_do == "khong_o_feed":
+                ve_feed(d, "quay lại từ trang nhạc mà không phải feed")
             return
 
     # ── FOLLOW: GHE TRANG CA NHAN LAY @handle THAT ROI MOI BAM ──
@@ -985,6 +1272,14 @@ def main():
     # "1 may chay 1 may dung", va tu 2026-09-16 ca farm dung chung mot adb server nen no phai
     # do duoc, khong phai doan.
     recover_count = 0
+    # Thang phuc hoi (2026-09-19) — xem khoi "TREO MAY KHONG BI DUNG".
+    hong_phuc_hoi = 0           # so lan phuc hoi (bac 2) hong LIEN TIEP
+    thoat_loi = False           # bac 3: thoat ma 1 de phia Node chay lai tien trinh moi tu dau
+    # Feed KHONG SANG VIDEO MOI (do that tren may .117, 2026-09-19: mot bai anh giu feed dung yen 8
+    # vong lien, vong nao cung mo lai trang nhac cua CUNG mot sound). Nhan ra bang (ten tac gia,
+    # caption) doc duoc o dau moi vong — giong het vong truoc la feed chua sang video moi.
+    video_truoc = None
+    lan_trung = 0
     live_bo_qua = 0     # so video livestream da bo qua (yeu cau 2026-09-16)
     # Mốc của lần in nhịp tim gần nhất, để in ĐỘ CHÊNH chứ không in tổng luỹ kế. Tổng luỹ kế đọc
     # không ra nhịp: "đã quét 300 video" lần nào cũng đúng, kể cả khi feed vừa kẹt 20 phút.
@@ -1015,6 +1310,7 @@ def main():
                 break
             count += 1
             t_video = time.time()
+            khong_icon = False
             try:
                 if dismiss_popups(d):
                     log("Đã đóng một hộp thoại chen ngang.")
@@ -1035,6 +1331,10 @@ def main():
                         # lien tiep thi no khoi dong lai dich vu va dung may lai tu dau.
                         raise RuntimeError("kẹt ở màn hình TikTok Tako")
                     continue
+                if info is not None:
+                    ky = (info.get("author") or "", info.get("desc") or "")
+                    lan_trung = lan_trung + 1 if (ky != ("", "") and ky == video_truoc) else 0
+                    video_truoc = ky
 
                 # ── BO QUA LIVESTREAM ──
                 # Yeu cau cua chu du an (2026-09-16), va ky thuat cung dong y: man LIVE khong co
@@ -1060,12 +1360,28 @@ def main():
 
                 res, da_roi_feed = check_current_video(d)
                 consecutive_fail = 0
+                khong_icon = res is None and not da_roi_feed
 
                 # ── LAY PHAN QUYET VA THI HANH ──
                 if aid is not None:
                     ans = bridge.take(aid)
                     _thi_hanh(d, bridge, aid, ans, info, res, da_roi_feed)
             except Exception as e:
+                # ── BAC 4: MAT KET NOI ADB — cho may quay lai, khong dem, khong in loi moi vong ──
+                # Hoi thang ADB server chu khong chi doc cau loi: adbutils / uiautomator2 bao cung
+                # mot chuyen bang nhieu cau khac nhau.
+                if la_loi_mat_ket_noi(e) or not _con_ket_noi(d.serial):
+                    count -= 1
+                    if not cho_noi_lai(d.serial, han_chu_ky, lambda: bridge.parent_gone):
+                        continue            # het ca / app da dong: dau vong se thoat dung cach
+                    reset_service(d)
+                    try:
+                        setup_device(d)
+                    except Exception as e2:
+                        log(f"⚠ Mở lại TikTok sau khi nối lại lỗi ({str(e2)[:80]}) — vòng sau thử tiếp.")
+                    consecutive_fail = 0
+                    CANH_GAC["chuoi"] = 0
+                    continue
                 consecutive_fail += 1
                 log(f"⚠ Lỗi ở video #{count} ({str(e)[:100]}) — lỗi liên tiếp {consecutive_fail}.")
                 res = None
@@ -1078,10 +1394,35 @@ def main():
                     reset_service(d)
                     try:
                         setup_device(d)
+                        hong_phuc_hoi = 0
                     except Exception as e2:
-                        log(f"⛔ Phục hồi lỗi ({str(e2)[:80]}) — nếu lặp lại thì máy này đang có vấn đề thật.")
+                        hong_phuc_hoi += 1
+                        log(f"⛔ Phục hồi lỗi ({str(e2)[:80]}) — hỏng {hong_phuc_hoi}/3 lần liền.")
+                        # ── BAC 3: phuc hoi trong tien trinh nay khong con tac dung ──
+                        # Thoat ma 1 de phia Node chay lai MOT TIEN TRINH MOI (ket noi moi, dich vu
+                        # moi, TikTok moi) sau vai phut. Quay tit o day thi chi in loi mai mai.
+                        if hong_phuc_hoi >= 3:
+                            log("⛔ Phục hồi hỏng 3 lần liền — thoát để app tự chạy lại máy này từ đầu "
+                                "sau vài phút.")
+                            thoat_loi = True
+                            break
                     consecutive_fail = 0
+                    CANH_GAC["chuoi"] = 0
                     continue
+                # ── BAC 1 (+ BAC 2): loi le — DUA MAY VE FEED truoc khi di tiep ──
+                # Loi roi vao giua mot video la may dang dung o trang nhac / bang Share / trang ca
+                # nhan. Khong ve feed thi moi vong sau deu "khong thay icon sound" — dung 3 tieng
+                # trong log cua chu du an.
+                try:
+                    if la_loi_dut_dich_vu(e):
+                        log("⚠ Dịch vụ điều khiển trên máy vừa đứt kết nối — khởi động lại nó ngay.")
+                        reset_service(d)
+                    ve_feed(d, f"sau lỗi ở video #{count}")
+                except Exception:
+                    pass        # vong sau gap lai loi that va di dung nhanh cua no
+
+            # ── CANH GAC: N video LIEN khong thay icon sound (xem `canh_gac`) ──
+            canh_gac(d, khong_icon)
 
             if res:
                 link, posts, name = res
@@ -1119,10 +1460,24 @@ def main():
                 xu_ly_tako(d)
                 time.sleep(max(0.0, random.uniform(DWELL_MIN, DWELL_MAX) - (time.time() - t_xem)))
                 BUOC["v"] = "vuốt sang video kế"
-                PA.vuot_video_ke(d)
+                if lan_trung >= 3:
+                    # Doi cach vuot roi van dung yen: khoi dong lai TikTok de feed nap lai.
+                    log(f"⚠ Feed không sang được video mới ({lan_trung + 1} vòng liền cùng một video) — "
+                        "khởi động lại TikTok.")
+                    d.app_start(ACTIVE_PKG or PKGS[0], stop=True)
+                    time.sleep(6)
+                    dismiss_popups(d)
+                    PHUC_HOI["mo_lai_tiktok"] += 1
+                    lan_trung, video_truoc = 0, None
+                else:
+                    # Vong truoc da vuot ma van cung video: doi sang cach keo tung diem.
+                    PA.vuot_video_ke(d, manh=lan_trung >= 1)
                 time.sleep(random.uniform(0.8, 1.4))
             except Exception as e:
-                log(f"⚠ Vuốt sang video kế lỗi ở #{count} ({str(e)[:100]}) — bỏ qua, thử tiếp.")
+                # Mat ket noi thi vong sau vao thang che do cho noi lai va noi mot lan o do — in them
+                # o day chi la mot dong loi nua cho cung mot chuyen (log may .121: 2 dong moi 4 giay).
+                if not la_loi_mat_ket_noi(e):
+                    log(f"⚠ Vuốt sang video kế lỗi ở #{count} ({str(e)[:100]}) — bỏ qua, thử tiếp.")
 
             # ── DAU HIEU NGHEN, PHAI THAY DUOC NGAY ──
             # Mot vong binh thuong ~10-20 giay (dwell 3-6s + mo trang nhac + back). Vuot 90 giay
@@ -1157,7 +1512,13 @@ def main():
         _p.append(f"phục hồi {recover_count} lần")
     if TRUOT["tako"]:
         _p.append(f"{TRUOT['tako']} lần lọt vào TikTok Tako (đã lùi ra)")
-    log("✅ Xong ca: " + ", ".join(_p) + ".")
+    if PHUC_HOI["ve_feed"]:
+        _p.append(f"đưa máy về feed {PHUC_HOI['ve_feed']} lần")
+    if PHUC_HOI["mo_lai_tiktok"]:
+        _p.append(f"khởi động lại TikTok {PHUC_HOI['mo_lai_tiktok']} lần")
+    if PHUC_HOI["mat_ket_noi"]:
+        _p.append(f"mất kết nối {PHUC_HOI['mat_ket_noi']} lần (tổng {_thoi_luong(PHUC_HOI['giay_mat_ket_noi'])})")
+    log(("⛔ Dừng ca vì lỗi: " if thoat_loi else "✅ Xong ca: ") + ", ".join(_p) + ".")
 
     # Hai số dưới đây là thước đo của câu hỏi "nhịp quét đã quá tay chưa": đó là sound CÓ THẬT mà
     # máy không kịp đọc. Đeo bám theo tổng số video — vài phần trăm thì bình thường, hai chữ số
@@ -1184,6 +1545,10 @@ def main():
         log("⚠ Bỏ lượt tương tác: " + ", ".join(_bo) + ".")
 
     log(f"Kết quả ghi vào {OUTPUT_FILE}")
+    if thoat_loi:
+        # BAC 3: ma thoat khac 0 la tin hieu cho phia Node "chay lai may nay sau vai phut".
+        # KHONG bao 'done' — 'done' la het ca binh thuong.
+        sys.exit(1)
     emit_event("status", state="done", checked=count, qualified=qualified)
 
 

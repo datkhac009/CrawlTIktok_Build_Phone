@@ -219,7 +219,10 @@ function onCrawlStatus(payload) {
     else if (payload.state === 'queued') { st.status = 'queue'; st.queuePos = payload.pos || 0; }
     else if (payload.state === 'resting') {
       st.status = 'rest'; st.restUntil = payload.until || 0; st.restNext = payload.next || '';
+      st.restLoi = !!payload.loi;     // nghỉ vì LỖI, sẽ tự chạy lại (main.js: henChayLaiSauLoi)
     }
+    // Python đang chờ điện thoại nối lại ADB (scan_feed_sounds.py: cho_noi_lai).
+    else if (payload.state === 'offline') st.status = 'offline';
     // Hết lượt thì bỏ thông tin pha: lượt sau có thể là For You (không có pha nào), và nhãn
     // "Quét 2g13/5g" cũ mà còn treo trên dòng là nói sai chỗ máy đang đứng.
     else if (payload.state === 'stopped') { st.status = 'stop'; st.phase = null; }
@@ -275,7 +278,7 @@ function buildDeviceRow(d) {
 // có một lượt chạy dính líu, nên cả ba phải hiện nút Dừng. Bản cũ vẽ hai trạng thái sau thành
 // "Đã dừng": người dùng bấm Chạy lần nữa (sinh lượt thứ hai tranh khe), hoặc bấm Xoá tưởng an
 // toàn (sinh "máy ma" chạy tiếp dưới mã `d_…` sau giờ nghỉ).
-const TRANG_THAI_BAN = new Set(['run', 'queue', 'rest']);
+const TRANG_THAI_BAN = new Set(['run', 'queue', 'rest', 'offline']);
 function dangBan(id) {
   const st = deviceState[id];
   return !!st && TRANG_THAI_BAN.has(st.status);
@@ -296,8 +299,10 @@ function nhanTrangThai(st) {
     const luc = st.restUntil
       ? new Date(st.restUntil).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
       : '…';
+    if (st.restLoi) return `Lỗi → tự chạy lại ${luc}`;
     return `Nghỉ → ${luc}${st.restNext ? ` → ${st.restNext}` : ''}`;
   }
+  if (st.status === 'offline') return 'Mất kết nối — đang chờ';
   // Quét ⇄ Xem: nói rõ máy đang ở pha nào — "Đang chạy" không cho biết máy đang thu sound hay
   // đang xem để nuôi tài khoản.
   if (st.status === 'run' && st.phase) {

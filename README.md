@@ -69,7 +69,7 @@ Theo thứ tự, dừng ở cái đầu tiên thấy được:
 ```bash
 npm install
 npm start           # hoặc start.bat
-npm test            # ~520 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
+npm test            # ~580 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
 ```
 
 Trong app, bấm **🔌 Kiểm tra** ở dòng một máy. Nó kiểm từng mục và **mục nào đỏ thì in ra đúng
@@ -124,6 +124,23 @@ interested" · **follow / thả tim / ghé thăm trang cá nhân** kèm hạn m�
 TikTok Tako** (trợ lý chat AI): chỉ bấm Back, log ghi lọt vào ngay sau bước nào.
 
 **Chưa có**: Quét Mix (= Quét ⇄ Xem + ghé thăm kênh, như bản PC) · tự cập nhật.
+
+### Treo máy không bị đứng (2026-09-19)
+
+Mọi kiểu hỏng đều có đường quay lại, mỗi lần phục hồi in **một** dòng log:
+
+| Hỏng kiểu gì | App làm gì |
+|---|---|
+| Lỗi giữa chừng một video (máy kẹt ở trang nhạc / bảng Share) | `ve_feed`: Back từng nhịp tới khi về feed; không được thì mở lại / khởi động lại TikTok |
+| 8 video liền không thấy icon sound | Canh gác gọi `ve_feed`; vẫn ở feed mà 24 video không có icon thì khởi động lại TikTok (tối đa 1 lần/30 phút) |
+| Feed không sang video mới | Vòng sau kéo từng điểm; 4 vòng liền cùng một video thì khởi động lại TikTok |
+| Dịch vụ điều khiển trên máy đứt (`Remote end closed connection`) | Khởi động lại dịch vụ ngay, rồi `ve_feed` |
+| Mất kết nối ADB (`device offline` / `not found`) | Dừng quét, tự `adb connect` (15 → 60 giây), nối lại thì mở lại TikTok và quét tiếp; bảng Thiết bị hiện "Mất kết nối" |
+| Phục hồi tại chỗ hỏng 3 lần liền | Python thoát mã 1 → app tự chạy lại máy đó sau 1 → 2 → 5 → 10 → 15 phút (không bỏ cuộc; Dừng là huỷ) |
+
+Nhận biết feed (`phone_actions.o_feed`): loại theo activity (trang nhạc, trình phát) rồi mới xét
+tab "For You" và `_o_tren_feed`. Đo trên 41 bản chụp thật: tab "For You" có ở 14/14 bản chụp
+feed, 0/27 bản ngoài feed.
 
 ### Google Sheet (2026-09-18, v0.1.9)
 

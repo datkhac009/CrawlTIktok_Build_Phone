@@ -88,6 +88,46 @@ function huyNghi(deviceId) {
   _cycleDone.delete(deviceId);
 }
 
+// ── TỰ CHẠY LẠI KHI TIẾN TRÌNH PYTHON CHẾT (2026-09-19) ──
+//
+// Chủ dự án muốn TREO MÁY: không có gì được làm máy dừng hẳn. Bản cũ thì Python thoát với mã lỗi
+// là máy nằm "Lỗi" tới khi có người bấm Chạy — kể cả khi lỗi chỉ thoáng qua (mất mạng một lúc lúc
+// khởi động, dịch vụ trên máy đứng). Python giờ tự thoát mã 1 khi phục hồi tại chỗ hỏng 3 lần liền
+// (xem scan_feed_sounds.py: "TREO MAY KHONG BI DUNG") — đó là tín hiệu để ở đây chạy lại một tiến
+// trình MỚI từ đầu.
+//
+// Giãn dần để lỗi thật (máy hỏng hẳn) không bị gõ cửa liên tục, nhưng KHÔNG BỎ CUỘC: sau bậc cuối
+// cứ 15 phút thử một lần, tới khi người dùng bấm Dừng. Lượt nào chạy được ≥ 10 phút thì coi như máy
+// đã khoẻ lại: lần lỗi sau đếm lại từ bậc đầu.
+const _batDau = new Map();          // deviceId -> lúc lượt đang chạy khởi động (ms)
+const _loiLien = new Map();         // deviceId -> số lần lỗi liên tiếp của các lượt ngắn
+const GIAN_LOI_PHUT = [1, 2, 5, 10, 15];
+const LUOT_KHOE_MS = 10 * 60000;
+
+function henChayLaiSauLoi(deviceId, lyDo) {
+  // Người dùng đã bấm Dừng/Xoá (không còn tham số), hoặc đã hẹn rồi ('error' có thể tới hai lần).
+  if (!_lastParams.has(deviceId) || _restTimers.has(deviceId)) return;
+  const chayDuoc = Date.now() - (_batDau.get(deviceId) || 0);
+  const n = chayDuoc >= LUOT_KHOE_MS ? 1 : (_loiLien.get(deviceId) || 0) + 1;
+  _loiLien.set(deviceId, n);
+  const ms = GIAN_LOI_PHUT[Math.min(n, GIAN_LOI_PHUT.length) - 1] * 60000;
+  const luc = new Date(Date.now() + ms)
+    .toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  sendToRenderer('crawl-status', {
+    deviceId, kind: 'status', state: 'resting', until: Date.now() + ms, next: '', loi: true,
+    msg: `Lỗi (${lyDo || 'không rõ'}) — tự chạy lại lúc ${luc} (lần ${n}).`,
+  });
+  const t = setTimeout(() => {
+    _restTimers.delete(deviceId);
+    if (!_lastParams.has(deviceId)) return;
+    chayMot(_lastParams.get(deviceId)).then((r) => {
+      // Chưa khởi động được (vd điện thoại còn đang bị lượt khác giữ) thì hẹn tiếp, không bỏ máy.
+      if (r && !r.ok) henChayLaiSauLoi(deviceId, r.msg);
+    }, () => henChayLaiSauLoi(deviceId, 'không khởi động được'));
+  }, ms);
+  _restTimers.set(deviceId, t);
+}
+
 // Dừng HẲN một máy, ở BẤT KỲ trạng thái nào: đang chạy, đang xếp hàng, hay đang nghỉ giữa ca.
 // Nút Dừng và nút Xoá cùng đi qua đây — hai đường dọn dẹp viết riêng là có ngày một đường quên
 // một bước (đúng chuyện đã xảy ra: nút Xoá quên huỷ lịch chạy lại).
@@ -96,6 +136,7 @@ function dungHan(deviceId) {
   huyNghi(deviceId);
   _lastParams.delete(deviceId);
   _pha.delete(deviceId);
+  _loiLien.delete(deviceId);
   if (devslot.cancel(deviceId)) return 'queue';
   devslot.release(deviceId);
   return runner.stopDevice(deviceId).ok ? 'run' : '';
@@ -454,6 +495,7 @@ async function chayMot(params) {
       });
     }
 
+    _batDau.set(id, Date.now());
     runner.startDevice(
       chay,
       (deviceId, data) => nhanKetQua(deviceId, data),
@@ -472,7 +514,10 @@ async function chayMot(params) {
           devslot.release(deviceId);
           sheets.flush();
           onDevicesAllStopped();
-          if (status.state === 'error') _cycleDone.delete(deviceId);
+          if (status.state === 'error') {
+            _cycleDone.delete(deviceId);
+            henChayLaiSauLoi(deviceId, status.msg);
+          }
 
           // ── Hết ca / hết pha thì nghỉ rồi tự chạy lại ──
           // ⚠ CHỈ hẹn khi tiến trình ĐÃ ĐÓNG ('stopped' do runner báo lúc tiến trình thoát).
@@ -540,6 +585,7 @@ ipcMain.handle('device-start', async (_e, params) => {
   // Bấm Chạy tay luôn bắt đầu từ pha ĐẦU (Quét), giống bản PC. Mốc xem tiếp thì GIỮ — nó nằm
   // trên đĩa, riêng cho từng máy.
   _pha.set(params.deviceId, 0);
+  _loiLien.delete(params.deviceId);     // bấm tay là bắt đầu lại từ đầu, kể cả bậc giãn khi lỗi
   return chayMot(params);
 });
 
