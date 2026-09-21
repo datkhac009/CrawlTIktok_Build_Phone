@@ -44,6 +44,21 @@ const _LABELS_SEEN = [
   '오리지널 사운드',        // ko
   'originalton',         // de
   'الصوت الأصلي',          // ar
+  // THÊM 2026-09-21 — đo trên kho link THẬT của farm điện thoại (`known_links.txt`, 338.517 link),
+  // chủ dự án thấy `…/music/оригінальний-аудіозапис-7609…` nằm nguyên trên bảng. Slug là TRỌN nhãn
+  // hoặc "<nhãn>-–-<tên user>", lặp lại ở nhiều sound khác nhau (số trong ngoặc = số link thấy).
+  // Vài nhãn ĐOÁN ở nhóm B hoá ra sai chữ TikTok thật dùng ('suono originale', 'oryginalny dźwięk',
+  // 'originální zvuk', 'оригінальний звук') — cứ để đó vì vô hại; chữ thật là mấy dòng dưới.
+  'audio originale',          // it (12)
+  'dźwięk oryginalny',        // pl (11)
+  'оригінальний аудіозапис',  // uk (7)
+  'původní zvuk',             // cs (5)
+  'pôvodný zvuk',             // sk (2)
+  'orijinal səs',             // az (2)
+  '原創音樂',                  // zh-Hant (1)
+  'សំឡេង​ដើម',            // km (1) — TikTok chèn ký tự RỖNG U+200B giữa hai chữ
+  'សំឡេងដើម',                 // km, dạng không có ký tự rỗng
+  'アップロード楽曲',            // ja (1) — "bản nhạc tải lên"
 ];
 
 // Nhóm B — thêm theo hiểu biết về bản địa hóa của TikTok, CHƯA đối chiếu được với dữ liệu

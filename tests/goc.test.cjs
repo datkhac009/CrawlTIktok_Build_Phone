@@ -28,6 +28,9 @@ const { findPython } = require(path.join(R, 'src', 'pythonpath.cjs'));
 
 const M = 'https://www.tiktok.com/music/';
 const ID = '-7633696888679598855';
+// Đúng link chủ dự án chụp màn hình 2026-09-21 (dòng 126 "savage edit", máy V2036).
+const LINK_UK = M + '%D0%BE%D1%80%D0%B8%D0%B3%D1%96%D0%BD%D0%B0%D0%BB%D1%8C%D0%BD%D0%B8%D0%B9-'
+  + '%D0%B0%D1%83%D0%B4%D1%96%D0%BE%D0%B7%D0%B0%D0%BF%D0%B8%D1%81-7609757334616804097';
 // [mô tả, link thật (có thể rỗng), tên nguyên văn trên trang nhạc, KỲ VỌNG]
 const MAU = [
   // ── 8 sound đo thật trên farm (probe_screen.py --origin, TikTok 46.9.3) ──
@@ -52,12 +55,30 @@ const MAU = [
   ['tiếng Đức, chỉ có tên', '', 'Originalton - Vanessa', true],
   ['link có ?query và CHỮ HOA', M + 'Original-Sound-ABC' + ID + '?lang=vi&x=1', 'x', true],
   ['link không phải trang nhạc', 'https://www.tiktok.com/@abc/video/7633696888679598855', 'Some Song', false],
+  // ── Nhãn đo trên kho link thật của farm (2026-09-21) — chủ dự án thấy link tiếng Ukraina dài
+  // nguyên trên bảng. Link ĐÚNG như TikTok trả về: slug %-encode. ──
+  ['farm: tiếng Ukraina (đúng link trong ảnh chụp)', LINK_UK, 'savage edit', true],
+  ['farm: tiếng Ý', M + 'audio-originale' + ID, 'x', true],
+  ['farm: tiếng Ba Lan', M + encodeURIComponent('dźwięk-oryginalny') + ID, 'x', true],
+  ['farm: tiếng Séc', M + encodeURIComponent('původní-zvuk') + ID, 'x', true],
+  ['farm: tiếng Slovak', M + encodeURIComponent('pôvodný-zvuk-–') + ID, 'x', true],
+  ['farm: tiếng Azerbaijan', M + encodeURIComponent('orijinal-səs-–-VELUX') + ID, 'x', true],
+  ['farm: tiếng Trung phồn thể', M + encodeURIComponent('原創音樂') + ID, 'x', true],
+  ['farm: tiếng Khmer (có ký tự rỗng U+200B)', M + encodeURIComponent('សំឡេង​ដើម') + ID, 'x', true],
+  ['farm: tiếng Nhật "bản nhạc tải lên"', M + encodeURIComponent('アップロード楽曲') + ID, 'x', true],
+  ['tên tiếng Ukraina, không có link', '', 'оригінальний аудіозапис - vittoretti', true],
 ];
 
 // ── 1. Kỳ vọng của bản PC (nguồn sự thật) ──
 {
   const sai = MAU.filter(([, url, ten, mong]) => linkkey.isOriginalSound(url, ten) !== mong).map(([m]) => m);
   check('1. Bản PC (linkkey) xếp đúng mọi mẫu', sai.length === 0, sai.join(' | '));
+  // Chủ dự án (2026-08-21, nhắc lại 2026-09-21): link sound gốc PHẢI là original-sound + id.
+  check('1b. Link tiếng Ukraina trong ảnh chụp → rút gọn đúng về original-sound + id',
+    linkkey.canonicalSoundUrl(LINK_UK) === M + 'original-sound-7609757334616804097', linkkey.canonicalSoundUrl(LINK_UK));
+  const khongGon = MAU.filter(([m, url, , mong]) => mong && url && m.startsWith('farm:')
+    && !/\/music\/original-sound-\d{8,}$/.test(linkkey.canonicalSoundUrl(url))).map(([m]) => m);
+  check('1c. Mọi link sound gốc đo trên farm đều ra dạng original-sound + id', khongGon.length === 0, khongGon.join(' | '));
 }
 
 // ── 2. Phía Python phải cho ĐÚNG cùng kết quả ──
