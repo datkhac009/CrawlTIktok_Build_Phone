@@ -911,6 +911,21 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     /kind === 'devices-changed'\) \{ napLaiDanhSachMay\(/.test(rj) && /async function napLaiDanhSachMay\(doi\)/.test(rj));
 }
 
+// ── 26. Nút "☁ Đẩy lên Sheet" (2026-09-21) — hành vi phía main do mainflow mục Q chạy thật ──
+{
+  const rj = doc('renderer/renderer.js');
+  const m = rj.match(/async function pushToSheet\(\) \{[\s\S]*?\n\}/);
+  const f = m ? m[0] : '';
+  check('26a. Khoá nút trong lúc đẩy (bấm hai lần liền thì hai lượt cùng thấy "chưa có" → ghi trùng)',
+    /if \(btn\.disabled\) return;\s*\n\s*btn\.disabled = true;/.test(f) && /finally \{\s*\n\s*btn\.disabled = false;/.test(f)
+    && f.indexOf('btn.disabled = true') < f.indexOf('sheetsPushManual('));
+  check('26b. Đẩy hỏng giữa chừng → báo lỗi ra màn hình, không im lặng',
+    /catch \(e\) \{\s*\n\s*toast\(`Đẩy lỗi:/.test(f));
+  check('26c. Gửi NGUYÊN bảng, đủ 5 cột như đường tự đẩy (A–E: tên, link, số post, thiết bị, 1)',
+    /crawlResults\.map\(\(r\) => \[r\.name, r\.url, r\.posts, r\.deviceName, 1\]\)/.test(f)
+    && /sheets\.enqueue\(\[data\.name \|\| '', data\.url \|\| '', data\.posts \?\? '', tenThietBi\(deviceId\), 1\]\)/.test(doc('main.js')));
+}
+
 // Hàm làm tròn: chạy thật, không soi chữ.
 {
   const { soNguyen } = require('../src/runner.cjs');

@@ -741,10 +741,16 @@ ipcMain.handle('sheets-push-manual', async (_e, rows) => {
   const { cfg, loiSa } = docCauHinhSheet();
   if (loiSa) return { ok: false, msg: loiSa };
   if (!cfg.spreadsheetId || !cfg.sa) return { ok: false, msg: 'Chưa cấu hình Google Sheet (ID/Service Account).' };
-  await sheets.flushAll().catch(() => {});
-  const r = await sheets.pushDedup({ spreadsheetId: cfg.spreadsheetId, tab: cfg.tab, sa: cfg.sa }, rows);
-  if (r.ok) sheets.dropFromBuffer((rows || []).map((x) => x && x[1]));
-  return r;
+  try {
+    await sheets.flushAll().catch(() => {});
+    const r = await sheets.pushDedup({ spreadsheetId: cfg.spreadsheetId, tab: cfg.tab, sa: cfg.sa }, rows);
+    if (r.ok) sheets.dropFromBuffer((rows || []).map((x) => x && x[1]));
+    return r;
+  } catch (e) {
+    // Mạng rớt / Sheet từ chối (403) giữa chừng: TRẢ lỗi về giao diện (y bản PC). Bản cũ để lời hứa
+    // bị từ chối → giao diện không báo gì, người dùng tưởng đã đẩy xong.
+    return { ok: false, msg: e.message };
+  }
 });
 
 // ── KHO LINK CỤC BỘ (clone bản PC, main.js 654-702) ──

@@ -113,7 +113,8 @@ let sheetBat = false;
 let xongNap = null;                    // gọi để lần đọc Sheet đang treo trả kết quả
 const pushed = [];
 const pendingDay = [];                 // các dòng main.js cất vào tab Pending
-const nhanDuoc = { configure: [], readLinks: [], testConnection: [], updateKnownLinks: [] };   // Sheet giả nhận được gì
+const nhanDuoc = { configure: [], readLinks: [], testConnection: [], updateKnownLinks: [], pushDedup: [], drop: [] };   // Sheet giả nhận được gì
+let dayHong = null;                    // đặt một Error thì nút "Đẩy lên Sheet" hỏng giữa chừng (mạng / 403)
 let tabPendingGia = '';                // tên tab Pending; đọc tab này trả ngay `linkPendingGia`
 let linkPendingGia = [];
 const fakeSheets = {
@@ -132,8 +133,12 @@ const fakeSheets = {
   flush() {},
   flushAll: async () => {},
   testConnection: async (id, sa) => { nhanDuoc.testConnection.push({ id, sa }); return { ok: true }; },
-  pushDedup: async () => ({ ok: true }),
-  dropFromBuffer() {},
+  pushDedup: async (cfg, rows) => {
+    nhanDuoc.pushDedup.push({ cfg, rows });
+    if (dayHong) throw dayHong;
+    return { ok: true, pushed: rows.length, skipped: 0, total: rows.length };
+  },
+  dropFromBuffer(links) { nhanDuoc.drop.push(...(links || [])); },
 };
 
 const origLoad = Module._load;
@@ -685,6 +690,28 @@ const start = (id, serial, cfg = {}) => {
     if (lGm) ketThuc(lGm, false);
     await handlers.get('device-stop')({}, 'dGm');
     tuaNhanh = false;
+  }
+
+  // ── Q. NÚT "☁ ĐẨY LÊN SHEET" (2026-09-21, chủ dự án hỏi có đúng quy trình không) ──
+  // Quy trình bản PC: gửi CẢ bảng → sheets.pushDedup đọc lại cột Link và chỉ ghi dòng chưa có.
+  {
+    const saQ = JSON.stringify({ type: 'service_account', client_email: 'q@gia.iam.gserviceaccount.com',
+      private_key: '-----BEGIN PRIVATE KEY-----\\nQ\\n-----END PRIVATE KEY-----\\n' });
+    FakeStore.last.set('sheets_config', { enabled: true, spreadsheetId: 'x', tab: 'Data', sa: saQ });
+    const bang = [['Sound A', 'https://www.tiktok.com/music/original-sound-7111111111111111111', 5000, 'GM1911', 1],
+      ['Sound B', 'https://www.tiktok.com/music/original-sound-7222222222222222222', 9000, 'V2031', 1]];
+    dayHong = null;
+    nhanDuoc.pushDedup.length = 0; nhanDuoc.drop.length = 0;
+    const q1 = await handlers.get('sheets-push-manual')({}, bang);
+    const lan = nhanDuoc.pushDedup[0];
+    check('Q1. Gửi NGUYÊN bảng cho pushDedup (tự lọc trùng) bằng Service Account đối tượng, đúng tab chính',
+      q1.ok === true && q1.pushed === 2 && !!lan && lan.rows.length === 2 && lan.cfg.tab === 'Data'
+      && typeof lan.cfg.sa === 'object' && nhanDuoc.drop.length === 2, JSON.stringify(q1));
+    dayHong = new Error('đọc Sheet HTTP 403: The caller does not have permission');
+    const q2 = await toiDa(Promise.resolve(handlers.get('sheets-push-manual')({}, bang)).catch((e) => ({ tuChoi: e.message })), 2000);
+    check('Q2. Mạng rớt / Sheet từ chối giữa chừng → TRẢ lỗi rõ ràng cho giao diện, không để lời hứa bị từ chối',
+      q2.ok === false && /HTTP 403/.test(q2.msg || '') && !q2.tuChoi, JSON.stringify(q2));
+    dayHong = null;
   }
 
   _xong = true;

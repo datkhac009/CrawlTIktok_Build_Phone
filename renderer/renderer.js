@@ -954,13 +954,30 @@ async function saveSheets() {
 }
 
 // ---- Đẩy dữ liệu lên Sheet (thủ công, lọc trùng) ----
+// Đẩy bù CẢ bảng "Dữ liệu thu thập" — phía main đọc lại cột Link trên Sheet và CHỈ ghi dòng chưa có
+// (sheets.pushDedup, dùng chung bản PC), nên bấm nhiều lần không tạo trùng.
 async function pushToSheet() {
   if (!crawlResults.length) { toast('Chưa có dữ liệu để đẩy', false); return; }
-  const rows = crawlResults.map((r) => [r.name, r.url, r.posts, r.deviceName, 1]);
-  toast('Đang đẩy lên Sheet...', true);
-  const r = await window.api.sheetsPushManual(rows);
-  if (!r.ok) { toast(`Đẩy lỗi: ${r.msg || ''}`, false); return; }
-  toast(`Đã đẩy ${r.pushed} dòng mới (bỏ ${r.skipped} trùng)`, true);
+  // KHOÁ nút trong lúc đẩy (y bản PC): bấm hai lần liền thì hai lượt cùng đọc Sheet TRƯỚC khi lượt
+  // nào kịp ghi → cả hai cùng thấy "chưa có" → mỗi dòng mới bị ghi HAI lần.
+  const btn = document.getElementById('pushSheetBtn');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const chuCu = btn.textContent;
+  btn.textContent = '⏳ Đang đẩy...';
+  try {
+    const rows = crawlResults.map((r) => [r.name, r.url, r.posts, r.deviceName, 1]);
+    const r = await window.api.sheetsPushManual(rows);
+    if (!r.ok) { toast(`Đẩy lỗi: ${r.msg || ''}`, false); return; }
+    toast(r.pushed > 0
+      ? `Đã đẩy ${r.pushed} dòng mới lên Sheet (bỏ qua ${r.skipped} dòng đã có).`
+      : `Không có gì mới — cả ${r.skipped} dòng đều đã có trên Sheet.`, true);
+  } catch (e) {
+    toast(`Đẩy lỗi: ${e && e.message || e}`, false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = chuCu;
+  }
 }
 
 // ---- Wiring sự kiện ----
