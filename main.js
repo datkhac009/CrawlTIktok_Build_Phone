@@ -11,6 +11,7 @@ const runner = require('./src/runner.cjs');
 const sheets = require('./src/sheets.cjs');
 const devslot = require('./src/devslot.cjs');
 const linkstore = require('./src/linkstore.cjs');
+const chodaysheet = require('./src/chodaysheet.cjs');
 const { normalizeKey } = require('./src/linkkey.cjs');
 const phaseplan = require('./src/phaseplan.cjs');
 const { getDeviceDir } = require('./src/paths.cjs');
@@ -226,7 +227,11 @@ app.whenReady().then(() => {
   }
   // Link đẩy lên Sheet thành công → ghi LUÔN vào kho cục bộ, không đợi vòng đồng bộ sau đọc
   // ngược về: app tắt trước vòng đó là mất (clone bản PC, main.js:435).
-  sheets.setOnPushed((urls) => { try { linkstore.addUrls(urls); } catch (_) {} });
+  // Và gỡ khỏi hàng chờ đẩy Sheet trên đĩa (src/chodaysheet.cjs).
+  sheets.setOnPushed((urls) => {
+    try { linkstore.addUrls(urls); } catch (_) {}
+    try { if (chodaysheet.bo(urls)) baoHangCho(); } catch (_) {}
+  });
   createWindow();
 });
 
@@ -311,6 +316,9 @@ async function seedKnownLinks(cfg) {
     const links = await sheets.readLinks(cfg.spreadsheetId, cfg.tab || 'Data', cfg.sa);
     const them = napVaoBoLoc(links);
     if (links.nextRow) _sheetNextRow = links.nextRow;
+    // Sheet đọc được: dòng nào của hàng chờ đã có trên Sheet thì gỡ, phần còn lại đẩy bù (không chờ).
+    try { if (chodaysheet.bo(links)) baoHangCho(); } catch (_) {}
+    dayBuHangCho(cfg);
     const p = await napTabPending(cfg);
     sendToRenderer('crawl-status', {
       deviceId: null, kind: 'sheet-info',
@@ -355,6 +363,7 @@ function startReseedTimer(cfg) {
       const links = await sheets.readLinks(cfg.spreadsheetId, cfg.tab || 'Data', cfg.sa, { fromRow: from });
       const them = napVaoBoLoc(links);
       if (links.nextRow) _sheetNextRow = links.nextRow;
+      dayBuHangCho(cfg);   // Sheet chạy lại sau khi hỏng → đẩy bù phần còn chờ (không chờ)
       await napTabPending(cfg);
       if (_reseedLoi) {
         _reseedLoi = '';
@@ -433,9 +442,64 @@ function quaCongLocTrung(deviceId, data) {
   }
 
   sendToRenderer('crawl-data', { deviceId, ...data });
+  // Cột: A=Tên sound, B=Link, C=Số post, D=Thiết bị, E=Tình trạng(=1)
+  const dong = [data.name || '', data.url || '', data.posts ?? '', tenThietBi(deviceId), 1];
+  // Vào HÀNG CHỜ TRÊN ĐĨA trước, kể cả khi Sheet đang tắt / đang lỗi — lên Sheet thành công mới gỡ
+  // ra (`setOnPushed`). Tắt app lúc Sheet còn hỏng thì lần sau tự đẩy bù (`dayBuHangCho`).
+  // Chưa từng điền Spreadsheet ID thì thôi: không có Sheet để chờ, hàng chờ chỉ phình mãi.
+  const coSheet = !!String(docCauHinhSheet().cfg.spreadsheetId || '').trim();
+  if (coSheet) {
+    try { if (chodaysheet.them(dong)) baoHangCho(); } catch (e) { console.error('[cho-day] không ghi được:', e.message); }
+  }
   if (sheets.isEnabled()) {
-    // Cột: A=Tên sound, B=Link, C=Số post, D=Thiết bị, E=Tình trạng(=1)
-    sheets.enqueue([data.name || '', data.url || '', data.posts ?? '', tenThietBi(deviceId), 1]);
+    if (khoa) _daXepHang.add(khoa);
+    sheets.enqueue(dong);
+  }
+}
+
+// ── HÀNG CHỜ ĐẨY SHEET (2026-09-21) — xem src/chodaysheet.cjs ──
+// Link đã xếp vào buffer thử lại của sheets.cjs TRONG LẦN MỞ APP NÀY. Những dòng đó buffer tự đẩy
+// khi Sheet chạy lại; đẩy bù chỉ lo phần còn lại (của lần mở app trước, hoặc quét lúc Sheet tắt) —
+// đẩy một dòng bằng HAI đường cùng lúc là có ngày ghi trùng.
+const _daXepHang = new Set();
+const DAY_BU_NGHI_MS = 30 * 60 * 1000;   // đẩy bù hỏng thì nghỉ: mỗi lần thử là một lượt đọc TRỌN cột Link
+let _dangDayBu = false;
+let _dayBuHongLuc = 0;
+
+function baoHangCho() {
+  let n = 0;
+  try { n = chodaysheet.dem(); } catch (_) {}
+  sendToRenderer('crawl-status', { deviceId: null, kind: 'cho-day', n });
+}
+
+// Gọi sau mỗi lần ĐỌC Sheet thành công (nạp đầu phiên, đồng bộ định kỳ) — tức lúc Sheet đã chạy.
+// Đẩy qua `pushDedup`: đọc lại cột Link rồi chỉ ghi dòng chưa có, nên dòng lỡ đã lên Sheet (app tắt
+// ngay sau khi ghi, chưa kịp gỡ khỏi hàng chờ) cũng không bị ghi lần hai.
+async function dayBuHangCho(cfg) {
+  if (_dangDayBu || Date.now() - _dayBuHongLuc < DAY_BU_NGHI_MS) return null;
+  let sot = [];
+  try { sot = chodaysheet.tatCa().map((x) => x.dong).filter((d) => !_daXepHang.has(normalizeKey(d[1]))); } catch (_) {}
+  if (!sot.length || !cfg || !cfg.spreadsheetId || !cfg.sa) return null;
+  _dangDayBu = true;
+  try {
+    const r = await sheets.pushDedup({ spreadsheetId: cfg.spreadsheetId, tab: cfg.tab, sa: cfg.sa }, sot);
+    if (!r.ok) throw new Error(r.msg || 'không rõ');
+    try { chodaysheet.bo(sot.map((d) => d[1])); } catch (_) {}
+    baoHangCho();
+    sendToRenderer('crawl-status', {
+      deviceId: null, kind: 'sheet-info',
+      msg: `Đã đẩy bù ${r.pushed} sound còn chờ từ trước lên Sheet` + (r.skipped ? ` (bỏ ${r.skipped} đã có sẵn).` : '.'),
+    });
+    return r;
+  } catch (e) {
+    _dayBuHongLuc = Date.now();
+    sendToRenderer('crawl-status', {
+      deviceId: null, kind: 'sheet-error',
+      msg: `Đẩy bù ${sot.length} sound còn chờ lỗi: ${e.message} — vẫn giữ trong hàng chờ, 30 phút sau thử lại (hoặc bấm ☁ Đẩy lên Sheet).`,
+    });
+    return null;
+  } finally {
+    _dangDayBu = false;
   }
 }
 
@@ -743,8 +807,22 @@ ipcMain.handle('sheets-push-manual', async (_e, rows) => {
   if (!cfg.spreadsheetId || !cfg.sa) return { ok: false, msg: 'Chưa cấu hình Google Sheet (ID/Service Account).' };
   try {
     await sheets.flushAll().catch(() => {});
-    const r = await sheets.pushDedup({ spreadsheetId: cfg.spreadsheetId, tab: cfg.tab, sa: cfg.sa }, rows);
-    if (r.ok) sheets.dropFromBuffer((rows || []).map((x) => x && x[1]));
+    // Bảng trên màn hình CỘNG hàng chờ trên đĩa (sound của lần mở app trước, hoặc quét lúc Sheet
+    // lỗi / tắt) — lấy SAU khi xả buffer, để dòng vừa lên Sheet đã rời hàng chờ.
+    const gop = new Map();
+    for (const d of [...chodaysheet.tatCa().map((x) => x.dong), ...(rows || [])]) {
+      const k = normalizeKey(d && d[1]);
+      if (k && !gop.has(k)) gop.set(k, d);
+    }
+    const tatCa = Array.from(gop.values());
+    if (!tatCa.length) return { ok: false, msg: 'Không có gì để đẩy — bảng trống và hàng chờ trống.' };
+    const r = await sheets.pushDedup({ spreadsheetId: cfg.spreadsheetId, tab: cfg.tab, sa: cfg.sa }, tatCa);
+    if (r.ok) {
+      const urls = tatCa.map((x) => x[1]);
+      sheets.dropFromBuffer(urls);
+      try { chodaysheet.bo(urls); } catch (_) {}
+      baoHangCho();
+    }
     return r;
   } catch (e) {
     // Mạng rớt / Sheet từ chối (403) giữa chừng: TRẢ lỗi về giao diện (y bản PC). Bản cũ để lời hứa
@@ -754,6 +832,11 @@ ipcMain.handle('sheets-push-manual', async (_e, rows) => {
 });
 
 // ── KHO LINK CỤC BỘ (clone bản PC, main.js 654-702) ──
+// Số sound đang chờ lên Sheet — giao diện hỏi lúc mở app (sau đó nghe sự kiện 'cho-day').
+ipcMain.handle('cho-day-count', () => {
+  try { return chodaysheet.dem(); } catch (_) { return 0; }
+});
+
 // Đường dẫn + số link đang giữ, để hiện trong modal ☁.
 ipcMain.handle('links-info', () => {
   try { return { ok: true, path: linkstore.getFilePath(), count: linkstore.count() }; }

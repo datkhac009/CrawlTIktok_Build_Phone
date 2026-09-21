@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('api', {
   sheetsSetConfig: (cfg) => ipcRenderer.invoke('sheets-set-config', cfg),
   sheetsTest: (cfg) => ipcRenderer.invoke('sheets-test', cfg),
   sheetsPushManual: (rows) => ipcRenderer.invoke('sheets-push-manual', rows),
+  choDayCount: () => ipcRenderer.invoke('cho-day-count'),
 
   // Kho link cục bộ (known_links.txt) — nguồn lọc trùng chính (clone bản PC)
   linksInfo: () => ipcRenderer.invoke('links-info'),

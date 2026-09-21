@@ -60,6 +60,7 @@
         <div class="crawl-status-bar">
           <span class="badge" id="crawlCount">0 sound</span>
           <span class="badge badge-warn" id="crawlPendingCount" style="display:none" title="Sound không đọc được số post, đã cất vào tab Pending để kiểm tay">0 lỗi → Pending</span>
+          <span class="badge badge-warn" id="choDayCount" style="display:none" title="Sound đã quét nhưng CHƯA lên Google Sheet (Sheet lỗi / chưa bật / tắt app lúc chưa đẩy xong). Nằm trong file cho_day_sheet.jsonl cạnh file .exe — tắt app không mất; Sheet chạy lại là tự đẩy bù, không trùng. Muốn đẩy ngay thì bấm ☁ Đẩy lên Sheet.">0 chờ lên Sheet</span>
           <span class="status-msg" id="crawlStatusMsg"></span>
           <button class="btn" id="pushSheetBtn">☁ Đẩy lên Sheet</button>
           <button class="btn" id="exportExcelBtn">📥 Xuất Excel</button>

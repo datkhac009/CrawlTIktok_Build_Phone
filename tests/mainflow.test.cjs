@@ -714,6 +714,95 @@ const start = (id, serial, cfg = {}) => {
     dayHong = null;
   }
 
+  // ── R. SHEET LỖI: CỨ QUÉT, ĐẨY SAU, KHÔNG TRÙNG (2026-09-21) — hàng chờ trên đĩa ──
+  // Chủ dự án: "google sheet … đang bị lỗi … để nó quét và đẩy lên được không, mỗi lần đẩy phải
+  // tránh bị trùng link". Hàng chờ là module THẬT, ghi vào thư mục tạm của phép thử.
+  {
+    const cd = require(path.join(ROOT, 'src', 'chodaysheet.cjs'));
+    for (const id of [...running.keys()]) await handlers.get('device-stop')({}, id);
+    cd.bo(cd.tatCa().map((x) => x.dong[1]));
+    const u = (n) => `https://www.tiktok.com/music/original-sound-${n}`;
+    const soCho = () => { const e = sent.filter(([c, p]) => c === 'crawl-status' && p.kind === 'cho-day').pop(); return e ? e[1].n : null; };
+    const saR = JSON.stringify({ type: 'service_account', client_email: 'r@gia.iam.gserviceaccount.com',
+      private_key: '-----BEGIN PRIVATE KEY-----\\nR\\n-----END PRIVATE KEY-----\\n' });
+    const cfgR = { enabled: true, spreadsheetId: 'x', tab: 'Data', sa: saR };
+    FakeStore.last.set('sheets_config', cfgR);
+    dayHong = null;
+
+    // Lần mở app TRƯỚC để lại hai sound chưa kịp lên Sheet; một trong hai thật ra ĐÃ lên (app tắt
+    // ngay sau khi ghi, chưa kịp gỡ khỏi hàng chờ).
+    cd.them(['Sót lần trước', u('7301000000000000001'), 7000, 'Pixel 4 XL', 1]);
+    cd.them(['Đã lên rồi', u('7301000000000000002'), 8000, 'Pixel 4 XL', 1]);
+    nhanDuoc.pushDedup.length = 0;
+    await start('dS', '192.168.5.220:5555');
+    await nghi(20);
+    xongNap([u('7301000000000000002')]);   // Sheet đọc được: chỉ có sound thứ hai
+    await nghi(40);
+    const lan1 = nhanDuoc.pushDedup[0];
+    check('R1. Sheet chạy lại → tự đẩy bù sound còn chờ từ lần trước, BỎ sound Sheet đã có (không trùng)',
+      nhanDuoc.pushDedup.length === 1 && lan1.rows.length === 1 && lan1.rows[0][1] === u('7301000000000000001')
+      && lan1.rows[0][3] === 'Pixel 4 XL' && cd.dem() === 0
+      && sent.some(([c, p]) => c === 'crawl-status' && p.kind === 'sheet-info' && /Đã đẩy bù 1 sound còn chờ/.test(p.msg || '')),
+      JSON.stringify({ lan: nhanDuoc.pushDedup.map((x) => x.rows.map((r) => r[1])), con: cd.dem() }));
+
+    // R2–R3. Quét được sound mới: vào hàng chờ trên đĩa TRƯỚC, rồi mới vào đường đẩy thường.
+    const lS = lanChay('dS')[0];
+    lS.onData('dS', { name: 'Mới quét', url: u('7302000000000000001'), posts: 9100 });
+    check('R2. Sound mới quét → vào hàng chờ trên đĩa (đủ 5 cột) VÀ đường đẩy thường; giao diện thấy "1 chờ lên Sheet"',
+      cd.dem() === 1 && cd.tatCa()[0].dong[1] === u('7302000000000000001') && cd.tatCa()[0].dong.length === 5
+      && pushed.some((r) => r[1] === u('7302000000000000001')) && soCho() === 1, `còn ${cd.dem()}, chip ${soCho()}`);
+    fakeSheets._onPushed([u('7302000000000000001')]);
+    check('R3. Lên Sheet thành công → rời hàng chờ, chip về 0', cd.dem() === 0 && soCho() === 0);
+
+    // R4. Sheet LỖI: sound nằm lại trong hàng chờ (buffer thử lại lo). Đồng bộ lại KHÔNG đẩy nó bằng
+    // đường thứ hai — hai đường cùng đẩy một dòng là có ngày ghi trùng.
+    lS.onData('dS', { name: 'Quét lúc Sheet lỗi', url: u('7303000000000000001'), posts: 9200 });
+    nhanDuoc.pushDedup.length = 0;
+    await handlers.get('sheets-set-config')({}, cfgR);   // nạp lại Sheet giữa phiên
+    await nghi(20);
+    xongNap([]);
+    await nghi(40);
+    check('R4. Sound đang nằm trong buffer thử lại → giữ trong hàng chờ, KHÔNG bị đẩy bù lần hai',
+      cd.dem() === 1 && nhanDuoc.pushDedup.length === 0, `đẩy bù ${nhanDuoc.pushDedup.length} lần`);
+
+    // R5–R6. Đẩy bù hỏng (Sheet đọc được mà ghi không được) → giữ nguyên, báo rõ, nghỉ 30 phút.
+    cd.them(['Sót khi Sheet tắt', u('7304000000000000001'), 6000, 'V2031', 1]);
+    dayHong = new Error('HTTP 400: This action would increase the number of cells in the workbook above the limit');
+    await handlers.get('sheets-set-config')({}, cfgR);
+    await nghi(20);
+    xongNap([]);
+    await nghi(40);
+    check('R5. Đẩy bù hỏng → sound VẪN trong hàng chờ, báo lỗi rõ và hẹn thử lại',
+      nhanDuoc.pushDedup.length === 1 && cd.dem() === 2
+      && sent.some(([c, p]) => c === 'crawl-status' && p.kind === 'sheet-error' && /Đẩy bù 1 sound còn chờ lỗi: .*30 phút sau thử lại/.test(p.msg || '')),
+      `đẩy bù ${nhanDuoc.pushDedup.length} lần, còn ${cd.dem()}`);
+    dayHong = null;
+    await handlers.get('sheets-set-config')({}, cfgR);
+    await nghi(20);
+    xongNap([]);
+    await nghi(40);
+    check('R6. Vừa hỏng xong → lần đồng bộ ngay sau KHÔNG thử lại (mỗi lần thử là một lượt đọc trọn cột Link)',
+      nhanDuoc.pushDedup.length === 1, `đẩy bù ${nhanDuoc.pushDedup.length} lần`);
+
+    // R7. Nút ☁ lúc BẢNG TRỐNG (vd vừa mở lại app): vẫn đẩy được hàng chờ, không chờ 30 phút.
+    const r7 = await handlers.get('sheets-push-manual')({}, []);
+    const lan7 = nhanDuoc.pushDedup[nhanDuoc.pushDedup.length - 1];
+    check('R7. Bấm ☁ Đẩy lên Sheet khi bảng trống → đẩy luôn cả hàng chờ trên đĩa (tự lọc trùng), xong thì gỡ',
+      r7.ok === true && !!lan7 && lan7.rows.map((r) => r[1]).sort().join() === [u('7303000000000000001'), u('7304000000000000001')].sort().join()
+      && cd.dem() === 0 && soCho() === 0, JSON.stringify({ r7, rows: lan7 && lan7.rows.map((r) => r[1]), con: cd.dem() }));
+
+    // R8. Chưa từng điền Spreadsheet ID → không có Sheet nào để chờ, hàng chờ không phình.
+    FakeStore.last.set('sheets_config', { enabled: false });
+    lS.onData('dS', { name: 'Không dùng Sheet', url: u('7305000000000000001'), posts: 9300 });
+    check('R8. Không cấu hình Sheet → sound vẫn lên bảng nhưng KHÔNG vào hàng chờ',
+      cd.dem() === 0 && sent.some(([c, p]) => c === 'crawl-data' && p.url === u('7305000000000000001')));
+
+    ketThuc(lS, false);
+    await handlers.get('device-stop')({}, 'dS');
+    FakeStore.last.set('sheets_config', { enabled: false });
+    sheetBat = false;
+  }
+
   _xong = true;
   const failed = results.filter((x) => !x.pass);
   console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);

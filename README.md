@@ -69,7 +69,7 @@ Theo thứ tự, dừng ở cái đầu tiên thấy được:
 ```bash
 npm install
 npm start           # hoặc start.bat
-npm test            # ~625 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
+npm test            # ~645 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
 ```
 
 Trong app, bấm **🔌 Kiểm tra** ở dòng một máy. Nó kiểm từng mục và **mục nào đỏ thì in ra đúng
@@ -155,6 +155,14 @@ cục bộ** (`known_links.txt`: số link đang giữ + ba nút *Nạp từ Goo
 - Service Account lưu dạng CHUỖI (đúng thứ dán vào ô), còn `sheets.cjs` bản PC chỉ nhận ĐỐI
   TƯỢNG — `main.js` đổi ở một chỗ duy nhất (`cauHinhSheet`). v0.1.8 thiếu bước này nên mọi thao
   tác Sheet báo "thiếu client_email/private_key".
+- **Sheet lỗi thì cứ quét, đẩy sau, không trùng** (2026-09-21): mỗi sound đạt vào **hàng chờ
+  trên đĩa** `cho_day_sheet.jsonl` (cạnh .exe, như `known_links.txt`) ngay lúc về, lên Sheet thành
+  công mới gỡ ra (`src/chodaysheet.cjs`). Tắt app lúc Sheet còn hỏng không mất: lần đọc Sheet thành
+  công sau đó (nạp đầu phiên / đồng bộ định kỳ) gỡ dòng Sheet đã có rồi **tự đẩy bù** phần còn lại
+  qua `pushDedup` (đọc lại cột Link, chỉ ghi dòng chưa có). Dòng đang nằm trong buffer thử lại của
+  lần mở app này thì để buffer lo — không đẩy một dòng bằng hai đường. Đẩy bù hỏng thì nghỉ 30 phút.
+  Chip **"N chờ lên Sheet"** cạnh số sound; nút ☁ *Đẩy lên Sheet* đẩy cả bảng CỘNG hàng chờ, bảng
+  trống vẫn bấm được. Sound Pending không đi qua hàng chờ này.
 - **Tab Pending** (clone QĐ-20 bản PC): để trống = TẮT. Đặt tên thì sound **không đọc được số
   video** được lấy link thật, xét Original Sound như sound thường, rồi cất vào tab đó (cột
   `[tên, link, "", thiết bị]`) thay vì bỏ — không lên bảng kết quả. Tab Pending cũng được đọc vào

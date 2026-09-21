@@ -13,6 +13,9 @@ config/
 
 # Du lieu thu thap duoc - la ket qua kinh doanh, khong phai ma nguon
 sound_links.txt
+known_links.txt
+cho_day_sheet.jsonl
+cho_day_sheet.jsonl.tmp
 probe_*.xml
 
 # Python

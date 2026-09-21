@@ -159,6 +159,7 @@ async function init() {
   // tien sau khi mo app se dung tran mac dinh chu khong phai tran nguoi dung da dat.
   await window.api.setGlobalSettings(globalSettings);
   refreshPendingConfigured();
+  window.api.choDayCount().then(renderChoDay, () => {});
 
   devices = await window.api.devicesList();
   devices.forEach((d) => {
@@ -197,6 +198,8 @@ function onCrawlStatus(payload) {
   if (kind === 'sheet-error') { toast(`Sheet: ${payload.msg}`, false); return; }
   // Một sound vừa được cất vào tab Pending (không đọc được số post).
   if (kind === 'pending') { if (payload.ok) { soPending++; renderPendingChip(); } return; }
+  // Số sound còn chờ lên Sheet (hàng chờ trên đĩa, main.js: baoHangCho).
+  if (kind === 'cho-day') { renderChoDay(payload.n); return; }
   // Máy vừa được dò ra IP mới (main.js: baoDoiIp) — nạp lại danh sách để cột Serial hiện IP mới.
   if (kind === 'devices-changed') { napLaiDanhSachMay(payload.doi || []); return; }
 
@@ -954,10 +957,20 @@ async function saveSheets() {
 }
 
 // ---- Đẩy dữ liệu lên Sheet (thủ công, lọc trùng) ----
-// Đẩy bù CẢ bảng "Dữ liệu thu thập" — phía main đọc lại cột Link trên Sheet và CHỈ ghi dòng chưa có
-// (sheets.pushDedup, dùng chung bản PC), nên bấm nhiều lần không tạo trùng.
+// ── Chip "N chờ lên Sheet": sound đã quét mà CHƯA lên Sheet (hàng chờ trên đĩa) ──
+let soChoDay = 0;
+function renderChoDay(n) {
+  soChoDay = Number(n) || 0;
+  const el = document.getElementById('choDayCount');
+  if (!el) return;
+  el.textContent = `${soChoDay} chờ lên Sheet`;
+  el.style.display = soChoDay > 0 ? '' : 'none';
+}
+
+// Đẩy bù CẢ bảng "Dữ liệu thu thập" CỘNG hàng chờ trên đĩa — phía main đọc lại cột Link trên Sheet
+// và CHỈ ghi dòng chưa có (sheets.pushDedup, dùng chung bản PC), nên bấm nhiều lần không tạo trùng.
 async function pushToSheet() {
-  if (!crawlResults.length) { toast('Chưa có dữ liệu để đẩy', false); return; }
+  if (!crawlResults.length && !soChoDay) { toast('Chưa có dữ liệu để đẩy', false); return; }
   // KHOÁ nút trong lúc đẩy (y bản PC): bấm hai lần liền thì hai lượt cùng đọc Sheet TRƯỚC khi lượt
   // nào kịp ghi → cả hai cùng thấy "chưa có" → mỗi dòng mới bị ghi HAI lần.
   const btn = document.getElementById('pushSheetBtn');

@@ -923,7 +923,14 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     /catch \(e\) \{\s*\n\s*toast\(`Đẩy lỗi:/.test(f));
   check('26c. Gửi NGUYÊN bảng, đủ 5 cột như đường tự đẩy (A–E: tên, link, số post, thiết bị, 1)',
     /crawlResults\.map\(\(r\) => \[r\.name, r\.url, r\.posts, r\.deviceName, 1\]\)/.test(f)
-    && /sheets\.enqueue\(\[data\.name \|\| '', data\.url \|\| '', data\.posts \?\? '', tenThietBi\(deviceId\), 1\]\)/.test(doc('main.js')));
+    && /const dong = \[data\.name \|\| '', data\.url \|\| '', data\.posts \?\? '', tenThietBi\(deviceId\), 1\];/.test(doc('main.js'))
+    && /chodaysheet\.them\(dong\)/.test(doc('main.js')) && /sheets\.enqueue\(dong\)/.test(doc('main.js')));
+  check('26d. Chip "N chờ lên Sheet": giao diện hỏi số lúc mở app và nghe sự kiện cập nhật',
+    /kind === 'cho-day'\) \{ renderChoDay\(payload\.n\)/.test(rj) && /window\.api\.choDayCount\(\)\.then\(renderChoDay/.test(rj)
+    && /choDayCount: \(\) => ipcRenderer\.invoke\('cho-day-count'\)/.test(doc('preload.cjs'))
+    && /id="choDayCount"/.test(doc('renderer/index.html')));
+  check('26e. Bảng trống mà hàng chờ còn → nút ☁ vẫn đẩy được (vừa mở lại app)',
+    /if \(!crawlResults\.length && !soChoDay\)/.test(f));
 }
 
 // Hàm làm tròn: chạy thật, không soi chữ.

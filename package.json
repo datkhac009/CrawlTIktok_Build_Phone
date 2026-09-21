@@ -58,6 +58,8 @@
       "!*.md",
       "!*.py",
       "!sound_links.txt",
+      "!known_links.txt",
+      "!cho_day_sheet.jsonl*",
       "!probe_*.xml",
       "!start_scan_feed_sound.bat",
       "!build.bat",
