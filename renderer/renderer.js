@@ -94,6 +94,8 @@ const NI_SCRIPTS = [
 const DEFAULT_GLOBAL = {
   deviceConcurrency: 6,
   launchStaggerMs: 3000,
+  // Máy bị đơ thì tự khởi động lại điện thoại (main.js: xetKhoiDongLai). Mặc định BẬT.
+  autoReboot: true,
 };
 let globalSettings = { ...DEFAULT_GLOBAL };
 
@@ -699,6 +701,7 @@ function openSettingsModal(ids) {
   // Hai o toan app - khong theo tung may, nen doc tu globalSettings
   $('cfgDeviceConcurrency').value = globalSettings.deviceConcurrency;
   $('cfgLaunchStaggerMs').value = globalSettings.launchStaggerMs;
+  $('cfgAutoReboot').checked = globalSettings.autoReboot !== false;
 
   document.getElementById('settingsModal').classList.add('open');
 }
@@ -784,6 +787,7 @@ async function saveSettings() {
   globalSettings = {
     deviceConcurrency: numOf('cfgDeviceConcurrency', DEFAULT_GLOBAL.deviceConcurrency),
     launchStaggerMs: numOf('cfgLaunchStaggerMs', DEFAULT_GLOBAL.launchStaggerMs),
+    autoReboot: document.getElementById('cfgAutoReboot').checked,
   };
 
   await window.api.storeSet({ device_settings: deviceSettings, global_settings: globalSettings });

@@ -906,6 +906,13 @@ def android_treo(serial):
         'khong_tra_loi' — con song nhung lenh he thong khong tra loi
         ''              — binh thuong, HOAC khong hoi duoc (khong ket luan bua)
     Hoi `ps` truoc: lenh do khong di qua binder, may treo van tra loi ngay."""
+    # May DANG KHOI DONG (vd app vua tu khoi dong lai no): `system_server` chua len nen `ps` khong
+    # co no, va `settings` chua tra loi — ca hai deu giong het may treo. Hoi truoc cho chac.
+    try:
+        if adb("shell", "getprop sys.boot_completed", serial=serial, timeout=10).strip() != "1":
+            return ""
+    except Exception:
+        return ""
     try:
         out = adb("shell", "ps -A -o S,NAME", serial=serial, timeout=10)
     except subprocess.TimeoutExpired:
@@ -926,25 +933,57 @@ def android_treo(serial):
     return ""
 
 
-def cau_khong_ket_noi(serial, e):
-    """MOT dong noi dung benh khi `connect` hong luc khoi dong."""
+def _vi_sao_treo(benh):
+    return "lõi Android đã chết" if benh == "chet" else "lệnh hệ thống không trả lời"
+
+
+def chan_doan_khong_noi(serial, e):
+    """Chan doan khi `connect` hong luc khoi dong. Tra (cau log, may_do):
+        may_do = None           — may mat / doi IP: khong gui duoc gi qua ADB, phia Node lo do lai IP
+        may_do = (chac, ly_do)  — may con noi ADB ma khong dieu khien duoc: bao Node (`bao_may_do`)"""
     loi = str(e)
     if not _RE_DICH_VU_KHONG_LEN.search(f"{type(e).__name__} {loi}"):
         return (f"⛔ Không kết nối được điện thoại {serial} ({loi[:120]}) — app sẽ dò lại IP của "
-                "máy này và thử lại sau 1 phút.")
+                "máy này và thử lại sau 1 phút.", None)
     benh = android_treo(serial)
     if benh:
-        vi_sao = "lõi Android đã chết" if benh == "chet" else "lệnh hệ thống không trả lời"
-        return (f"⛔ {serial}: điện thoại vẫn nối ADB nhưng ANDROID TRÊN MÁY ĐANG TREO ({vi_sao}), app "
-                "không điều khiển được. Cần KHỞI ĐỘNG LẠI điện thoại này — app vẫn tự thử lại mỗi phút, "
-                "máy lên lại là chạy tiếp.")
+        return (f"⛔ {serial}: điện thoại vẫn nối ADB nhưng ANDROID TRÊN MÁY ĐANG TREO ({_vi_sao_treo(benh)}), "
+                "app không điều khiển được. Cần KHỞI ĐỘNG LẠI điện thoại này (app tự làm nếu đang bật "
+                "\"Tự khởi động lại điện thoại khi bị đơ\").",
+                (True, f"Android trên máy treo — {_vi_sao_treo(benh)}"))
     if "already registered" in loi:
         ly_do = "đang có công cụ khác giữ quyền đọc màn hình"
     else:
         ly_do = next((a for a in getattr(e, "args", ()) if isinstance(a, str)), loi).strip()[:60]
     return (f"⛔ {serial}: điện thoại vẫn nối ADB nhưng dịch vụ điều khiển (uiautomator2) trên máy không "
             f"khởi động được ({ly_do}). App thử lại sau 1 phút; lặp lại mãi thì khởi động lại điện "
-            "thoại này.")
+            "thoại này.", (False, f"dịch vụ điều khiển không khởi động được ({ly_do})"))
+
+
+def cau_khong_ket_noi(serial, e):
+    """MOT dong noi dung benh khi `connect` hong luc khoi dong."""
+    return chan_doan_khong_noi(serial, e)[0]
+
+
+# ── MAY BI DO → BAO PHIA NODE DE NO TU KHOI DONG LAI DIEN THOAI (2026-09-22) ──
+#
+# Chu du an van lam tay: bam Dung trong app, vao 效卫 Restart → Confirm, roi bam Chay lai. Gio
+# Python chi BAO (ngay truoc khi thoat ma 1), con quyet dinh khoi dong lai nam o main.js — no song
+# qua moi lan chay lai nen moi dem duoc "3 luot lien". CHAC = Android treo han (khoi dong lai ngay);
+# NGHI = khong dieu khien duoc ma chua ro vi sao (Node doi 3 luot lien).
+# KHONG bao khi may mat ADB (khong gui lenh duoc) hay khi Python crash (loi app, khoi dong lai dien
+# thoai khong chua duoc).
+def bao_may_do(chac, ly_do):
+    emit_event("may_do", chac=bool(chac), ly_do=str(ly_do)[:160])
+
+
+def bao_may_do_sau_khi_hoi(serial, ly_do):
+    """Nhu `bao_may_do`, nhung hoi `android_treo` truoc: Android treo han thi la CHAC."""
+    benh = android_treo(serial)
+    if benh:
+        bao_may_do(True, f"Android trên máy treo — {_vi_sao_treo(benh)}")
+    else:
+        bao_may_do(False, ly_do)
 
 
 def cho_noi_lai(serial, han=None, dung=lambda: False):
@@ -1342,7 +1381,10 @@ def main():
     except Exception as e:
         # Mot dong noi ro thay cho ca trang traceback (log 2026-09-19: "device … not online"), va
         # noi DUNG benh: may mat / doi IP, hay may con do nhung Android tren may da treo.
-        log(cau_khong_ket_noi(serial, e))
+        cau, do_ = chan_doan_khong_noi(serial, e)
+        log(cau)
+        if do_:
+            bao_may_do(*do_)
         sys.exit(1)
     # DUNG MAY chua? IP co the da ve tay mot dien thoai khac (DHCP cap lai sau khi khoi dong lai).
     hw_that = _doc_hw(d.serial)
@@ -1359,6 +1401,7 @@ def main():
         pkg = setup_device(d)
     except Exception as e:
         log(f"⛔ Không mở được TikTok ({str(e)[:120]}) — app sẽ thử lại sau 1 phút.")
+        bao_may_do_sau_khi_hoi(d.serial, "không mở được TikTok sau 3 lần thử")
         sys.exit(1)
     # Ghi nho goi dang chay -> `find_first` chi cho MOT goi thay vi ca hai (xem chu thich o do).
     set_active_pkg(pkg)
@@ -1388,6 +1431,7 @@ def main():
     # caption) doc duoc o dau moi vong — giong het vong truoc la feed chua sang video moi.
     video_truoc = None
     lan_trung = 0
+    mo_lai_ket = 0      # so lan LIEN khoi dong lai TikTok vi feed dung yen (chua thay video moi nao)
     live_bo_qua = 0     # so video livestream da bo qua (yeu cau 2026-09-16)
     # Mốc của lần in nhịp tim gần nhất, để in ĐỘ CHÊNH chứ không in tổng luỹ kế. Tổng luỹ kế đọc
     # không ra nhịp: "đã quét 300 video" lần nào cũng đúng, kể cả khi feed vừa kẹt 20 phút.
@@ -1442,6 +1486,8 @@ def main():
                 if info is not None:
                     ky = (info.get("author") or "", info.get("desc") or "")
                     lan_trung = lan_trung + 1 if (ky != ("", "") and ky == video_truoc) else 0
+                    if video_truoc is not None and ky != ("", "") and ky != video_truoc:
+                        mo_lai_ket = 0      # feed da sang video moi that su
                     video_truoc = ky
 
                 # ── BO QUA LIVESTREAM ──
@@ -1516,6 +1562,7 @@ def main():
                         if hong_phuc_hoi >= 3:
                             log("⛔ Phục hồi hỏng 3 lần liền — thoát để app tự chạy lại máy này từ đầu "
                                 "sau vài phút.")
+                            bao_may_do_sau_khi_hoi(d.serial, "phục hồi hỏng 3 lần liền")
                             thoat_loi = True
                             break
                     consecutive_fail = 0
@@ -1573,6 +1620,15 @@ def main():
                 time.sleep(max(0.0, random.uniform(DWELL_MIN, DWELL_MAX) - (time.time() - t_xem)))
                 BUOC["v"] = "vuốt sang video kế"
                 if lan_trung >= 3:
+                    # Khoi dong lai TikTok 3 lan roi ma feed van dung yen: may bi DO (man hinh / cam
+                    # ung dung), khong phai TikTok — ban cu cu khoi dong lai TikTok mai, khong leo thang.
+                    mo_lai_ket += 1
+                    if mo_lai_ket > 3:
+                        log("⛔ Đã khởi động lại TikTok 3 lần mà feed vẫn đứng yên — máy có vẻ bị đơ, "
+                            "thoát để app xử lý.")
+                        bao_may_do_sau_khi_hoi(d.serial, "feed đứng yên sau 3 lần khởi động lại TikTok")
+                        thoat_loi = True
+                        break
                     # Doi cach vuot roi van dung yen: khoi dong lai TikTok de feed nap lai.
                     log(f"⚠ Feed không sang được video mới ({lan_trung + 1} vòng liền cùng một video) — "
                         "khởi động lại TikTok.")

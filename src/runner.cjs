@@ -359,6 +359,9 @@ function startDevice(params, onData, onStatus) {
         onStatus(deviceId, { kind: 'view', idx: payload.idx | 0, total: payload.total | 0, moc: payload.type === 'view_moc' });
       } else if (payload.type === 'status') {
         onStatus(deviceId, { kind: 'status', state: payload.state, msg: payload.msg });
+      } else if (payload.type === 'may_do') {
+        // Python sắp thoát vì máy có vẻ ĐƠ — main.js quyết có tự khởi động lại điện thoại không.
+        onStatus(deviceId, { kind: 'may_do', chac: payload.chac === true, lyDo: String(payload.ly_do || '') });
       } else if (payload.type === 'acted') {
         // Kết quả THẬT của từng cú bấm. Sổ chỉ được ghi ở đây, sau khi đã xác minh —
         // channelstore.cjs:182-184 cảnh báo: ghi lúc BẤM thì kênh bị đánh dấu đã follow dù

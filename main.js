@@ -106,6 +106,53 @@ const _loiLien = new Map();         // deviceId -> số lần lỗi liên tiếp
 const CHO_CHAY_LAI_MS = 60 * 1000;
 const LUOT_KHOE_MS = 10 * 60000;
 
+// ── MÁY BỊ ĐƠ → TỰ KHỞI ĐỘNG LẠI ĐIỆN THOẠI (2026-09-22) ──
+// Chủ dự án vẫn làm tay: bấm Dừng, vào 效卫 Restart → Confirm, rồi bấm Chạy lại. Python báo
+// `may_do` ngay trước khi thoát (scan_feed_sounds.py: `bao_may_do`), ở đây quyết:
+//   • CHẮC (Android treo hẳn)       → khởi động lại ngay;
+//   • NGHI (không điều khiển được)  → đủ DO_NGHI_TOI_DA lượt ngắn liền mới khởi động lại.
+// KHÔNG giới hạn số lần, KHÔNG có thời gian chờ — chủ dự án chốt: "nếu cứ bị lỗi như thế thì khởi
+// động xong rồi chạy lại là được". Chốt duy nhất: gửi lệnh rồi thì phải có MỘT LƯỢT MỚI chạy (tức
+// máy đã lên lại) mới gửi tiếp — không khởi động lại một máy đang khởi động dở.
+const _doLuot = new Map();      // deviceId -> { chac, lyDo } Python báo trong lượt đang chạy
+const _doLien = new Map();      // deviceId -> số lượt ngắn LIÊN TIẾP kết thúc vì "nghi đơ"
+const _kdlCho = new Set();      // đã gửi lệnh khởi động lại, CHƯA có lượt mới nào chạy
+const _kdlHomNay = new Map();   // deviceId -> { ngay, n } — số lần tự khởi động lại trong ngày
+const DO_NGHI_TOI_DA = 3;
+let _tuKhoiDongLai = true;      // ô "Tự khởi động lại điện thoại khi bị đơ" (Cài đặt → Toàn app)
+
+// Gọi khi một lượt chạy kết thúc bằng LỖI. Trả câu ngắn cho dòng trạng thái nếu vừa gửi lệnh khởi
+// động lại, '' nếu không.
+function xetKhoiDongLai(id, serial) {
+  const do_ = _doLuot.get(id);
+  _doLuot.delete(id);
+  // Lượt vừa rồi chạy khoẻ (≥ 10 phút) thì đếm lại từ đầu, y như bộ đếm "lần n" của nhánh chạy lại.
+  if (Date.now() - (_batDau.get(id) || 0) >= LUOT_KHOE_MS) _doLien.delete(id);
+  if (!do_ || !_tuKhoiDongLai || !_lastParams.has(id) || !serial) return '';
+  const n = do_.chac ? DO_NGHI_TOI_DA : (_doLien.get(id) || 0) + 1;
+  if (n < DO_NGHI_TOI_DA) {
+    _doLien.set(id, n);
+    return '';
+  }
+  if (_kdlCho.has(id)) return '';   // lệnh trước chưa có lượt nào chạy lại — máy chưa lên xong
+  _doLien.delete(id);
+  _kdlCho.add(id);
+  const hom = new Date().toDateString();
+  const truoc = _kdlHomNay.get(id);
+  const lan = truoc && truoc.ngay === hom ? truoc.n + 1 : 1;
+  _kdlHomNay.set(id, { ngay: hom, n: lan });
+  devices.khoiDongLai(serial).then((r) => {
+    if (!r.ok) _kdlCho.delete(id);
+    sendToRenderer('crawl-status', {
+      deviceId: id, kind: 'log',
+      line: r.ok
+        ? `🔄 Máy bị đơ (${do_.lyDo}) — đã tự khởi động lại điện thoại (lần ${lan} hôm nay). Máy lên lại là tự chạy tiếp.`
+        : `⚠ Máy bị đơ (${do_.lyDo}) nhưng KHÔNG gửi được lệnh khởi động lại (${r.msg}) — cần khởi động lại tay.`,
+    });
+  }, () => { _kdlCho.delete(id); });
+  return 'máy bị đơ — đang tự khởi động lại điện thoại';
+}
+
 // ── MÁY ĐỔI IP (2026-09-19) — xem devices.cjs: "MÁY ĐỔI IP" ──
 // Báo lên giao diện những máy vừa được dò ra IP mới: một dòng log trên chính máy đó, và một sự
 // kiện để giao diện nạp lại danh sách (cột Serial phải hiện IP mới).
@@ -181,6 +228,9 @@ function dungHan(deviceId) {
   _lastParams.delete(deviceId);
   _pha.delete(deviceId);
   _loiLien.delete(deviceId);
+  _doLuot.delete(deviceId);
+  _doLien.delete(deviceId);
+  _kdlCho.delete(deviceId);
   if (devslot.cancel(deviceId)) return 'queue';
   devslot.release(deviceId);
   return runner.stopDevice(deviceId).ok ? 'run' : '';
@@ -642,10 +692,16 @@ async function chayMot(params) {
     }
 
     _batDau.set(id, Date.now());
+    _doLuot.delete(id);
     runner.startDevice(
       chay,
       (deviceId, data) => nhanKetQua(deviceId, data),
       (deviceId, status) => {
+        // Python báo máy có vẻ ĐƠ, ngay trước khi thoát — xét ở nhánh 'error' bên dưới.
+        if (status.kind === 'may_do') {
+          _doLuot.set(deviceId, { chac: !!status.chac, lyDo: status.lyDo || 'không rõ' });
+          return;
+        }
         sendToRenderer('crawl-status', { deviceId, ...status });
         // Mốc xem tiếp của pha Xem: ghi NGAY mỗi lần xem xong một link, không đợi hết pha — app
         // có thể tắt giữa chừng.
@@ -662,7 +718,7 @@ async function chayMot(params) {
           onDevicesAllStopped();
           if (status.state === 'error') {
             _cycleDone.delete(deviceId);
-            henChayLaiSauLoi(deviceId, status.msg);
+            henChayLaiSauLoi(deviceId, xetKhoiDongLai(deviceId, chay.serial) || status.msg);
           }
 
           // ── Hết ca / hết pha thì nghỉ rồi tự chạy lại ──
@@ -671,6 +727,7 @@ async function chayMot(params) {
           // khởi động khi tiến trình cũ còn sống, bị chặn "đang chạy rồi", và máy LẶNG LẼ ngừng
           // chu kỳ — Quét ⇄ Xem chạy lại sau MỖI pha nên sẽ gặp đúng ca này.
           if (status.state === 'stopped' && _cycleDone.delete(deviceId)) {
+            _doLien.delete(deviceId);   // hết ca bình thường = máy khoẻ: đếm "nghi đơ" lại từ đầu
             const p = _lastParams.get(deviceId) || {};
             const c = p.cfg || {};
             const lo = Math.max(0, Number(c.cycleBreakMin) || 0);
@@ -713,6 +770,8 @@ async function chayMot(params) {
         }
       }
     );
+    // Máy đã lên lại và có lượt mới chạy → từ giờ lại được tự khởi động lại nếu còn đơ.
+    _kdlCho.delete(id);
     return { ok: true };
   } catch (e) {
     // Spawn hỏng (thiếu Python, thiếu adb, điện thoại đang bị lượt khác lái...) thì khe vừa xin
@@ -730,6 +789,8 @@ ipcMain.handle('device-start', async (_e, params) => {
   // trên đĩa, riêng cho từng máy.
   _pha.set(params.deviceId, 0);
   _loiLien.delete(params.deviceId);     // bấm tay là bắt đầu lại từ đầu, kể cả số "lần" lỗi
+  _doLien.delete(params.deviceId);
+  _kdlCho.delete(params.deviceId);
   const r = await chayMot(params);
   // Bấm Chạy lúc điện thoại chưa online (đang khởi động lại, đổi IP chưa kịp hiện) thì cũng không
   // bỏ máy: hẹn dò lại sau 1 phút như mọi lỗi khác.
@@ -884,7 +945,8 @@ ipcMain.handle('set-global-settings', (_e, cfg) => {
   const c = cfg || {};
   const max = devslot.setMax(c.deviceConcurrency);
   const stagger = devslot.setStaggerMs(c.launchStaggerMs);
-  return { ok: true, deviceConcurrency: max, launchStaggerMs: stagger };
+  _tuKhoiDongLai = c.autoReboot !== false;   // mặc định BẬT (chủ dự án xin, 2026-09-22)
+  return { ok: true, deviceConcurrency: max, launchStaggerMs: stagger, autoReboot: _tuKhoiDongLai };
 });
 
 // ---- Store (cài đặt) ----

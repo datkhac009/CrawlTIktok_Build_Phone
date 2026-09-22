@@ -109,6 +109,28 @@ function chay(params) {
     await r.xong();
   }
 
+  // ── 3. Python báo "máy đơ" ngay trước khi thoát → tới main.js nguyên vẹn (2026-09-22) ──
+  // main.js dựa vào đây để tự khởi động lại điện thoại (mainflow mục S).
+  {
+    const st = [];
+    runner.startDevice({ deviceId: 'dT3', serial: 'SERIAL-T3', minPosts: 1000, maxPosts: 100000, hw: 'HW-T3' },
+      () => {}, (_id, s) => st.push(s));
+    const { proc } = lanSpawn;
+    const viet = (obj) => proc.stdout.write('@@EVENT@@' + JSON.stringify(obj) + '\n');
+    viet({ type: 'may_do', chac: true, ly_do: 'Android trên máy treo — lõi Android đã chết' });
+    viet({ type: 'may_do', chac: false, ly_do: 'phục hồi hỏng 3 lần liền' });
+    await new Promise((ok) => {
+      proc.stdout.end(); proc.stderr.end();
+      setImmediate(() => { proc.emit('close', 1); setImmediate(ok); });
+    });
+    const md = st.filter((s) => s.kind === 'may_do');
+    check('3. Sự kiện "máy đơ" của Python tới main.js nguyên vẹn (CHẮC / NGHI + lý do)',
+      md.length === 2 && md[0].chac === true && md[0].lyDo === 'Android trên máy treo — lõi Android đã chết'
+      && md[1].chac === false && md[1].lyDo === 'phục hồi hỏng 3 lần liền', JSON.stringify(md));
+    check('3b. Rồi tiến trình thoát mã 1 → vẫn báo lỗi như cũ (để main.js hẹn chạy lại)',
+      st.some((s) => s.kind === 'status' && s.state === 'error' && /exit code 1/.test(s.msg || '')), JSON.stringify(st.slice(-2)));
+  }
+
   const failed = results.filter((x) => !x.pass);
   console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);
   if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));

@@ -248,6 +248,24 @@ function noiLai(serial, timeoutMs = 10000) {
   });
 }
 
+// KHỞI ĐỘNG LẠI một điện thoại qua ADB (2026-09-22) — đúng lệnh nút Restart của 效卫 gửi: lý do
+// khởi động lại đọc được trên GM1901 sau khi chủ dự án bấm nút đó là `reboot,shell`.
+// Trả `{ ok, msg }`. Máy tắt ngay khi nhận lệnh, nên lệnh hay kết thúc bằng MẤT KẾT NỐI hoặc hết
+// giờ — vẫn là đã gửi được. Chỉ "không có máy" (not found / offline) mới là không gửi được.
+function khoiDongLai(serial, timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    const ADB_PATH = adbPath();
+    if (!ADB_PATH || !serial) return resolve({ ok: false, msg: 'không có adb hoặc serial' });
+    execFile(ADB_PATH, ['-s', serial, 'shell', 'reboot'], { timeout: timeoutMs, encoding: 'utf-8' },
+      (err, stdout, stderr) => {
+        if (!err) return resolve({ ok: true, msg: '' });
+        const m = `${String(stderr || '')} ${String(err.message || '')}`.trim();
+        if (/not found|offline|no devices|unauthorized/i.test(m)) return resolve({ ok: false, msg: m.slice(0, 120) });
+        resolve({ ok: true, msg: err.killed ? 'máy tắt trước khi lệnh kịp trả lời' : m.slice(0, 120) });
+      });
+  });
+}
+
 // Dò lại IP cho CẢ danh sách rồi lưu. Trả kết quả `ghepMay` (thêm `loi` nếu không đọc được adb).
 async function dongBoIp({ dangChay = new Map() } = {}) {
   const online = (await listAdbSerials()).filter((x) => x.state === 'device');
@@ -321,5 +339,6 @@ module.exports = {
   ghepMay,
   docDanhTinh,
   noiLai,
+  khoiDongLai,
   dongBoIp,
 };

@@ -158,7 +158,11 @@ const farmGia = new Map();
 // mới đưa nó vào `farmGia`. `daNoiLai` ghi lại mọi lần app gọi `adb connect`.
 const roiAdb = new Map();
 const daNoiLai = [];
+// Lệnh khởi động lại điện thoại app đã gửi (mục S) — KHÔNG bao giờ gửi `adb reboot` thật.
+const daKhoiDongLai = [];
+let ketQuaKhoiDongLai = { ok: true, msg: '' };
 const fakeDevices = Object.assign({}, devicesThat, {
+  khoiDongLai: async (serial) => { daKhoiDongLai.push(serial); return ketQuaKhoiDongLai; },
   noiLai: async (serial) => {
     daNoiLai.push(serial);
     const o = roiAdb.get(serial);
@@ -801,6 +805,118 @@ const start = (id, serial, cfg = {}) => {
     await handlers.get('device-stop')({}, 'dS');
     FakeStore.last.set('sheets_config', { enabled: false });
     sheetBat = false;
+  }
+
+  // ── S. MÁY BỊ ĐƠ → TỰ KHỞI ĐỘNG LẠI ĐIỆN THOẠI RỒI CHẠY TIẾP (2026-09-22) ──
+  // Chủ dự án vẫn làm tay: Dừng → 效卫 Restart → Chạy. Chốt: không giới hạn số lần, "khởi động xong
+  // rồi chạy lại là được". Python báo `may_do` (phuchoi mục 8) rồi thoát mã 1 — ở đây làm y như vậy.
+  {
+    const ID = 'dDo';
+    const IP = '192.168.5.230:5555';
+    const cuoi = () => { const a = lanChay(ID); return a[a.length - 1]; };
+    const hong = (doDo) => {
+      const e = cuoi();
+      if (doDo) e.onStatus(ID, Object.assign({ kind: 'may_do' }, doDo));
+      running.delete(ID);
+      e.onStatus(ID, { kind: 'status', state: 'error', msg: 'exit code 1' });
+    };
+    const CHAC = { chac: true, lyDo: 'Android trên máy treo — lõi Android đã chết' };
+    const NGHI = { chac: false, lyDo: 'phục hồi hỏng 3 lần liền' };
+    const soLuot = () => lanChay(ID).length;
+    await handlers.get('set-global-settings')({}, { deviceConcurrency: 6, launchStaggerMs: 0, autoReboot: true });
+    daKhoiDongLai.length = 0;
+    ketQuaKhoiDongLai = { ok: true, msg: '' };
+    tuaNhanh = true;
+    await start(ID, IP);
+
+    // S1–S3. Android treo hẳn: khởi động lại NGAY; lỗi lặp lại lúc máy chưa lên → không gửi lần hai;
+    // máy lên lại (rơi khỏi ADB server, app tự nối lại) → tự chạy tiếp, không ai bấm.
+    const luot1 = soLuot();
+    farmGia.delete(IP);
+    roiAdb.set(IP, { model: ID, hw: 'hw-' + ID });
+    hong(CHAC);
+    hong(CHAC);          // lỗi báo hai lần, TRƯỚC khi máy kịp lên lại
+    await nghi(60);
+    const nghiS = sent.filter(([c, p]) => c === 'crawl-status' && p.deviceId === ID && p.state === 'resting').pop();
+    check('S1. Android treo hẳn → tự khởi động lại điện thoại NGAY, đúng serial, và vẫn hẹn chạy lại sau 1 phút',
+      daKhoiDongLai[0] === IP && !!nghiS && /máy bị đơ — đang tự khởi động lại điện thoại/.test(nghiS[1].msg)
+      && coLog(ID, /🔄 Máy bị đơ \(Android trên máy treo — lõi Android đã chết\) — đã tự khởi động lại điện thoại \(lần 1 hôm nay\)\. Máy lên lại là tự chạy tiếp/),
+      JSON.stringify({ kdl: daKhoiDongLai, msg: nghiS && nghiS[1].msg }));
+    check('S2. Chưa có lượt nào chạy lại (máy chưa lên xong) → KHÔNG gửi lệnh khởi động lại lần hai',
+      daKhoiDongLai.length === 1, JSON.stringify(daKhoiDongLai));
+    check('S3. Máy lên lại (app tự nối lại IP cũ) → TỰ CHẠY TIẾP, không cần ai bấm Dừng rồi Chạy',
+      soLuot() === luot1 + 1 && cuoi().params.serial === IP, `${soLuot() - luot1} lượt mới`);
+
+    // S4. Không giới hạn số lần: lượt mới lại treo → khởi động lại lần nữa.
+    hong(CHAC);
+    await nghi(60);
+    check('S4. Lên lại rồi mà lại treo → khởi động lại TIẾP (không giới hạn số lần, như chủ dự án chốt)',
+      daKhoiDongLai.length === 2 && coLog(ID, /đã tự khởi động lại điện thoại \(lần 2 hôm nay\)/), JSON.stringify(daKhoiDongLai));
+
+    // S5. Tắt công tắc → không bao giờ khởi động lại; vẫn chạy lại sau 1 phút như cũ.
+    await handlers.get('set-global-settings')({}, { deviceConcurrency: 6, launchStaggerMs: 0, autoReboot: false });
+    const luot5 = soLuot();
+    hong(CHAC);
+    await nghi(60);
+    check('S5. Tắt "Tự khởi động lại điện thoại khi bị đơ" → KHÔNG khởi động lại, chỉ chạy lại như cũ',
+      daKhoiDongLai.length === 2 && soLuot() === luot5 + 1);
+    await handlers.get('set-global-settings')({}, { deviceConcurrency: 6, launchStaggerMs: 0, autoReboot: true });
+
+    // S6. NGHI đơ: lượt 1 và 2 không làm gì; lượt 3 liền → khởi động lại.
+    hong(NGHI); await nghi(60);
+    hong(NGHI); await nghi(60);
+    const sau2 = daKhoiDongLai.length;
+    hong(NGHI); await nghi(60);
+    check('S6. Không điều khiển được máy: lượt 1, 2 chưa làm gì; đủ 3 lượt liền → khởi động lại',
+      sau2 === 2 && daKhoiDongLai.length === 3 && coLog(ID, /🔄 Máy bị đơ \(phục hồi hỏng 3 lần liền\)/),
+      JSON.stringify({ sau2, tong: daKhoiDongLai.length }));
+
+    // S7. Một lượt chạy khoẻ (≥ 10 phút) ở giữa → đếm lại từ đầu.
+    hong(NGHI); await nghi(60);                          // 1
+    hong(NGHI); await nghi(60);                          // 2
+    const thatNow = Date.now;
+    Date.now = () => thatNow() + 11 * 60000;             // lượt này chạy 11 phút rồi mới hỏng
+    hong(NGHI);                                          // → đếm lại: 1
+    Date.now = thatNow;
+    await nghi(60);
+    hong(NGHI); await nghi(60);                          // 2
+    check('S7. Có một lượt chạy khoẻ ≥ 10 phút xen giữa → đếm "nghi đơ" lại từ đầu, chưa khởi động lại',
+      daKhoiDongLai.length === 3, JSON.stringify(daKhoiDongLai));
+
+    // S8. Lỗi KHÔNG kèm "máy đơ" (vd Python crash, mất ADB) → không bao giờ khởi động lại điện thoại.
+    const truoc8 = daKhoiDongLai.length;
+    hong(null); await nghi(60);
+    hong(null); await nghi(60);
+    hong(null); await nghi(60);
+    check('S8. Lỗi không phải "máy đơ" (Python crash, mất ADB…) → không khởi động lại điện thoại',
+      daKhoiDongLai.length === truoc8);
+
+    // S9. Gửi lệnh không được (máy vừa rớt khỏi ADB) → nói rõ, và lần sau vẫn thử gửi.
+    ketQuaKhoiDongLai = { ok: false, msg: "adb.exe: device '192.168.5.230:5555' not found" };
+    farmGia.delete(IP);                                  // máy rớt khỏi ADB: lượt thử lại không chạy được
+    const e9 = cuoi();
+    hong(CHAC);
+    await nghi(40);                                      // lệnh hỏng đã trả về
+    ketQuaKhoiDongLai = { ok: true, msg: '' };
+    e9.onStatus(ID, Object.assign({ kind: 'may_do' }, CHAC));   // lỗi báo lại, CHƯA có lượt mới
+    e9.onStatus(ID, { kind: 'status', state: 'error', msg: 'exit code 1' });
+    await nghi(40);
+    check('S9. Không gửi được lệnh khởi động lại → báo "cần khởi động lại tay", lỗi sau vẫn thử gửi lại',
+      coLog(ID, /KHÔNG gửi được lệnh khởi động lại \(adb\.exe: device .* not found\) — cần khởi động lại tay/)
+      && daKhoiDongLai.length === truoc8 + 2, JSON.stringify(daKhoiDongLai));
+    farmGia.set(IP, { model: ID, hw: 'hw-' + ID });      // máy quay lại cho mục sau
+    await nghi(40);
+
+    // S10. Người dùng bấm Dừng → lỗi về muộn của lượt cũ không làm máy khởi động lại.
+    const e10 = cuoi();
+    await handlers.get('device-stop')({}, ID);
+    const truoc10 = daKhoiDongLai.length;
+    e10.onStatus(ID, Object.assign({ kind: 'may_do' }, CHAC));
+    e10.onStatus(ID, { kind: 'status', state: 'error', msg: 'exit code 1' });
+    await nghi(40);
+    check('S10. Đã bấm Dừng → KHÔNG khởi động lại điện thoại, không tự chạy lại',
+      daKhoiDongLai.length === truoc10 && !running.has(ID));
+    tuaNhanh = false;
   }
 
   _xong = true;

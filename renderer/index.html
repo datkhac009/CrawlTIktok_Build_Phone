@@ -314,6 +314,14 @@
           <div class="section-desc">Mỗi máy đang chạy tốn một tiến trình Python trên máy tính, và cả farm dồn lệnh qua CHUNG một adb server. Bật cả 19 máy cùng lúc là 19 tiến trình tranh nhau một adb server và một đường Wi-Fi, chưa tính phần mềm soi màn hình. Máy vượt trần sẽ xếp hàng chờ.</div>
           <div class="field-label">Giãn cách khi khởi động nhiều máy … mili-giây (toàn app)</div>
           <input class="input input-sm" type="number" id="cfgLaunchStaggerMs" placeholder="3000">
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="cfgAutoReboot">
+              <span class="slider"></span>
+            </label>
+            <span class="switch-label">Tự khởi động lại điện thoại khi bị đơ (toàn app)</span>
+          </div>
+          <div class="section-desc">Giống bấm Restart trong 效卫: Android trên máy treo hẳn thì khởi động lại ngay; không điều khiển được máy 3 lượt liền thì khởi động lại. Máy lên lại là app tự chạy tiếp — không cần bấm Dừng rồi Chạy.</div>
         </div>
       </div>
       <div class="modal-foot">

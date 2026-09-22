@@ -716,7 +716,7 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     && !/await (seedKnownLinks|napSheetDauPhien)/.test(mj));
   check('19g. Nút Xoá đi qua cùng đường dọn dẹp với nút Dừng',
     /'devices-delete'[\s\S]{0,700}dungHan\(data\.id\)/.test(mj)
-    && /function dungHan[\s\S]{0,200}huyNghi\(deviceId\)[\s\S]{0,60}_lastParams\.delete\(deviceId\)[\s\S]{0,120}devslot\.cancel\(deviceId\)/.test(mj));
+    && /function dungHan[\s\S]{0,200}huyNghi\(deviceId\)[\s\S]{0,60}_lastParams\.delete\(deviceId\)[\s\S]{0,260}devslot\.cancel\(deviceId\)/.test(mj));
 
   // Giao diện: hai trạng thái bản cũ vẽ thành "Đã dừng".
   check('19h. Giao diện nhận trạng thái XẾP HÀNG và NGHỈ',
@@ -894,7 +894,7 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
   check('24d. Giao diện phân biệt "nghỉ vì lỗi, sẽ tự chạy lại" với nghỉ giữa ca',
     /st\.restLoi = !!payload\.loi/.test(rj) && /if \(st\.restLoi\) return `Lỗi → tự chạy lại/.test(rj));
   check('24e. Tiến trình chết → hẹn tự chạy lại (chỉ ở nhánh LỖI)',
-    /if \(status\.state === 'error'\) \{\s*\n\s*_cycleDone\.delete\(deviceId\);\s*\n\s*henChayLaiSauLoi\(deviceId, status\.msg\);/.test(mj));
+    /if \(status\.state === 'error'\) \{\s*\n\s*_cycleDone\.delete\(deviceId\);\s*\n\s*henChayLaiSauLoi\(deviceId, xetKhoiDongLai\(deviceId, chay\.serial\) \|\| status\.msg\);/.test(mj));
 }
 
 // ── 25. Máy đổi IP (2026-09-19) ──
@@ -931,6 +931,20 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     && /id="choDayCount"/.test(doc('renderer/index.html')));
   check('26e. Bảng trống mà hàng chờ còn → nút ☁ vẫn đẩy được (vừa mở lại app)',
     /if \(!crawlResults\.length && !soChoDay\)/.test(f));
+}
+
+// ── 27. Máy bị đơ → tự khởi động lại điện thoại (2026-09-22) — hành vi do phuchoi mục 8 và mainflow mục S chạy thật ──
+{
+  const rn = doc('src/runner.cjs');
+  const rj = doc('renderer/renderer.js');
+  const mj = doc('main.js');
+  check('27a. Runner chuyển tiếp sự kiện "máy đơ" của Python lên main.js',
+    /payload\.type === 'may_do'\) \{[\s\S]{0,200}onStatus\(deviceId, \{ kind: 'may_do', chac: payload\.chac === true, lyDo:/.test(rn));
+  check('27b. Ô "Tự khởi động lại điện thoại khi bị đơ": mặc định BẬT, đọc lúc mở Cài đặt, lưu lúc bấm Lưu',
+    /autoReboot: true,/.test(rj) && /\$\('cfgAutoReboot'\)\.checked = globalSettings\.autoReboot !== false;/.test(rj)
+    && /autoReboot: document\.getElementById\('cfgAutoReboot'\)\.checked,/.test(rj) && /id="cfgAutoReboot"/.test(doc('renderer/index.html')));
+  check('27c. Main áp công tắc qua set-global-settings (thiếu khoá = BẬT)',
+    /_tuKhoiDongLai = c\.autoReboot !== false;/.test(mj));
 }
 
 // Hàm làm tròn: chạy thật, không soi chữ.

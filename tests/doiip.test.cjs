@@ -154,7 +154,59 @@ async function thuNoiLai() {
   }
 }
 
-thuNoiLai().catch((e) => check('3. noiLai chạy được', false, e && e.stack)).then(() => {
+// ── 4. `khoiDongLai`: máy bị đơ → gửi đúng lệnh nút Restart của 效卫 (2026-09-22) ──
+// Chạy ĐÚNG hàm thật; chỉ thay `execFile` — KHÔNG gửi `adb reboot` thật tới máy nào.
+async function thuKhoiDongLai() {
+  const cp = require('child_process');
+  const execFileGoc = cp.execFile;
+  const goi = [];
+  let tl = null;   // { err, stdout, stderr }
+  cp.execFile = (file, args, opt, cb) => {
+    goi.push({ file, args, opt });
+    setImmediate(() => cb(tl.err, tl.stdout || '', tl.stderr || ''));
+    return {};
+  };
+  const pDev = require.resolve(path.join(__dirname, '..', 'src', 'devices.cjs'));
+  const pAdb = require.resolve(path.join(__dirname, '..', 'src', 'adbpath.cjs'));
+  const adbThat = require(pAdb);
+  delete require.cache[pDev];
+  require.cache[pAdb] = { id: pAdb, filename: pAdb, loaded: true,
+    exports: Object.assign({}, adbThat, { adbPath: () => 'C:/adb/adb.exe' }) };
+  const loi = (msg, them) => Object.assign(new Error(msg), them || {});
+  try {
+    const { khoiDongLai } = require(pDev);
+    const S = '192.168.5.110:5555';
+    const kq = {};
+    for (const [ten, t] of [
+      ['xong', { err: null }],
+      ['het_gio', { err: loi('Command failed', { killed: true }) }],
+      ['dut', { err: loi('Command failed'), stderr: 'error: closed' }],
+      ['khong_thay', { err: loi('Command failed'), stderr: "adb.exe: device '192.168.5.110:5555' not found" }],
+      ['offline', { err: loi('Command failed'), stderr: 'adb.exe: device offline' }],
+    ]) {
+      tl = t;
+      kq[ten] = await khoiDongLai(S);
+    }
+    const g = goi[0] || {};
+    check('4a. Gửi đúng lệnh nút Restart của 效卫 (`adb -s <máy> shell reboot`), có hạn chờ',
+      g.file === 'C:/adb/adb.exe' && JSON.stringify(g.args) === JSON.stringify(['-s', S, 'shell', 'reboot'])
+      && g.opt && g.opt.timeout > 0 && g.opt.timeout <= 20000, JSON.stringify(g));
+    check('4b. Lệnh xong / hết giờ / mất kết nối (máy đang tắt) → coi là ĐÃ GỬI được',
+      kq.xong.ok && kq.het_gio.ok && kq.dut.ok, JSON.stringify(kq));
+    check('4c. Không có máy (not found / offline) → KHÔNG gửi được, kèm câu lỗi thật',
+      !kq.khong_thay.ok && /not found/.test(kq.khong_thay.msg) && !kq.offline.ok, JSON.stringify(kq));
+    const truoc = goi.length;
+    const rong = await khoiDongLai('');
+    check('4d. Không có serial → không gọi adb', rong.ok === false && goi.length === truoc);
+  } finally {
+    cp.execFile = execFileGoc;
+    require.cache[pAdb] = { id: pAdb, filename: pAdb, loaded: true, exports: adbThat };
+    delete require.cache[pDev];
+  }
+}
+
+thuNoiLai().catch((e) => check('3. noiLai chạy được', false, e && e.stack))
+  .then(() => thuKhoiDongLai()).catch((e) => check('4. khoiDongLai chạy được', false, e && e.stack)).then(() => {
   const failed = results.filter((x) => !x.pass);
   console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);
   if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));

@@ -517,6 +517,8 @@ PA.read_video_info = doc_gia
       v[3] === 'mo_lai' && r.log.some((l) => /Feed không sang được video mới \(4 vòng liền cùng một video\) — khởi động lại TikTok/.test(l)),
       v.join(','));
     check('5f3. Feed chạy lại bình thường → quay về cú vuốt thường', v.slice(4).every((x) => x === 'vuot') && v.length >= 6, v.join(','));
+    check('5f4. Khởi động lại TikTok MỘT lần là feed chạy lại → không báo "máy đơ", hết ca bình thường',
+      r.kq.ma === 0 && !r.su_kien.some((e) => e.type === 'may_do'), JSON.stringify(r.su_kien.filter((e) => e.type === 'may_do')));
   }
 }
 
@@ -571,8 +573,11 @@ S.connect = connect_hong
 PS_KHOE = "S NAME\\n" + "\\n".join("S tien_trinh_%d" % i for i in range(60)) + "\\nS system_server\\nS com.android.systemui\\n"
 PS = PS_KHOE
 SETTINGS_TREO = False
+BOOT = "1"                     # getprop sys.boot_completed: "" = may dang khoi dong
 _adb_vong = S.adb
 def adb_may(*args, serial=None, timeout=60):
+    if args == ("shell", "getprop sys.boot_completed"):
+        return BOOT
     if len(args) == 2 and args[0] == "shell" and (args[1].startswith("ps ") or args[1].startswith("settings ")):
         m.viec.append(args[1].split()[0])
         if args[1].startswith("ps "):
@@ -635,6 +640,150 @@ LOI_KET_NOI = Exception("device 192.168.5.148:5555 not online")
   check('7g. Máy KHÔNG online (lỗi khác hẳn) → giữ câu "dò lại IP", không đi hỏi ps / settings vô ích',
     !!r.kq && r.kq.ma === 1 && coDong(r, /⛔ Không kết nối được điện thoại .*not online.*dò lại IP/)
     && r.kq.viec.length === 0, r.kq && JSON.stringify(r.kq.viec));
+}
+
+// ── 8. MÁY BỊ ĐƠ → BÁO APP ĐỂ NÓ TỰ KHỞI ĐỘNG LẠI ĐIỆN THOẠI (2026-09-22) ──
+// Chủ dự án vẫn làm tay: Dừng → 效卫 Restart → Chạy. Python chỉ BÁO (`may_do`) ngay trước khi
+// thoát; quyết định nằm ở main.js (mainflow mục S). CHẮC = Android treo hẳn; NGHI = còn lại.
+const mayDo = (r) => r.su_kien.filter((e) => e.type === 'may_do');
+{
+  const r = chayVong('do_chet', TREO + `
+PS = PS_KHOE.replace("S system_server", "Z [system_server]")
+`, { LIMIT: '5' });
+  const e = mayDo(r);
+  check('8a. Android treo hẳn (lõi chết) → báo app "máy đơ" CHẮC, kèm lý do',
+    !!r.kq && r.kq.ma === 1 && e.length === 1 && e[0].chac === true && /Android trên máy treo — lõi Android đã chết/.test(e[0].ly_do),
+    JSON.stringify(e));
+}
+{
+  const r = chayVong('do_khong_tra_loi', TREO + `
+SETTINGS_TREO = True
+`, { LIMIT: '5' });
+  const e = mayDo(r);
+  check('8b. Lệnh hệ thống không trả lời → cũng CHẮC',
+    e.length === 1 && e[0].chac === true && /lệnh hệ thống không trả lời/.test(e[0].ly_do), JSON.stringify(e));
+}
+{
+  const r = chayVong('do_dich_vu', TREO, { LIMIT: '5' });
+  const e = mayDo(r);
+  check('8c. Android khoẻ mà dịch vụ điều khiển không lên → NGHI (app đợi 3 lượt liền)',
+    e.length === 1 && e[0].chac === false && /dịch vụ điều khiển không khởi động được \(server not ready\)/.test(e[0].ly_do),
+    JSON.stringify(e));
+}
+{
+  // Máy vừa được app khởi động lại, đang lên dở: `ps` chưa có system_server, `settings` chưa trả lời.
+  const r = chayVong('do_dang_khoi_dong', TREO + `
+BOOT = ""
+PS = PS_KHOE.replace("S system_server\\n", "")
+SETTINGS_TREO = True
+`, { LIMIT: '5' });
+  const e = mayDo(r);
+  check('8d. Máy ĐANG KHỞI ĐỘNG (sys.boot_completed ≠ 1) → KHÔNG coi là treo (không khởi động lại máy đang lên dở)',
+    !coDong(r, /ĐANG TREO/) && e.length === 1 && e[0].chac === false && JSON.stringify(r.kq.viec) === '[]',
+    JSON.stringify({ e, viec: r.kq && r.kq.viec }));
+}
+{
+  const r = chayVong('do_khong_online', TREO + `
+LOI_KET_NOI = Exception("device 192.168.5.148:5555 not online")
+`, { LIMIT: '5' });
+  check('8e. Máy KHÔNG online → KHÔNG báo "máy đơ" (không gửi được lệnh qua ADB, app lo dò lại IP)',
+    !!r.kq && r.kq.ma === 1 && mayDo(r).length === 0, JSON.stringify(mayDo(r)));
+}
+{
+  const r = chayVong('do_sai_may', `
+SETUP_HONG = False
+MAC_DINH_KET_NOI = True
+HW_THAT = "HW-GM1911"
+`, { LIMIT: '5', DEVICE_HW: 'HW-V2031' });
+  check('8f. IP giờ là điện thoại KHÁC → KHÔNG báo "máy đơ" (không khởi động lại nhầm máy người khác)',
+    !!r.kq && r.kq.ma === 1 && mayDo(r).length === 0, JSON.stringify(mayDo(r)));
+}
+{
+  const r = chayVong('do_phuc_hoi', `
+SETUP_HONG = True
+MAC_DINH_KET_NOI = True
+kq_video[:] = [("loi", Exception("lỗi lạ"))] * 40
+`, { LIMIT: '100' });
+  const e = mayDo(r);
+  check('8g. Phục hồi hỏng 3 lần liền → NGHI đơ, lý do rõ ràng',
+    !!r.kq && r.kq.ma === 1 && e.length === 1 && e[0].chac === false && e[0].ly_do === 'phục hồi hỏng 3 lần liền',
+    JSON.stringify(e));
+}
+{
+  const r = chayVong('do_khong_mo_tiktok', `
+SETUP_HONG = False
+MAC_DINH_KET_NOI = True
+def setup_luon_hong(d):
+    raise RuntimeError("Khong the mo TikTok sau 3 lan thu.")
+S.setup_device = setup_luon_hong
+`, { LIMIT: '5' });
+  const e = mayDo(r);
+  check('8h. Lúc khởi động không mở được TikTok → NGHI đơ',
+    !!r.kq && r.kq.ma === 1 && e.length === 1 && e[0].chac === false && /không mở được TikTok sau 3 lần thử/.test(e[0].ly_do),
+    JSON.stringify(e));
+}
+{
+  // Feed đứng yên MÃI: khởi động lại TikTok bao nhiêu lần cũng cùng một video. Bản cũ khởi động lại
+  // TikTok mãi mãi, không bao giờ leo thang.
+  const r = chayVong('do_feed_dung', `
+SETUP_HONG = False
+MAC_DINH_KET_NOI = True
+kq_video[:] = ["icon"] * 200
+class KeoGia:
+    def down(self, x, y): pass
+    def move(self, x, y): pass
+    def up(self, x, y): m.viec.append("keo")
+m.touch = KeoGia()
+class CauGia:
+    enabled = True
+    parent_gone = False
+    def __init__(self, *a, **k): pass
+    def ask(self, **k): return 1
+    def take(self, aid): return {}
+    def acted(self, *a, **k): pass
+S.AskBridge = CauGia
+PA.read_video_info = lambda d: {"author": "Trend Master", "handle": "", "desc": "đứng hình", "badges": [], "live": False, "tako": False}
+`, { LIMIT: '100', ASK_ON: '1' });
+  const e = mayDo(r);
+  const moLai = r.kq ? r.kq.viec.filter((x) => x === 'mo_lai').length : -1;
+  check('8i. Khởi động lại TikTok 3 lần mà feed vẫn đứng yên → thoát mã 1 và báo NGHI đơ (không lặp mãi)',
+    !!r.kq && r.kq.ma === 1 && moLai === 3 && e.length === 1 && e[0].chac === false
+    && /feed đứng yên sau 3 lần khởi động lại TikTok/.test(e[0].ly_do),
+    JSON.stringify({ ma: r.kq && r.kq.ma, moLai, e, loi: r.loi.slice(-200) }));
+}
+
+{
+  // Feed kẹt RỒI CHẠY LẠI, bốn lần trong một ca: mỗi lần khởi động lại TikTok là feed sang video mới.
+  // Đó là TikTok vấp chứ không phải máy đơ — không được cộng dồn thành "3 lần liền".
+  const r = chayVong('do_feed_vap', `
+SETUP_HONG = False
+MAC_DINH_KET_NOI = True
+kq_video[:] = ["icon"] * 200
+class KeoGia:
+    def down(self, x, y): pass
+    def move(self, x, y): pass
+    def up(self, x, y): m.viec.append("keo")
+m.touch = KeoGia()
+class CauGia:
+    enabled = True
+    parent_gone = False
+    def __init__(self, *a, **k): pass
+    def ask(self, **k): return 1
+    def take(self, aid): return {}
+    def acted(self, *a, **k): pass
+S.AskBridge = CauGia
+LICH = []
+for k in range(4):
+    LICH += [f"kẹt {k}"] * 4 + [f"mới {k}a", f"mới {k}b"]
+def doc_gia(d):
+    ten = LICH.pop(0) if LICH else "bình thường " + str(time.time())
+    return {"author": ten, "handle": "", "desc": ten, "badges": [], "live": False, "tako": False}
+PA.read_video_info = doc_gia
+`, { LIMIT: '30', ASK_ON: '1' });
+  const moLai = r.kq ? r.kq.viec.filter((x) => x === 'mo_lai').length : -1;
+  check('8j. Feed kẹt rồi chạy lại 4 lần trong ca (TikTok vấp, không phải máy đơ) → KHÔNG thoát, KHÔNG báo đơ',
+    !!r.kq && r.kq.ma === 0 && moLai === 4 && mayDo(r).length === 0,
+    JSON.stringify({ ma: r.kq && r.kq.ma, moLai, e: mayDo(r), loi: r.loi.slice(-200) }));
 }
 
 try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (_) {}
