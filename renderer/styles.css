@@ -196,6 +196,7 @@ body {
 .pstat-badge.queue { color: #f5b942; }
 .pstat-badge.rest { color: #7aa7ff; }
 .pstat-badge.offline { color: #f5b942; }
+.pstat-badge.reboot { color: #c08bff; }
 
 /* Placeholder */
 .placeholder {

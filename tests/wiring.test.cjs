@@ -721,8 +721,8 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
   // Giao diện: hai trạng thái bản cũ vẽ thành "Đã dừng".
   check('19h. Giao diện nhận trạng thái XẾP HÀNG và NGHỈ',
     /state === 'queued'\) \{ st\.status = 'queue'/.test(rj) && /state === 'resting'\) \{\s*st\.status = 'rest'/.test(rj));
-  check('19i. Máy xếp hàng / đang nghỉ / đang chờ nối lại hiện nút Dừng, không hiện nút Chạy',
-    /TRANG_THAI_BAN = new Set\(\['run', 'queue', 'rest', 'offline'\]\)/.test(rj)
+  check('19i. Máy xếp hàng / đang nghỉ / đang chờ nối lại / đang khởi động lại hiện nút Dừng, không hiện nút Chạy',
+    /TRANG_THAI_BAN = new Set\(\['run', 'queue', 'rest', 'offline', 'reboot'\]\)/.test(rj)
     && /dangBan\(id\) \? stopDeviceById\(id\) : startDeviceById\(id\)/.test(rj));
   check('19j. "Chạy đã chọn" bỏ qua máy đang bận',
     /ids\.filter\(\(id\) => !dangBan\(id\)\)\.forEach\(startDeviceById\)/.test(rj));
@@ -894,7 +894,9 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
   check('24d. Giao diện phân biệt "nghỉ vì lỗi, sẽ tự chạy lại" với nghỉ giữa ca',
     /st\.restLoi = !!payload\.loi/.test(rj) && /if \(st\.restLoi\) return `Lỗi → tự chạy lại/.test(rj));
   check('24e. Tiến trình chết → hẹn tự chạy lại (chỉ ở nhánh LỖI)',
-    /if \(status\.state === 'error'\) \{\s*\n\s*_cycleDone\.delete\(deviceId\);\s*\n\s*henChayLaiSauLoi\(deviceId, xetKhoiDongLai\(deviceId, chay\.serial\) \|\| status\.msg\);/.test(mj));
+    /if \(status\.state === 'error'\) \{\s*\n\s*_cycleDone\.delete\(deviceId\);[\s\S]{0,160}if \(!xetKhoiDongLai\(deviceId, chay\.serial\)\) henChayLaiSauLoi\(deviceId, status\.msg\);/.test(mj));
+  check('24f. Giao diện có trạng thái "đang khởi động lại máy — chờ máy lên" (không hiện "Lỗi → tự chạy lại hh:mm")',
+    /payload\.state === 'rebooting'\) st\.status = 'reboot'/.test(rj) && /st\.status === 'reboot'\) return 'Đang khởi động lại máy — chờ máy lên'/.test(rj));
 }
 
 // ── 25. Máy đổi IP (2026-09-19) ──

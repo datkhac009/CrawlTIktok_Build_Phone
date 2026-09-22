@@ -111,46 +111,115 @@ const LUOT_KHOE_MS = 10 * 60000;
 // `may_do` ngay trước khi thoát (scan_feed_sounds.py: `bao_may_do`), ở đây quyết:
 //   • CHẮC (Android treo hẳn)       → khởi động lại ngay;
 //   • NGHI (không điều khiển được)  → đủ DO_NGHI_TOI_DA lượt ngắn liền mới khởi động lại.
-// KHÔNG giới hạn số lần, KHÔNG có thời gian chờ — chủ dự án chốt: "nếu cứ bị lỗi như thế thì khởi
-// động xong rồi chạy lại là được". Chốt duy nhất: gửi lệnh rồi thì phải có MỘT LƯỢT MỚI chạy (tức
-// máy đã lên lại) mới gửi tiếp — không khởi động lại một máy đang khởi động dở.
+// KHÔNG giới hạn số lần — chủ dự án chốt: "nếu cứ bị lỗi như thế thì khởi động xong rồi chạy lại là
+// được". Và CHỈ chạy lại khi máy đã LÊN HẲN (chủ dự án hỏi 2026-09-22: "nhỡ hẹn 10:51 mà máy vẫn
+// chưa restart xong thì sao?") — xem `choMayLenRoiChay`.
 const _doLuot = new Map();      // deviceId -> { chac, lyDo } Python báo trong lượt đang chạy
 const _doLien = new Map();      // deviceId -> số lượt ngắn LIÊN TIẾP kết thúc vì "nghi đơ"
-const _kdlCho = new Set();      // đã gửi lệnh khởi động lại, CHƯA có lượt mới nào chạy
+const _kdlCho = new Set();      // đang khởi động lại: đã gửi lệnh, CHƯA có lượt mới nào chạy
 const _kdlHomNay = new Map();   // deviceId -> { ngay, n } — số lần tự khởi động lại trong ngày
 const DO_NGHI_TOI_DA = 3;
 let _tuKhoiDongLai = true;      // ô "Tự khởi động lại điện thoại khi bị đơ" (Cài đặt → Toàn app)
+// Sau khi gửi lệnh: hỏi máy mỗi 15 giây xem đã lên hẳn chưa (biến môi trường chỉ để phép thử chạy nhanh).
+const HOI_MAY_LEN_MS = Number(process.env.HOI_MAY_LEN_MS) || 15 * 1000;
+// Quá 10 phút chưa thấy máy ở IP cũ (có thể đã nhận IP mới) → về vòng chạy lại mỗi phút, vòng đó
+// có dò IP theo số máy. Vẫn không chạy khi chưa tìm thấy máy.
+const CHO_MAY_LEN_TOI_DA_MS = 10 * 60000;
 
-// Gọi khi một lượt chạy kết thúc bằng LỖI. Trả câu ngắn cho dòng trạng thái nếu vừa gửi lệnh khởi
-// động lại, '' nếu không.
+function thoiLuong(giay) {
+  const s = Math.max(0, Math.round(giay));
+  return s < 60 ? `${s} giây` : `${Math.floor(s / 60)} phút${s % 60 ? ` ${s % 60} giây` : ''}`;
+}
+
+// Gọi khi một lượt chạy kết thúc bằng LỖI. Trả `true` nếu máy đang / vừa được khởi động lại — khi
+// đó việc chạy lại do `choMayLenRoiChay` lo, KHÔNG hẹn "tự chạy lại lúc hh:mm" như lỗi thường.
 function xetKhoiDongLai(id, serial) {
   const do_ = _doLuot.get(id);
   _doLuot.delete(id);
+  // Đang khởi động lại dở (lỗi báo hai lần, hoặc lệnh chưa trả lời) — đừng hẹn chạy lại chen vào,
+  // và kéo dòng trạng thái về lại "đang khởi động lại" (sự kiện 'error' vừa đổi nó thành "Lỗi").
+  if (_kdlCho.has(id)) {
+    sendToRenderer('crawl-status', { deviceId: id, kind: 'status', state: 'rebooting' });
+    return true;
+  }
   // Lượt vừa rồi chạy khoẻ (≥ 10 phút) thì đếm lại từ đầu, y như bộ đếm "lần n" của nhánh chạy lại.
   if (Date.now() - (_batDau.get(id) || 0) >= LUOT_KHOE_MS) _doLien.delete(id);
-  if (!do_ || !_tuKhoiDongLai || !_lastParams.has(id) || !serial) return '';
+  if (!do_ || !_tuKhoiDongLai || !_lastParams.has(id) || !serial) return false;
   const n = do_.chac ? DO_NGHI_TOI_DA : (_doLien.get(id) || 0) + 1;
   if (n < DO_NGHI_TOI_DA) {
     _doLien.set(id, n);
-    return '';
+    return false;
   }
-  if (_kdlCho.has(id)) return '';   // lệnh trước chưa có lượt nào chạy lại — máy chưa lên xong
   _doLien.delete(id);
   _kdlCho.add(id);
   const hom = new Date().toDateString();
   const truoc = _kdlHomNay.get(id);
   const lan = truoc && truoc.ngay === hom ? truoc.n + 1 : 1;
   _kdlHomNay.set(id, { ngay: hom, n: lan });
+  sendToRenderer('crawl-status', {
+    deviceId: id, kind: 'status', state: 'rebooting',
+    msg: `🔄 Máy bị đơ (${do_.lyDo}) — đang tự khởi động lại điện thoại (lần ${lan} hôm nay). Máy lên hẳn mới chạy lại.`,
+  });
+  const guiLuc = Date.now();
   devices.khoiDongLai(serial).then((r) => {
-    if (!r.ok) _kdlCho.delete(id);
+    if (r.ok) return choMayLenRoiChay(id, serial, guiLuc);
+    _kdlCho.delete(id);
     sendToRenderer('crawl-status', {
       deviceId: id, kind: 'log',
-      line: r.ok
-        ? `🔄 Máy bị đơ (${do_.lyDo}) — đã tự khởi động lại điện thoại (lần ${lan} hôm nay). Máy lên lại là tự chạy tiếp.`
-        : `⚠ Máy bị đơ (${do_.lyDo}) nhưng KHÔNG gửi được lệnh khởi động lại (${r.msg}) — cần khởi động lại tay.`,
+      line: `⚠ KHÔNG gửi được lệnh khởi động lại (${r.msg}) — cần khởi động lại tay. App vẫn thử chạy lại mỗi phút.`,
     });
-  }, () => { _kdlCho.delete(id); });
-  return 'máy bị đơ — đang tự khởi động lại điện thoại';
+    henChayLaiSauLoi(id, 'không gửi được lệnh khởi động lại');
+  }, () => { _kdlCho.delete(id); henChayLaiSauLoi(id, 'không gửi được lệnh khởi động lại'); });
+  return true;
+}
+
+// Máy vừa nhận lệnh khởi động lại: hỏi máy mỗi `HOI_MAY_LEN_MS`, và CHỈ chạy lại khi máy đã THẬT
+// SỰ khởi động lại (uptime ít hơn thời gian từ lúc gửi lệnh — trước khi tắt, máy còn trả lời bằng
+// uptime cũ) VÀ Android báo khởi động xong (`sys.boot_completed` = 1). Hẹn giờ nằm trong
+// `_restTimers`, nên Dừng / Xoá huỷ được như mọi lịch chạy lại khác.
+function choMayLenRoiChay(id, serial, guiLuc, baoLuc = guiLuc) {
+  if (!_lastParams.has(id)) return;
+  const t = setTimeout(async () => {
+    _restTimers.delete(id);
+    if (!_lastParams.has(id)) return;
+    let tt = await devices.docKhoiDong(serial);
+    // Máy lên lại thì thường rơi khỏi ADB server — nối lại đúng IP cũ (xem devices.noiLai).
+    if (!tt.online && await devices.noiLai(serial)) tt = await devices.docKhoiDong(serial);
+    if (!_lastParams.has(id)) return;
+    const troiQua = (Date.now() - guiLuc) / 1000;
+    const daLen = tt.online && tt.xong && Number.isFinite(tt.uptime);
+    let cau = '';
+    if (daLen && tt.uptime < troiQua + 5) {
+      cau = `✅ Máy đã khởi động lại xong (sau ${thoiLuong(troiQua)}) — chạy lại.`;
+    } else if (daLen && troiQua >= 180 && tt.uptime > troiQua + 60) {
+      // 3 phút mà máy vẫn chạy liền từ trước lúc gửi lệnh: lệnh không có tác dụng. Chạy thử luôn —
+      // còn đơ thì lượt đó báo lại và app gửi lệnh lần nữa.
+      cau = '⚠ Máy không khởi động lại (lệnh không có tác dụng) — vẫn chạy lại thử.';
+    } else if (Date.now() - guiLuc >= CHO_MAY_LEN_TOI_DA_MS) {
+      _kdlCho.delete(id);
+      sendToRenderer('crawl-status', {
+        deviceId: id, kind: 'log',
+        line: `⚠ Đã ${thoiLuong(troiQua)} mà chưa thấy máy lên lại ở ${serial} — chuyển sang dò máy mỗi phút (máy có thể đã nhận IP mới).`,
+      });
+      henChayLaiSauLoi(id, 'máy chưa lên lại sau khi khởi động lại');
+      return;
+    } else {
+      if (Date.now() - baoLuc >= 2 * 60000) {
+        baoLuc = Date.now();
+        sendToRenderer('crawl-status', {
+          deviceId: id, kind: 'log',
+          line: `⏳ Vẫn đang chờ máy lên lại (${thoiLuong(troiQua)})…`,
+        });
+      }
+      choMayLenRoiChay(id, serial, guiLuc, baoLuc);
+      return;
+    }
+    sendToRenderer('crawl-status', { deviceId: id, kind: 'log', line: cau });
+    chayMot(_lastParams.get(id)).then((r) => {
+      if (r && !r.ok) henChayLaiSauLoi(id, r.msg);
+    }, () => henChayLaiSauLoi(id, 'không khởi động được'));
+  }, HOI_MAY_LEN_MS);
+  _restTimers.set(id, t);
 }
 
 // ── MÁY ĐỔI IP (2026-09-19) — xem devices.cjs: "MÁY ĐỔI IP" ──
@@ -718,7 +787,8 @@ async function chayMot(params) {
           onDevicesAllStopped();
           if (status.state === 'error') {
             _cycleDone.delete(deviceId);
-            henChayLaiSauLoi(deviceId, xetKhoiDongLai(deviceId, chay.serial) || status.msg);
+            // Máy bị đơ → khởi động lại rồi CHỜ máy lên hẳn mới chạy; lỗi thường → chạy lại sau 1 phút.
+            if (!xetKhoiDongLai(deviceId, chay.serial)) henChayLaiSauLoi(deviceId, status.msg);
           }
 
           // ── Hết ca / hết pha thì nghỉ rồi tự chạy lại ──

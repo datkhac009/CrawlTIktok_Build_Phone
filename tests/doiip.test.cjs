@@ -198,6 +198,22 @@ async function thuKhoiDongLai() {
     const truoc = goi.length;
     const rong = await khoiDongLai('');
     check('4d. Không có serial → không gọi adb', rong.ok === false && goi.length === truoc);
+
+    // `docKhoiDong`: sau khi gửi lệnh, main.js dựa vào nó để biết máy đã LÊN HẲN chưa.
+    const { docKhoiDong } = require(pDev);
+    tl = { err: null, stdout: '1\n183.68 1204.11\n' };
+    const len = await docKhoiDong(S);
+    tl = { err: null, stdout: '\n41.02 90.50\n' };
+    const dangLen = await docKhoiDong(S);
+    tl = { err: loi('Command failed'), stderr: "adb.exe: device '192.168.5.110:5555' not found" };
+    const tat = await docKhoiDong(S);
+    const gK = goi[goi.length - 1] || {};
+    check('4e. Hỏi máy đã lên hẳn chưa: cờ khởi động xong + uptime, MỘT lệnh adb có hạn chờ',
+      JSON.stringify(gK.args) === JSON.stringify(['-s', S, 'shell', 'getprop sys.boot_completed; cat /proc/uptime'])
+      && gK.opt && gK.opt.timeout > 0 && gK.opt.timeout <= 15000, JSON.stringify(gK));
+    check('4f. Đọc đúng: đã lên (xong, 183 giây) / đang lên dở (chưa xong) / còn tắt (không nối được)',
+      len.online && len.xong && Math.round(len.uptime) === 184 && dangLen.online && !dangLen.xong
+      && Math.round(dangLen.uptime) === 41 && !tat.online && !tat.xong, JSON.stringify({ len, dangLen, tat }));
   } finally {
     cp.execFile = execFileGoc;
     require.cache[pAdb] = { id: pAdb, filename: pAdb, loaded: true, exports: adbThat };

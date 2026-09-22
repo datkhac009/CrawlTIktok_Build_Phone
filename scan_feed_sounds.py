@@ -933,6 +933,31 @@ def android_treo(serial):
     return ""
 
 
+def cho_khoi_dong_xong(serial, toi_da=180):
+    """May VUA KHOI DONG LAI (app tu khoi dong lai, hay nguoi dung bam Restart trong 效卫): `adbd`
+    len TRUOC Android ca phut. Ket noi luc do thi dich vu dieu khien khong len, bi tinh nham la
+    "may do" va co khi bi khoi dong lai lan nua. Cho `sys.boot_completed` = 1, toi da `toi_da` giay.
+    Khong hoi duoc (mat ADB...) thi thoi — de `connect` ben duoi bao dung loi that."""
+    t0 = time.time()
+    da_bao = False
+    while True:
+        try:
+            xong = adb("shell", "getprop sys.boot_completed", serial=serial, timeout=10).strip() == "1"
+        except Exception:
+            return False
+        if xong:
+            if da_bao:
+                log(f"✅ Android đã lên hẳn sau {_thoi_luong(time.time() - t0)} — kết nối.")
+            return True
+        if not da_bao:
+            log("⏳ Máy đang khởi động — chờ Android lên hẳn rồi mới kết nối…")
+            da_bao = True
+        if time.time() - t0 >= toi_da:
+            log(f"⚠ Chờ {_thoi_luong(toi_da)} mà Android vẫn chưa báo khởi động xong — vẫn thử kết nối.")
+            return False
+        time.sleep(5)
+
+
 def _vi_sao_treo(benh):
     return "lõi Android đã chết" if benh == "chet" else "lệnh hệ thống không trả lời"
 
@@ -1376,6 +1401,8 @@ def main():
             # connect(serial) ben duoi bao loi that, va bao dung cai loi that.
             log(f"⚠ adb connect lỗi ({str(e)[:80]}) — vẫn thử kết nối tiếp.")
 
+    if serial:
+        cho_khoi_dong_xong(serial)
     try:
         d = connect(serial)
     except Exception as e:

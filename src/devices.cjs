@@ -266,6 +266,28 @@ function khoiDongLai(serial, timeoutMs = 15000) {
   });
 }
 
+// Máy đã lên HẲN chưa (dùng sau khi gửi lệnh khởi động lại): nối được qua ADB, Android báo khởi
+// động xong (`sys.boot_completed` = 1), và đã chạy được bao lâu (`/proc/uptime`, giây). Không ném.
+// ⚠ `adbd` lên TRƯỚC Android cả phút, nên "đã thấy trên ADB" chưa có nghĩa là dùng được máy.
+function docKhoiDong(serial, timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    const ADB_PATH = adbPath();
+    const khong = { online: false, xong: false, uptime: NaN };
+    if (!ADB_PATH || !serial) return resolve(khong);
+    execFile(ADB_PATH, ['-s', serial, 'shell', 'getprop sys.boot_completed; cat /proc/uptime'],
+      { timeout: timeoutMs, encoding: 'utf-8' }, (err, stdout) => {
+        if (err) return resolve(khong);
+        // KHÔNG trim cả khối trước khi tách dòng: lúc máy lên dở, dòng đầu (cờ khởi động xong) RỖNG.
+        const dong = String(stdout || '').replace(/\r/g, '').split('\n');
+        resolve({
+          online: true,
+          xong: String(dong[0] || '').trim() === '1',
+          uptime: parseFloat(String(dong[1] || '').trim().split(/\s+/)[0]),
+        });
+      });
+  });
+}
+
 // Dò lại IP cho CẢ danh sách rồi lưu. Trả kết quả `ghepMay` (thêm `loi` nếu không đọc được adb).
 async function dongBoIp({ dangChay = new Map() } = {}) {
   const online = (await listAdbSerials()).filter((x) => x.state === 'device');
@@ -340,5 +362,6 @@ module.exports = {
   docDanhTinh,
   noiLai,
   khoiDongLai,
+  docKhoiDong,
   dongBoIp,
 };

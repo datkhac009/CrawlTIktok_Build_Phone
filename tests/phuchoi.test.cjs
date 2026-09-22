@@ -350,7 +350,10 @@ def setup_gia(d):
 S.setup_device = setup_gia
 get_state = []
 HW_THAT = ""                   # so may phan cung cua dien thoai dang o IP nay
+BOOT_VONG = []                 # cac lan hoi sys.boot_completed luc khoi dong; het danh sach = "1"
 def adb_gia(*args, serial=None, timeout=60):
+    if args == ("shell", "getprop sys.boot_completed"):
+        return BOOT_VONG.pop(0) if BOOT_VONG else "1"
     if args[0] == "get-state":
         ok = get_state.pop(0) if get_state else MAC_DINH_KET_NOI
         if not ok:
@@ -752,6 +755,31 @@ PA.read_video_info = lambda d: {"author": "Trend Master", "handle": "", "desc": 
     JSON.stringify({ ma: r.kq && r.kq.ma, moLai, e, loi: r.loi.slice(-200) }));
 }
 
+{
+  // Chủ dự án (2026-09-22): "nhỡ hẹn 10:51 mà máy vẫn chưa restart xong thì sao?" — `adbd` lên trước
+  // Android cả phút. Lượt chạy bắt đúng lúc đó phải CHỜ Android lên hẳn, không kết nối vội rồi báo đơ.
+  const r = chayVong('cho_khoi_dong', `
+SETUP_HONG = False
+MAC_DINH_KET_NOI = True
+BOOT_VONG[:] = ["", "", "", ""]
+`, { LIMIT: '3' });
+  const i = r.log.findIndex((l) => /⏳ Máy đang khởi động — chờ Android lên hẳn rồi mới kết nối/.test(l));
+  const j = r.log.findIndex((l) => /✅ Android đã lên hẳn sau 20 giây — kết nối/.test(l));
+  const k = r.log.findIndex((l) => /✅ Đã kết nối/.test(l));
+  check('8k. Máy đang khởi động dở → chờ Android lên hẳn (báo MỘT dòng), rồi mới kết nối và quét bình thường',
+    !!r.kq && r.kq.ma === 0 && i >= 0 && j > i && k > j && r.log.filter((l) => /⏳ Máy đang khởi động/.test(l)).length === 1
+    && mayDo(r).length === 0, r.loi || r.log.slice(0, 6).join(' | '));
+}
+{
+  const r = chayVong('cho_khoi_dong_lau', `
+SETUP_HONG = False
+MAC_DINH_KET_NOI = True
+BOOT_VONG[:] = [""] * 100
+`, { LIMIT: '3' });
+  check('8l. Chờ 3 phút mà Android vẫn chưa báo xong → nói rõ rồi vẫn thử kết nối (không đứng chờ mãi)',
+    !!r.kq && r.log.some((l) => /⚠ Chờ 3 phút mà Android vẫn chưa báo khởi động xong — vẫn thử kết nối/.test(l))
+    && r.log.some((l) => /✅ Đã kết nối/.test(l)), r.loi || r.log.slice(0, 6).join(' | '));
+}
 {
   // Feed kẹt RỒI CHẠY LẠI, bốn lần trong một ca: mỗi lần khởi động lại TikTok là feed sang video mới.
   // Đó là TikTok vấp chứ không phải máy đơ — không được cộng dồn thành "3 lần liền".
