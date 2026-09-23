@@ -906,26 +906,24 @@ const start = (id, serial, cfg = {}) => {
       daKhoiDongLai.length === 2 && henMoi(hen5) >= 1 && soLuot() === luot5 + 1);
     await handlers.get('set-global-settings')({}, { deviceConcurrency: 6, launchStaggerMs: 0, autoReboot: true });
 
-    // S6. NGHI đơ: lượt 1 và 2 không làm gì; lượt 3 liền → khởi động lại.
-    hong(NGHI); await nghi(40);
-    hong(NGHI); await nghi(40);
-    const sau2 = daKhoiDongLai.length;
+    // S6. NGHI đơ → khởi động lại NGAY lượt đầu (2026-09-23; trước đó đợi đủ 3 lượt liền).
+    // Python chỉ báo NGHI sau khi tự thử 3 lần trong lượt — đợi thêm lượt nữa là máy nằm đen vô ích.
+    const hen6 = henDai.length;
     hong(NGHI); await nghi(60);
-    check('S6. Không điều khiển được máy: lượt 1, 2 chưa làm gì; đủ 3 lượt liền → khởi động lại',
-      sau2 === 2 && daKhoiDongLai.length === 3 && coLog(ID, /🔄 Máy bị đơ \(phục hồi hỏng 3 lần liền\)/),
-      JSON.stringify({ sau2, tong: daKhoiDongLai.length }));
-
-    // S7. Một lượt chạy khoẻ (≥ 10 phút) ở giữa → đếm lại từ đầu.
-    hong(NGHI); await nghi(40);                          // 1
-    hong(NGHI); await nghi(40);                          // 2
-    const thatNow = Date.now;
-    Date.now = () => thatNow() + 11 * 60000;             // lượt này chạy 11 phút rồi mới hỏng
-    hong(NGHI);                                          // → đếm lại: 1
-    Date.now = thatNow;
+    check('S6. Không điều khiển được máy: khởi động lại ngay lượt NGHI đầu tiên, không hẹn "chạy lại lúc hh:mm"',
+      daKhoiDongLai.length === 3 && coLog(ID, /🔄 Máy bị đơ \(phục hồi hỏng 3 lần liền\)/) && henMoi(hen6) === 0,
+      JSON.stringify({ tong: daKhoiDongLai.length, hen: henMoi(hen6) }));
     await nghi(40);
-    hong(NGHI); await nghi(40);                          // 2
-    check('S7. Có một lượt chạy khoẻ ≥ 10 phút xen giữa → đếm "nghi đơ" lại từ đầu, chưa khởi động lại',
-      daKhoiDongLai.length === 3, JSON.stringify(daKhoiDongLai));
+
+    // S7. Máy lên lại mà vẫn NGHI đơ → lại khởi động lại ngay: không còn bộ đếm "đủ N lượt" nào
+    // sót từ lượt trước giữ nó lại. (KHÔNG giả Date.now quanh `hong` ở đây: lệnh khởi động lại gửi
+    // ngay trong `hong`, giờ giả sẽ thành `guiLuc` và app chờ máy lên mãi — bài học lúc viết mục này.)
+    const luot7 = soLuot();
+    hong(NGHI); await nghi(60);
+    check('S7. Lên lại rồi vẫn không điều khiển được → lại khởi động lại ngay, rồi chạy lại khi máy lên',
+      daKhoiDongLai.length === 4 && soLuot() === luot7 + 1, JSON.stringify({ kdl: daKhoiDongLai.length, luot: soLuot() - luot7 }));
+    await nghi(40);
+    const thatNow = Date.now;
 
     // S8. Lỗi KHÔNG kèm "máy đơ" (Python crash, mất ADB…) → không bao giờ khởi động lại.
     const truoc8 = daKhoiDongLai.length;

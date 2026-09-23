@@ -71,8 +71,6 @@ body {
 .pname { font-weight: 600; }
 .pserial { color: var(--text-muted); font-family: 'Consolas', monospace; font-size: 12px; }
 .pscanned, .pchecked, .pvalid { font-weight: 600; color: var(--ok); text-align: center; }
-/* "(bỏ N)" cạnh số Hợp lệ: sound đạt lọc nhưng đã thu từ trước — chữ mờ, rê chuột xem giải thích */
-.pvalid-bo { font-weight: 400; font-size: 11px; color: var(--text-dim); cursor: help; }
 .prow-actions { display: flex; gap: 4px; flex-wrap: nowrap; align-items: center; }
 .prow-actions .btn-sm { padding: 4px 8px; }
 .prow-actions .btn-icon { padding: 4px 6px; font-size: 15px; }

@@ -669,7 +669,7 @@ SETTINGS_TREO = True
 {
   const r = chayVong('do_dich_vu', TREO, { LIMIT: '5' });
   const e = mayDo(r);
-  check('8c. Android khoẻ mà dịch vụ điều khiển không lên → NGHI (app đợi 3 lượt liền)',
+  check('8c. Android khoẻ mà dịch vụ điều khiển không lên → NGHI (app khởi động lại ngay lượt đầu)',
     e.length === 1 && e[0].chac === false && /dịch vụ điều khiển không khởi động được \(server not ready\)/.test(e[0].ly_do),
     JSON.stringify(e));
 }

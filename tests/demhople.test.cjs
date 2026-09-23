@@ -97,17 +97,16 @@ const { trangThaiMoi, datLaiDem, congDonTienDo, oHopLe } = ctx;
     `sau đặt lại: checked=${st.checked} qualified=${st.qualified}`);
 }
 
-// ── 6. Ô "Hợp lệ": số MỚI vào bảng + "(bỏ N)" — đúng con số đo thật 10 đạt / 2 mới ──
+// ── 6. Ô "Hợp lệ": CHỈ số sound MỚI vào bảng — đúng con số đo thật 10 đạt lọc / 2 mới ──
+//     Sound bị bỏ vì trùng kho link KHÔNG hiện (chủ dự án dặn 2026-09-23: "cứ ẩn nó đi").
 {
   const st = trangThaiMoi();
   congDonTienDo(st, 40, 10, 111);
   st.valid = 2;
   const o = oHopLe(st);
-  check('6. ô Hợp lệ hiện 2 (bỏ 8), không hiện 10', /^2 <span[^>]*>\(bỏ 8\)<\/span>$/.test(o), o.slice(0, 80));
-  const st2 = trangThaiMoi();
-  congDonTienDo(st2, 5, 1, 111);
-  st2.valid = 1;
-  check('6b. không bỏ gì thì chỉ hiện số trần', oHopLe(st2) === '1', oHopLe(st2));
+  check('6. ô Hợp lệ hiện đúng "2" — không hiện 10 đạt lọc, không hiện số bị bỏ', o === '2', o);
+  check('6b. không còn chữ "(bỏ N)" nào trong renderer/CSS',
+    !/\(bỏ \$\{|pvalid-bo/.test(rend) && !/pvalid-bo/.test(doc('renderer', 'styles.css')));
 }
 
 // ── 7. Đi dây: mỗi dòng vào bảng cộng "Hợp lệ" của đúng máy đó ──

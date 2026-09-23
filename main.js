@@ -116,11 +116,17 @@ const LUOT_KHOE_MS = 10 * 60000;
 // KHÔNG giới hạn số lần — chủ dự án chốt: "nếu cứ bị lỗi như thế thì khởi động xong rồi chạy lại là
 // được". Và CHỈ chạy lại khi máy đã LÊN HẲN (chủ dự án hỏi 2026-09-22: "nhỡ hẹn 10:51 mà máy vẫn
 // chưa restart xong thì sao?") — xem `choMayLenRoiChay`.
+//
+// ⚠ DO_NGHI_TOI_DA = 1 TỪ 2026-09-23 (trước là 3). TECNO LC8 đơ lúc ~16:53, app tới 17:01 mới khởi
+// động lại — chủ dự án nhìn màn hình đen suốt 8 phút, tưởng chức năng không chạy. Python chỉ báo
+// NGHI sau khi TỰ đã thử 3 lần trong lượt (mở TikTok / phục hồi / khởi động lại TikTok), nên đợi
+// thêm 3 lượt nữa là 9 lần thử cho cùng một kết luận. Chủ dự án chọn: khởi động lại ngay lượt đầu.
+// Giữ hằng số (và `_doLien`) để muốn nới lại thì chỉ sửa một chỗ này.
 const _doLuot = new Map();      // deviceId -> { chac, lyDo } Python báo trong lượt đang chạy
 const _doLien = new Map();      // deviceId -> số lượt ngắn LIÊN TIẾP kết thúc vì "nghi đơ"
 const _kdlCho = new Set();      // đang khởi động lại: đã gửi lệnh, CHƯA có lượt mới nào chạy
 const _kdlHomNay = new Map();   // deviceId -> { ngay, n } — số lần tự khởi động lại trong ngày
-const DO_NGHI_TOI_DA = 3;
+const DO_NGHI_TOI_DA = 1;
 let _tuKhoiDongLai = true;      // ô "Tự khởi động lại điện thoại khi bị đơ" (Cài đặt → Toàn app)
 // Sau khi gửi lệnh: hỏi máy mỗi 15 giây xem đã lên hẳn chưa (biến môi trường chỉ để phép thử chạy nhanh).
 const HOI_MAY_LEN_MS = Number(process.env.HOI_MAY_LEN_MS) || 15 * 1000;

@@ -17,7 +17,9 @@ let currentLogDeviceId = null;
 // dưới chỉ có 2 — chủ dự án cộng cột "Hợp lệ" thấy không khớp "2 sound" và tưởng app đếm sai.
 //
 // Nay làm như bản PC (`bumpValidCount`): "Hợp lệ" = số dòng máy đó ĐƯA VÀO BẢNG, cộng lên mỗi lần
-// có `crawl-data`. Số đạt lọc của Python vẫn giữ, để ô hiện thêm "(bỏ N)" và giải thích khi rê chuột.
+// có `crawl-data`. Số sound bị bỏ vì trùng KHÔNG hiện ra — chủ dự án dặn (2026-09-23): "những cái bỏ
+// do trùng trong kho link thì cứ ẩn đi, không cần hiện". Số đạt lọc của Python (`qualified`) vẫn
+// cộng dồn trong `deviceState`, chỉ là không vẽ lên bảng.
 //
 // Cả hai cột tính từ lúc bảng kết quả được làm mới (`clearResultsIfIdle`) và CỘNG DỒN qua các lượt
 // tự chạy lại (hết giờ nghỉ, lỗi chạy lại sau 1 phút). Mỗi lượt là một tiến trình Python mới đếm
@@ -430,14 +432,9 @@ function oProxy(d, st) {
   return `<span class="pserial">${esc(d.proxyHien)}</span>${kq}`;
 }
 
-// Ô "Hợp lệ": số sound MỚI đã vào bảng, kèm "(bỏ N)" khi có sound đạt lọc mà không vào bảng.
+// Ô "Hợp lệ": CHỈ số sound mới đã vào bảng — sound bị bỏ vì trùng không hiện (xem khối HAI CỘT ĐẾM).
 function oHopLe(st) {
-  const moi = st.valid || 0;
-  const bo = Math.max(0, (st.qualified || 0) - moi);
-  if (!bo) return String(moi);
-  const giai = `${st.qualified} sound đạt bộ lọc trên máy · ${moi} sound mới vào bảng · ${bo} bị bỏ: `
-    + 'đã thu từ trước (có sẵn trong kho link), hoặc bị lọc lại khi về app (ngôn ngữ, không phải Original Sound)';
-  return `${moi} <span class="pvalid-bo" title="${esc(giai)}">(bỏ ${bo})</span>`;
+  return String(st.valid || 0);
 }
 
 function deviceRowHtml(d) {
