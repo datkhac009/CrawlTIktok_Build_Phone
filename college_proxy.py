@@ -33,7 +33,7 @@ NUT_DONG_Y_VPN = "android:id/button1"
 IP_HOST = "api.ipify.org"
 # Dich vu tra CA NUOC lan IP, cung HTTP thuong. Chu du an phan biet dung hai trang thai "IP Viet Nam"
 # (Lalasoft tat) / "IP US" (Lalasoft bat). Do that 2026-09-23 bang `toybox nc` tren dien thoai, ~5 giay:
-# may VPN bat -> "US | 72.244.46.232", may VPN tat -> "VN | 118.68.96.56".
+# may VPN bat -> "US | 203.0.113.10", may VPN tat -> "VN | 198.51.100.20".
 NUOC_HOST = "ip-api.com"
 
 
@@ -117,8 +117,8 @@ def ip_dien_thoai(serial, lan=3):
 
 
 def doc_ip_nuoc(tra_loi):
-    """Hai dong cuoi cua ip-api (`/line/?fields=countryCode,query`): "US\\n72.244.46.232" ->
-    ("72.244.46.232", "US"). Tra loi rac / cut -> ("", "")."""
+    """Hai dong cuoi cua ip-api (`/line/?fields=countryCode,query`): "US\\n203.0.113.10" ->
+    ("203.0.113.10", "US"). Tra loi rac / cut -> ("", "")."""
     dong = [x.strip() for x in (tra_loi or "").splitlines() if x.strip()]
     if len(dong) >= 2 and re.fullmatch(r"[A-Z]{2}", dong[-2]) and ip_hop_le(dong[-1]):
         return dong[-1], dong[-2]
@@ -424,7 +424,7 @@ def _kiem_ip(serial):
 # ── Proxy CO SAN tren may (2026-09-23) ──
 # 18 may USB da nhap proxy san trong Lalasoft (College Proxy) bang tay, chua may nao duoc gan proxy
 # trong app. Toi v0.1.18, `kill_all_apps` force-stop ca College Proxy o dau MOI luot -> VPN tat,
-# TikTok quet bang IP that. Do luc 17:4x: 6/7 may USB dang quet ra IP Viet Nam 118.68.96.56.
+# TikTok quet bang IP that. Do luc 17:4x: 6/7 may USB dang quet ra IP Viet Nam 198.51.100.20.
 # v0.1.19 thoi tat, nhung khong ai BAT LAI; may khoi dong lai (tay, hoac tu khoi dong lai may do)
 # thi VPN cung khong tu bat. Ham nay bat lai bang DUNG proxy dang luu tren may — khong go gi — roi do
 # NUOC cua IP. Chu du an: "stop thi o IP Viet Nam, bat thi o IP US".

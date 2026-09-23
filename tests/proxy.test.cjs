@@ -458,9 +458,9 @@ ket(ip=ip, nuoc=nuoc, viec=MAY.viec)`);
       && khongDo.kq.su_kien.some((e) => e.type === 'proxy' && e.ok === true), khongDo.kq ? JSON.stringify(khongDo.kq.log) : khongDo.loi);
 
     const doc2 = chay('sc_doc', `
-ket(kq=[CP.doc_ip_nuoc(s) for s in ["US\\n72.244.46.232", "HTTP/1.0 200 OK\\r\\n\\r\\nVN\\n118.68.96.56", "US", "", "abc\\nxyz", "us\\n1.2.3.4"]],
+ket(kq=[CP.doc_ip_nuoc(s) for s in ["US\\n203.0.113.10", "HTTP/1.0 200 OK\\r\\n\\r\\nVN\\n198.51.100.20", "US", "", "abc\\nxyz", "us\\n1.2.3.4"]],
     co=CP.co_college_proxy("S"))`);
-    const mong = [['72.244.46.232', 'US'], ['118.68.96.56', 'VN'], ['', ''], ['', ''], ['', ''], ['', '']];
+    const mong = [['203.0.113.10', 'US'], ['198.51.100.20', 'VN'], ['', ''], ['', ''], ['', ''], ['', '']];
     check('5h. doc_ip_nuoc đọc đúng câu trả lời hai dòng của ip-api, câu trả lời rác ra rỗng',
       !!doc2.kq && JSON.stringify(doc2.kq.kq) === JSON.stringify(mong), doc2.kq ? JSON.stringify(doc2.kq.kq) : doc2.loi);
     const khongCo = chay('sc_khong_co', `
