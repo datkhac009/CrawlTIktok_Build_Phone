@@ -14,6 +14,7 @@ const linkstore = require('./src/linkstore.cjs');
 const chodaysheet = require('./src/chodaysheet.cjs');
 const { normalizeKey } = require('./src/linkkey.cjs');
 const phaseplan = require('./src/phaseplan.cjs');
+const proxy = require('./src/proxy.cjs');
 const { getDeviceDir } = require('./src/paths.cjs');
 
 const store = new Store({ name: 'settings' });
@@ -236,7 +237,9 @@ function baoDoiIp(r) {
   sendToRenderer('crawl-status', { deviceId: null, kind: 'devices-changed', doi: r.doi });
 }
 
-// Máy `id` đang ở IP nào. Trả `{ serial, hw }`, hoặc `{ loi }` nếu không tìm thấy.
+// Máy `id` đang ở IP nào. Trả `{ serial, hw, proxy }`, hoặc `{ loi }` nếu không tìm thấy.
+// `proxy` đọc CÙNG lúc với danh tính, từ đĩa: gán proxy lúc máy đang nghỉ giữa ca thì lượt tự chạy
+// lại kế tiếp dùng proxy mới, không phải proxy trong `_lastParams` cũ.
 //   • Đường nhanh (mọi lần chạy): IP cũ còn online VÀ đúng máy — theo số máy phần cứng nếu đã
 //     biết, theo đời máy nếu chưa. Chỉ tốn hai lệnh getprop.
 //   • Đường chậm (khi IP cũ hỏng / đã là máy khác): dò lại cả farm bằng `devices.dongBoIp`.
@@ -252,7 +255,7 @@ async function timMay(id) {
     if (!d.hw && tt.hw) {
       try { devices.updateDevice({ id, hw: tt.hw, model: tt.model }); } catch (_) {}
     }
-    return { serial: d.serial, hw: tt.hw || d.hw || '' };
+    return { serial: d.serial, hw: tt.hw || d.hw || '', proxy: d.proxy || '' };
   }
   const dangChay = runner.dangChayMap ? runner.dangChayMap() : new Map();
   const r = await devices.dongBoIp({ dangChay });
@@ -261,7 +264,7 @@ async function timMay(id) {
   if (kt) return { loi: `Không tìm thấy máy ${d.name}: ${kt.viSao}.` };
   const d2 = devices.loadDevices().find((x) => x.id === id);
   if (!d2) return { loi: 'Máy này không còn trong danh sách.' };
-  return { serial: d2.serial, hw: d2.hw || '' };
+  return { serial: d2.serial, hw: d2.hw || '', proxy: d2.proxy || '' };
 }
 
 function henChayLaiSauLoi(deviceId, lyDo) {
@@ -649,8 +652,16 @@ ipcMain.handle('devices-list', async () => {
       console.error('[devices] dò lại IP lỗi:', e.message);
     }
   }
-  return devices.loadDevices();
+  return danhSachChoGiaoDien();
 });
+// Danh sách gửi sang giao diện: proxy chỉ đi dạng `proxyHien` (host:port) — mật khẩu không rời
+// tiến trình main, và giao diện không phải giữ bản sao luật đọc proxy.
+function danhSachChoGiaoDien() {
+  return devices.loadDevices().map((d) => {
+    const { proxy: p, ...con } = d;
+    return p ? { ...con, proxyHien: proxy.moTa(p) || '(sai dạng)' } : con;
+  });
+}
 // Thêm / sửa máy = người dùng khẳng định "máy này ở IP kia": đọc luôn số máy phần cứng ở IP đó để
 // lần sau máy đổi IP thì app tự dò ra. Không chờ — đọc hỏng thì lần chạy đầu sẽ đọc lại.
 function ghiDanhTinh(dev) {
@@ -660,7 +671,8 @@ function ghiDanhTinh(dev) {
       try { devices.updateDevice({ id: dev.id, hw: tt.hw, model: tt.model }); } catch (_) {}
     }
   }, () => {});
-  return dev;
+  const { proxy: p, ...con } = dev;
+  return p ? { ...con, proxyHien: proxy.moTa(p) || '(sai dạng)' } : con;
 }
 ipcMain.handle('devices-add', (_e, data) => ghiDanhTinh(devices.addDevice(data)));
 ipcMain.handle('devices-update', (_e, data) => ghiDanhTinh(devices.updateDevice(data)));
@@ -673,6 +685,28 @@ ipcMain.handle('devices-delete', (_e, data) => {
   // tiến trình cùng lái một điện thoại.
   dungHan(data.id);
   return devices.deleteDevice(data);
+});
+// ── GÁN PROXY HÀNG LOẠT (2026-09-23) ──
+// Dán danh sách, gán lần lượt cho các máy đã chọn (src/proxy.cjs: ganHangLoat). `xoa: true` = bỏ
+// proxy của các máy đó. Máy đang chạy dùng proxy mới từ lượt chạy KẾ TIẾP (timMay đọc từ đĩa).
+// `thu: true` = chỉ xem trước (ô "Sẽ gán" trong modal), không ghi gì — để renderer không phải giữ bản
+// sao thứ hai của luật đọc proxy.
+ipcMain.handle('devices-set-proxies', (_e, { ids, text, xoa, thu }) => {
+  const ds = Array.isArray(ids) ? ids : [];
+  if (xoa) {
+    ds.forEach((id) => devices.updateDevice({ id, proxy: '' }));
+    return { ok: true, gan: [], loi: [], thieu: 0, thua: 0 };
+  }
+  const r = proxy.ganHangLoat(ds, text);
+  if (!thu) r.gan.forEach((x) => devices.updateDevice({ id: x.id, proxy: x.proxy }));
+  return {
+    ok: !r.loi.length,
+    // Trả về phía giao diện KHÔNG kèm mật khẩu.
+    gan: r.gan.map((x) => ({ id: x.id, hien: proxy.moTa(x.proxy) })),
+    loi: r.loi.map((x) => ({ dong: x.dong })),
+    thieu: r.thieu,
+    thua: r.thua,
+  };
 });
 ipcMain.handle('devices-list-adb', () => devices.listAdbSerials());
 ipcMain.handle('device-check', (_e, serial) => devices.checkDevice(serial));
@@ -737,6 +771,7 @@ async function chayMot(params) {
     let chay = Object.assign({}, params, {
       serial: may.serial,
       hw: may.hw || '',
+      proxy: may.proxy || '',
       pendingOn: !!(sheets.isEnabled() && String(cfg.pendingTab || '').trim()),
     });
     if (kh) {

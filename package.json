@@ -70,6 +70,7 @@
       "adb_helper.py",
       "askbridge.py",
       "phone_actions.py",
+      "college_proxy.py",
       "requirements.txt"
     ]
   }

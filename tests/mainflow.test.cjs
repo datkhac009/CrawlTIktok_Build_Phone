@@ -993,6 +993,64 @@ const start = (id, serial, cfg = {}) => {
     tuaNhanh = false;
   }
 
+  // ── P. PROXY CỦA TỪNG MÁY (2026-09-23) ──
+  // Proxy nằm trong devices.json, main đọc nó NGAY TRƯỚC mỗi lượt chạy (timMay) rồi giao cho
+  // runner. Mật khẩu không bao giờ đi sang giao diện.
+  {
+    const MK = 'MatKhauBiMat123';
+    const P1 = `102.129.141.141:50100:hung:${MK}`;
+    const P2 = `103.1.2.3:8080:u2:${MK}`;
+    mayGia.set('dPx', { id: 'dPx', name: 'SM-A920F', serial: '520006e9ee546475', note: '', hw: 'HW-PX', proxy: P1 });
+    farmGia.set('520006e9ee546475', { model: 'SM-A920F', hw: 'HW-PX' });
+    mayGia.set('dPy', { id: 'dPy', name: 'SM-A920F 2', serial: '52001c84c055c4bf', note: '', hw: 'HW-PY' });
+    farmGia.set('52001c84c055c4bf', { model: 'SM-A920F', hw: 'HW-PY' });
+
+    await handlers.get('device-start')({}, { deviceId: 'dPx', serial: '520006e9ee546475', cfg: {} });
+    const l1 = lanChay('dPx').slice(-1)[0];
+    check('P1. Máy có proxy → runner nhận đúng chuỗi proxy', !!l1 && l1.params.proxy === P1, l1 && l1.params.proxy);
+    const l0 = lanChay('dA')[0];
+    check('P1b. Máy không có proxy → proxy rỗng (chạy mạng thật)', !!l0 && l0.params.proxy === '', l0 && String(l0.params.proxy));
+
+    const ds = await handlers.get('devices-list')({});
+    const px = ds.find((d) => d.id === 'dPx');
+    check('P2. Danh sách gửi sang giao diện: có host:port, KHÔNG có mật khẩu',
+      !!px && px.proxyHien === '102.129.141.141:50100' && !('proxy' in px) && !JSON.stringify(ds).includes(MK),
+      JSON.stringify(px));
+
+    const xem = await handlers.get('devices-set-proxies')({}, { ids: ['dPx', 'dPy'], text: `${P2}\n\n${P1}`, thu: true });
+    check('P3. Xem trước: ghép đúng thứ tự, KHÔNG ghi gì, không trả mật khẩu',
+      xem.ok && xem.gan.map((x) => `${x.id}=${x.hien}`).join(',') === 'dPx=103.1.2.3:8080,dPy=102.129.141.141:50100'
+      && mayGia.get('dPx').proxy === P1 && !mayGia.get('dPy').proxy && !JSON.stringify(xem).includes(MK),
+      JSON.stringify(xem));
+
+    const sai = await handlers.get('devices-set-proxies')({}, { ids: ['dPx', 'dPy'], text: `${P2}\nkhong-phai-proxy` });
+    check('P4. Có dòng sai → KHÔNG gán máy nào (kể cả máy có dòng đúng)',
+      !sai.ok && sai.loi.length === 1 && sai.loi[0].dong === 2 && mayGia.get('dPx').proxy === P1 && !mayGia.get('dPy').proxy,
+      JSON.stringify(sai));
+
+    // Gán lúc máy đang chạy: lượt đang chạy giữ proxy cũ, lượt KẾ TIẾP dùng proxy mới.
+    const ok = await handlers.get('devices-set-proxies')({}, { ids: ['dPx', 'dPy'], text: `${P2}\n${P1}` });
+    check('P5. Lưu → ghi đúng máy nào proxy nấy', ok.ok && mayGia.get('dPx').proxy === P2 && mayGia.get('dPy').proxy === P1);
+    ketThuc(l1, false);
+    await handlers.get('device-start')({}, { deviceId: 'dPx', serial: '520006e9ee546475', cfg: {} });
+    const l2 = lanChay('dPx').slice(-1)[0];
+    check('P6. Lượt chạy sau dùng proxy MỚI (đọc từ đĩa, không từ tham số cũ)', !!l2 && l2 !== l1 && l2.params.proxy === P2,
+      l2 && l2.params.proxy);
+
+    // Kết quả đo IP của Python đi thẳng lên giao diện.
+    l2.onStatus('dPx', { kind: 'proxy', ok: true, ip: '102.129.141.141', msg: '' });
+    check('P7. Sự kiện proxy (IP đo được) chuyển lên giao diện',
+      sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dPx' && p.kind === 'proxy' && p.ip === '102.129.141.141'));
+    ketThuc(l2, false);
+
+    await handlers.get('devices-set-proxies')({}, { ids: ['dPx'], xoa: true });
+    await handlers.get('device-start')({}, { deviceId: 'dPx', serial: '520006e9ee546475', cfg: {} });
+    const l3 = lanChay('dPx').slice(-1)[0];
+    check('P8. Bỏ proxy → lượt sau chạy mạng thật', !('proxy' in mayGia.get('dPx')) || !mayGia.get('dPx').proxy
+      ? !!l3 && l3.params.proxy === '' : false, l3 && String(l3.params.proxy));
+    ketThuc(l3, false);
+  }
+
   _xong = true;
   const failed = results.filter((x) => !x.pass);
   console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);

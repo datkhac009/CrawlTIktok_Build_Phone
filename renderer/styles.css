@@ -198,6 +198,12 @@ body {
 .pstat-badge.offline { color: #f5b942; }
 .pstat-badge.reboot { color: #c08bff; }
 
+/* Cột Proxy: host:port đã gán + kết quả đo IP của lượt chạy gần nhất. */
+.pproxy { font-size: 12px; }
+.pproxy-none { color: var(--text-dim); }
+.pproxy-ok { color: var(--ok); }
+.pproxy-err { color: var(--primary-hover); }
+
 /* Placeholder */
 .placeholder {
   flex: 1;

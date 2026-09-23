@@ -147,6 +147,36 @@ Nhận biết feed (`phone_actions.o_feed`): loại theo activity (trang nhạc,
 tab "For You" và `_o_tren_feed`. Đo trên 41 bản chụp thật: tab "For You" có ở 14/14 bản chụp
 feed, 0/27 bản ngoài feed.
 
+### Proxy cho từng máy (2026-09-23)
+
+Chọn máy → **🌐 Proxy đã chọn** → dán danh sách, mỗi dòng `host:port:user:pass`: dòng 1 cho máy
+thứ nhất đã chọn, dòng 2 cho máy thứ hai… theo thứ tự trên bảng. Có một dòng sai là không gán máy
+nào. Cột **Proxy** hiện `host:port` và kết quả đo IP của lượt chạy gần nhất. Proxy lưu ở trường
+`proxy` trong `devices.json`; mật khẩu không đi sang giao diện, không vào log.
+
+Proxy được gắn bằng app **College Proxy** (`com.cell47.College_Proxy`, bản "Lalasoft Proxy -congnv
+fix") đã cài sẵn trên máy farm — một VPN, không cần root, `college_proxy.py` bấm giao diện của nó.
+
+- ⚠ **Chỉ proxy HTTP.** Đo trên máy 60 (SM-A920F): cổng SOCKS5 vẫn báo "Connected" nhưng máy mất
+  mạng hẳn. Nên chữ "Connected" không được tin: mỗi lần chạy, app **đo IP công khai ngay trên điện
+  thoại** (`toybox nc` tới api.ipify.org) và so với IP thật của farm (đo từ máy tính). Không ra
+  mạng, hoặc vẫn là IP thật → **không mở TikTok**, log nói lý do, tự thử lại sau 1 phút. Proxy hỏng
+  không tính là máy đơ (không khởi động lại điện thoại).
+- Gắn proxy nằm trong `setup_device`, nên mọi đường mở TikTok (lúc đầu, phục hồi, nối lại sau khi
+  điện thoại khởi động lại — lúc đó VPN đã tắt) đều đi qua nó. Mỗi 2 phút hỏi `tun0` còn không; VPN
+  rớt giữa ca thì tắt TikTok trước rồi mới gắn lại. `kill_all_apps` không tắt College Proxy.
+- **Đường nhanh**: gắn xong thì ghi mã băm của chuỗi proxy vào `config/devices/<id>/proxy_da_gan.txt`.
+  Lần sau VPN còn bật và dấu khớp → chỉ đo IP (~5 giây), không mở giao diện College Proxy. Gắn đầy
+  đủ ~40 giây: force-stop → mở → gõ bằng `adb shell input text` → START → tự đồng ý hộp thoại quyền
+  VPN lần đầu. Hỏng thì lần 2 `pm clear` College Proxy rồi làm lại — app này từng tự rơi vào vòng
+  lặp đẻ `LoadingActivity` (màn chờ quảng cáo) mà force-stop không gỡ được.
+- Giữ proxy **bật** khi bấm Dừng (chủ dự án chốt): TikTok trên máy luôn một IP, kể cả khi thao tác
+  tay trên 效卫. Bỏ proxy của máy trong app không tắt College Proxy trên điện thoại.
+- VPN chỉ đẩy dải IP công cộng; `192.168.*`, `10.*`, `172.16–31.*` đi thẳng `wlan0` → adb qua
+  Wi-Fi của farm không bị ảnh hưởng.
+- Không gõ bằng `set_text` (bàn phím 效卫 bung toàn màn hình khi máy nằm ngang, ô nhập biến mất) và
+  không bằng `send_keys` (đổi bàn phím mặc định của máy, phá tính năng gửi chữ của 效卫).
+
 ### Google Sheet (2026-09-18, v0.1.9)
 
 Modal ☁ giống bản PC: Spreadsheet ID (dán cả link cũng được), tên tab chính (cột A:E), **kho link

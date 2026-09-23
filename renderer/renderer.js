@@ -220,6 +220,12 @@ function onCrawlStatus(payload) {
     if (!payload.moc) { st.viewIdx = payload.idx; st.viewTotal = payload.total; renderDeviceRow(deviceId); }
     return;
   }
+  // Kết quả gắn proxy (college_proxy.py). Hỏng thì Python đã tự dừng và in lý do vào log.
+  if (kind === 'proxy') {
+    st.proxy = { ok: payload.ok, ip: payload.ip || '', msg: payload.msg || '' };
+    renderDeviceRow(deviceId);
+    return;
+  }
 
   if (kind === 'status') {
     if (payload.state === 'running') st.status = 'run';
@@ -351,6 +357,17 @@ setInterval(() => {
   }
 }, 30000);
 
+// Ô Proxy: host:port đã gán (main.js gửi sẵn `proxyHien`, không có mật khẩu), kèm kết quả đo IP
+// của lượt chạy gần nhất (college_proxy.py → sự kiện `proxy`).
+function oProxy(d, st) {
+  if (!d.proxyHien) return '<span class="pproxy-none">—</span>';
+  const p = st.proxy;
+  let kq = '';
+  if (p && p.ok) kq = `<div class="pproxy-ok">✓ IP ${esc(p.ip)}</div>`;
+  else if (p) kq = `<div class="pproxy-err" title="${esc(p.msg)}">✕ không chạy</div>`;
+  return `<span class="pserial">${esc(d.proxyHien)}</span>${kq}`;
+}
+
 function deviceRowHtml(d) {
   const st = deviceState[d.id] || { status: 'stop', checked: 0, qualified: 0 };
   const ban = TRANG_THAI_BAN.has(st.status);
@@ -359,6 +376,7 @@ function deviceRowHtml(d) {
     <td class="pname">${esc(d.name)}</td>
     <td class="pserial">${esc(d.serial)}</td>
     <td><span class="pstat-badge ${st.status}">${esc(nhanTrangThai(st))}</span></td>
+    <td class="pproxy">${oProxy(d, st)}</td>
     <td class="pchecked">${st.checked || 0}</td>
     <td class="pvalid">${st.qualified || 0}</td>
     <td class="prow-actions">
@@ -460,6 +478,68 @@ async function stopDeviceById(id) {
 
 function getSelectedIds() {
   return Array.from(document.querySelectorAll('.row-check:checked')).map((el) => el.dataset.id);
+}
+
+// ---- Modal: Gán proxy hàng loạt (2026-09-23) ----
+// Dòng 1 → máy đã chọn thứ nhất theo THỨ TỰ TRÊN BẢNG (getSelectedIds đi theo DOM). Luật đọc và
+// ghép nằm ở main (src/proxy.cjs); ở đây chỉ hỏi bản xem trước (`thu: true`) rồi vẽ ra.
+let proxyIds = [];
+
+function openProxyModal(ids) {
+  proxyIds = ids;
+  document.getElementById('proxyTarget').textContent = ids.length === 1
+    ? ((devices.find((x) => x.id === ids[0]) || {}).name || '1 máy')
+    : `${ids.length} máy đã chọn`;
+  document.getElementById('proxyText').value = '';
+  xemTruocProxy();
+  document.getElementById('proxyModal').classList.add('open');
+}
+
+function closeProxyModal() {
+  document.getElementById('proxyModal').classList.remove('open');
+}
+
+async function xemTruocProxy() {
+  const text = document.getElementById('proxyText').value;
+  const r = await window.api.devicesSetProxies({ ids: proxyIds, text, thu: true });
+  const ten = (id) => esc((devices.find((x) => x.id === id) || {}).name || id);
+  const dong = [];
+  if (r.loi.length) {
+    dong.push(`<span class="pproxy-err">Dòng ${r.loi.map((x) => x.dong).join(', ')} sai dạng — cần host:port:user:pass. Chưa gán gì.</span>`);
+  } else {
+    r.gan.forEach((x) => dong.push(`${ten(x.id)} ← ${esc(x.hien)}`));
+    if (!r.gan.length) dong.push('Chưa có dòng proxy nào.');
+  }
+  if (r.thieu) dong.push(`${r.thieu} máy không có dòng nào → giữ proxy cũ.`);
+  if (r.thua) dong.push(`${r.thua} dòng thừa (nhiều hơn số máy) → bỏ qua.`);
+  document.getElementById('proxyPreview').innerHTML = dong.join('<br>');
+}
+
+async function napLaiSauKhiGanProxy() {
+  devices = await window.api.devicesList();
+  // Bỏ kết quả đo IP cũ của các máy vừa đổi proxy — nó là IP của proxy trước.
+  proxyIds.forEach((id) => { if (deviceState[id]) delete deviceState[id].proxy; });
+  devices.forEach((d) => renderDeviceRow(d.id));
+}
+
+async function saveProxies() {
+  const text = document.getElementById('proxyText').value;
+  const r = await window.api.devicesSetProxies({ ids: proxyIds, text });
+  if (!r.ok) { xemTruocProxy(); toast('Có dòng proxy sai dạng — chưa gán gì', false); return; }
+  if (!r.gan.length) { toast('Chưa dán proxy nào', false); return; }
+  await napLaiSauKhiGanProxy();
+  closeProxyModal();
+  const chay = r.gan.filter((x) => dangBan(x.id)).length;
+  toast(`Đã gán proxy cho ${r.gan.length} máy`
+    + (chay ? ` — ${chay} máy đang chạy dùng proxy mới từ lượt chạy sau` : ''), true);
+}
+
+async function clearProxies() {
+  if (!confirm(`Bỏ proxy của ${proxyIds.length} máy? Các máy này sẽ chạy bằng mạng thật.`)) return;
+  await window.api.devicesSetProxies({ ids: proxyIds, xoa: true });
+  await napLaiSauKhiGanProxy();
+  closeProxyModal();
+  toast(`Đã bỏ proxy của ${proxyIds.length} máy. College Proxy trên điện thoại vẫn bật cho tới khi tắt tay.`, true);
 }
 
 // ---- Modal: Kiểm tra (preflight) ----
@@ -1019,6 +1099,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!ids.length) { toast('Chưa chọn thiết bị nào', false); return; }
     openSettingsModal(ids);
   });
+
+  document.getElementById('proxySelectedBtn').addEventListener('click', () => {
+    const ids = getSelectedIds();
+    if (!ids.length) { toast('Chưa chọn thiết bị nào', false); return; }
+    openProxyModal(ids);
+  });
+  document.getElementById('proxyModalClose').addEventListener('click', closeProxyModal);
+  document.getElementById('proxyCancel').addEventListener('click', closeProxyModal);
+  document.getElementById('proxySave').addEventListener('click', saveProxies);
+  document.getElementById('proxyClear').addEventListener('click', clearProxies);
+  document.getElementById('proxyText').addEventListener('input', xemTruocProxy);
 
   document.getElementById('sheetsBtn').addEventListener('click', openSheetsModal);
   document.getElementById('sheetsModalClose').addEventListener('click', closeSheetsModal);

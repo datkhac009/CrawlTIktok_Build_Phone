@@ -43,7 +43,7 @@ function addDevice({ name, serial, note }) {
   return device;
 }
 
-function updateDevice({ id, name, serial, note, hw, model }) {
+function updateDevice({ id, name, serial, note, hw, model, proxy }) {
   const list = loadDevices();
   const dev = list.find((d) => d.id === id);
   if (!dev) throw new Error('Không tìm thấy thiết bị.');
@@ -58,6 +58,11 @@ function updateDevice({ id, name, serial, note, hw, model }) {
   if (note !== undefined) dev.note = note;
   if (hw !== undefined) dev.hw = hw;
   if (model !== undefined) dev.model = model;
+  // `host:port:user:pass` (src/proxy.cjs). Chuỗi rỗng = bỏ proxy, máy chạy mạng thật.
+  if (proxy !== undefined) {
+    if (String(proxy).trim()) dev.proxy = String(proxy).trim();
+    else delete dev.proxy;
+  }
   saveDevices(list);
   return dev;
 }

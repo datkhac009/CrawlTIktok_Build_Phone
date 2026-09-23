@@ -28,6 +28,7 @@
           <button class="btn" id="runSelectedBtn">▶ Chạy đã chọn</button>
           <button class="btn" id="stopSelectedBtn">■ Dừng đã chọn</button>
           <button class="btn" id="settingsSelectedBtn">⚙️ Cài đặt đã chọn</button>
+          <button class="btn" id="proxySelectedBtn">🌐 Proxy đã chọn</button>
           <button class="btn btn-primary" id="manageDevicesBtn">➕ Thêm / Quản lý</button>
         </div>
       </div>
@@ -39,6 +40,7 @@
               <th>Tên</th>
               <th>Serial (ADB)</th>
               <th>Trạng thái</th>
+              <th>Proxy</th>
               <th style="width:80px;">Đã check</th>
               <th style="width:70px;">Hợp lệ</th>
               <th style="width:250px;">Hành động</th>
@@ -412,6 +414,32 @@
       <div class="modal-foot">
         <button class="btn" id="logClear">Xóa log</button>
         <button class="btn btn-primary" id="logDone">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Gán proxy hàng loạt cho các máy đã chọn -->
+  <div class="modal" id="proxyModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>🌐 Proxy cho <span id="proxyTarget"></span></h3>
+        <button class="btn-icon" id="proxyModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="section">
+          <div class="section-title">Dán danh sách proxy HTTP — mỗi dòng một proxy</div>
+          <textarea class="input" id="proxyText" rows="8" placeholder="102.129.141.141:50100:user:pass"></textarea>
+          <div class="section-desc">Dạng <b>host:port:user:pass</b>. Dòng 1 gán cho máy thứ nhất đã chọn, dòng 2 cho máy thứ hai… theo đúng thứ tự trên bảng. Chỉ dùng cổng <b>HTTP</b>: College Proxy trên máy không chạy SOCKS5 (vẫn báo Connected nhưng máy mất mạng). Mỗi lần bấm Chạy, app đo IP trên điện thoại — proxy không che được IP thật thì máy <b>không chạy</b>.</div>
+        </div>
+        <div class="section">
+          <div class="section-title">Sẽ gán</div>
+          <div id="proxyPreview" class="section-desc"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="proxyClear">Bỏ proxy các máy này</button>
+        <button class="btn" id="proxyCancel">Huỷ</button>
+        <button class="btn btn-primary" id="proxySave">Lưu</button>
       </div>
     </div>
   </div>

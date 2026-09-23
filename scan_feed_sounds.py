@@ -29,6 +29,7 @@ import time
 from adb_helper import connect, adb, list_devices
 from askbridge import AskBridge
 import phone_actions as PA
+import college_proxy as CP
 
 # Ha timeout HTTP cua uiautomator2 (mac dinh 300s = 5 phut) xuong ngan hon: khi 1 lenh RPC
 # bi TREO (hay gap khi chay nhieu may song song), no se tu RAISE loi sau HTTP_TIMEOUT giay
@@ -82,6 +83,16 @@ CO_LUAT_GOC = bool(_RE_GOC_SLUG_SRC and _RE_GOC_TEN_SRC)
 # de cat vao tab Pending cho nguoi kiem tay, thay vi bo luon. Tat thi khong ton 2-3 giay lay link
 # cho no — khong co cho nao de cat.
 PENDING_ON = os.environ.get("PENDING_ON") == "1"
+
+# ── PROXY CUA MAY NAY (2026-09-23) ──
+# `host:port:user:pass` do Node doc tu devices.json. Co proxy thi TikTok CHI duoc mo sau khi
+# college_proxy.dam_bao_proxy da do duoc IP cua may la IP proxy — xem `setup_device`. Rong = chay
+# mang that nhu truoc.
+PROXY = os.environ.get("PROXY", "").strip()
+# Tep dau "da gan proxy nao" tren MAY TINH (runner truyen) — cho college_proxy di duong nhanh.
+PROXY_MOC = os.environ.get("PROXY_MOC", "")
+# Bao lau hoi lai mot lan "VPN con song khong" giua ca (mot lenh adb, khong mo giao dien).
+KIEM_VPN_GIAY = 120
 
 HERE = os.path.dirname(__file__)
 OUTPUT_FILE = os.path.join(HERE, "sound_links.txt")
@@ -282,7 +293,9 @@ def dismiss_popups(d):
 # Kill nham -> moi lenh d(...) sau do bi TREO (mat ket noi RPC), gay "1 may chay 1 may dung".
 # Cac may farm dung agent ten khac nhau (com.github.uiautomator, com.genfarmer.uiautomator...)
 # nen loai tru theo TU KHOA thay vi liet ke cung.
-EXCLUDE_KILL_KEYWORDS = ("uiautomator", "wetest", "uia2", "atx", "genfarmer")
+# ⚠ "college_proxy": app proxy la mot VPN. `force-stop` no la VPN tat NGAY TRUOC khi TikTok mo —
+# ca ca chay bang IP that ma khong ai biet.
+EXCLUDE_KILL_KEYWORDS = ("uiautomator", "wetest", "uia2", "atx", "genfarmer", "college_proxy")
 
 
 def _is_automation_agent(pkg):
@@ -698,12 +711,22 @@ def reset_service(d):
 
 
 def setup_device(d):
-    """Chuan bi may: dong app + mo TikTok. Co retry vi buoc nay cung co the treo/loi."""
+    """Chuan bi may: dong app + (gan proxy) + mo TikTok. Co retry vi buoc nay cung co the treo/loi.
+
+    Proxy nam O DAY chu khong o main(): moi duong mo lai TikTok (luc dau, phuc hoi, noi lai sau khi
+    dien thoai khoi dong lai — luc do VPN da tat) deu di qua ham nay, nen khong duong nao mo duoc
+    TikTok ma bo qua proxy. `ProxyHong` KHONG thu lai 3 lan va KHONG tinh la may do: proxy chet thi
+    khoi dong lai dien thoai cung khong chua duoc.
+    """
     for attempt in range(1, 4):
         try:
             kill_all_apps(d)
+            if PROXY:
+                CP.dam_bao_proxy(d, d.serial, PROXY, log, emit_event, moc=PROXY_MOC)
             pkg = ensure_tiktok_open(d)
             return pkg
+        except CP.ProxyHong:
+            raise
         except Exception as e:
             log(f"⚠ Chuẩn bị máy lần {attempt} lỗi ({str(e)[:100]}) — thử lại...")
             reset_service(d)
@@ -1426,6 +1449,10 @@ def main():
     reset_service(d)
     try:
         pkg = setup_device(d)
+    except CP.ProxyHong as e:
+        # KHONG bao may do: dien thoai khoe, proxy moi la cai hong.
+        log(f"⛔ Proxy không chạy: {e}. KHÔNG mở TikTok bằng IP thật — app sẽ thử lại sau 1 phút.")
+        sys.exit(1)
     except Exception as e:
         log(f"⛔ Không mở được TikTok ({str(e)[:120]}) — app sẽ thử lại sau 1 phút.")
         bao_may_do_sau_khi_hoi(d.serial, "không mở được TikTok sau 3 lần thử")
@@ -1471,6 +1498,7 @@ def main():
 
     # Han chu ky. Het gio thi THOAT SACH de nha khe cho may dang xep hang.
     han_chu_ky = (time.time() + CYCLE_SCAN_MIN * 60) if CYCLE_ON else None
+    kiem_vpn_luc = time.time() + KIEM_VPN_GIAY  # vua gan proxy xong trong setup_device
     if han_chu_ky:
         log("Chu kỳ: quét %.0f phút rồi tự dừng, nhường khe cho máy khác..." % CYCLE_SCAN_MIN)
 
@@ -1487,6 +1515,27 @@ def main():
             if bridge.parent_gone:
                 log("App đã đóng — thoát.")
                 break
+            # ── VPN RO GIUA CA ──
+            # College Proxy co the bi Android tat giua chung; luc do TikTok lang le chay tiep bang IP
+            # that. Tat TikTok NGAY roi gan lai qua `setup_device` (no do lai IP truoc khi mo TikTok).
+            if PROXY and time.time() >= kiem_vpn_luc:
+                kiem_vpn_luc = time.time() + KIEM_VPN_GIAY
+                if not CP.vpn_dang_bat(d.serial):
+                    log("⛔ VPN của College Proxy đã tắt giữa ca — tắt TikTok, gắn lại proxy.")
+                    for goi in PKGS:
+                        try:
+                            adb("shell", "am", "force-stop", goi, serial=d.serial, timeout=15)
+                        except Exception:
+                            pass
+                    try:
+                        setup_device(d)
+                    except CP.ProxyHong as e2:
+                        log(f"⛔ Gắn lại proxy không được: {e2}. Dừng — app sẽ thử lại sau 1 phút.")
+                        thoat_loi = True
+                        break
+                    except Exception as e2:
+                        log(f"⚠ Mở lại TikTok sau khi gắn lại proxy lỗi ({str(e2)[:80]}) — vòng sau thử tiếp.")
+                    continue
             count += 1
             t_video = time.time()
             khong_icon = False
@@ -1562,6 +1611,10 @@ def main():
                     reset_service(d)
                     try:
                         setup_device(d)
+                    except CP.ProxyHong as e2:
+                        log(f"⛔ Proxy không chạy sau khi nối lại: {e2}. Dừng — app sẽ thử lại sau 1 phút.")
+                        thoat_loi = True
+                        break
                     except Exception as e2:
                         log(f"⚠ Mở lại TikTok sau khi nối lại lỗi ({str(e2)[:80]}) — vòng sau thử tiếp.")
                     consecutive_fail = 0
@@ -1580,6 +1633,10 @@ def main():
                     try:
                         setup_device(d)
                         hong_phuc_hoi = 0
+                    except CP.ProxyHong as e2:
+                        log(f"⛔ Proxy không chạy: {e2}. Dừng — app sẽ thử lại sau 1 phút.")
+                        thoat_loi = True
+                        break
                     except Exception as e2:
                         hong_phuc_hoi += 1
                         log(f"⛔ Phục hồi lỗi ({str(e2)[:80]}) — hỏng {hong_phuc_hoi}/3 lần liền.")

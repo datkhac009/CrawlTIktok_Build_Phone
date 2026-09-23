@@ -261,6 +261,14 @@ function startDevice(params, onData, onStatus) {
     // thật sự ở IP đó: khác là IP đã về tay một điện thoại khác (DHCP cấp lại sau khi khởi động
     // lại) → thoát ngay, không lái nhầm máy. Rỗng = chưa biết, bỏ qua phép so.
     DEVICE_HW: String(params.hw || ''),
+    // Proxy của máy này (`host:port:user:pass`, main.js đọc từ devices.json). Python gắn nó qua
+    // College Proxy và ĐO IP trên điện thoại trước khi mở TikTok — hỏng thì không chạy. Rỗng = mạng
+    // thật. Đi qua biến môi trường của RIÊNG tiến trình con, không qua dòng lệnh: dòng lệnh thì
+    // Task Manager của ai cũng đọc được mật khẩu.
+    PROXY: String(params.proxy || ''),
+    // Nơi Python ghi dấu "lần gần nhất đã gắn proxy nào" (mã băm, không có mật khẩu) — để các lần
+    // chạy sau đi đường nhanh, KHÔNG phải mở giao diện College Proxy vốn chập chờn. Mỗi máy một tệp.
+    PROXY_MOC: params.proxy ? path.join(getDeviceDir(deviceId), 'proxy_da_gan.txt') : '',
     // Phía Python dùng ĐÚNG adb mà phía Node đã chọn. Hai bên tự dò riêng là có ngày mỗi bên
     // một binary khác phiên bản, và chúng sẽ thay nhau giết adb server của nhau.
     ADB_PATH,
@@ -359,6 +367,9 @@ function startDevice(params, onData, onStatus) {
         onStatus(deviceId, { kind: 'view', idx: payload.idx | 0, total: payload.total | 0, moc: payload.type === 'view_moc' });
       } else if (payload.type === 'status') {
         onStatus(deviceId, { kind: 'status', state: payload.state, msg: payload.msg });
+      } else if (payload.type === 'proxy') {
+        // Kết quả đo IP sau khi gắn proxy (college_proxy.py) — hiện ở cột Proxy trên bảng.
+        onStatus(deviceId, { kind: 'proxy', ok: payload.ok === true, ip: String(payload.ip || ''), msg: String(payload.msg || '') });
       } else if (payload.type === 'may_do') {
         // Python sắp thoát vì máy có vẻ ĐƠ — main.js quyết có tự khởi động lại điện thoại không.
         onStatus(deviceId, { kind: 'may_do', chac: payload.chac === true, lyDo: String(payload.ly_do || '') });
