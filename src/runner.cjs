@@ -361,7 +361,11 @@ function startDevice(params, onData, onStatus) {
         return;
       }
       if (payload.type === 'progress') {
-        onStatus(deviceId, { kind: 'progress', checked: payload.checked, qualified: payload.qualified });
+        // `lan` = mã tiến trình Python đang đếm. Mỗi tiến trình đếm lại từ 0, nên giao diện cần
+        // biết khi nào sang tiến trình mới để CỘNG DỒN (renderer.js: congDonTienDo). Không dựa vào
+        // trạng thái 'running' được: Python cũng báo 'running' lúc nối lại ADB GIỮA CHỪNG một
+        // tiến trình (cho_noi_lai), cộng dồn ở đó là đếm hai lần.
+        onStatus(deviceId, { kind: 'progress', checked: payload.checked, qualified: payload.qualified, lan: proc.pid });
       } else if (payload.type === 'view_progress' || payload.type === 'view_moc') {
         // Pha Xem: đang xem link nào (hiện lên bảng), và MỐC xem tiếp (main.js ghi xuống đĩa).
         onStatus(deviceId, { kind: 'view', idx: payload.idx | 0, total: payload.total | 0, moc: payload.type === 'view_moc' });

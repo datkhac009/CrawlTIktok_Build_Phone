@@ -29,7 +29,9 @@ function done() {
   if (failed.length) console.log('FAIL: ' + failed.map((f) => f.name).join(' | '));
   process.exit(failed.length ? 1 : 0);
 }
-const doc = (f) => fs.readFileSync(path.join(R, f), 'utf8');
+// CRLF → LF trước khi soi: máy có `core.autocrlf=true` checkout ra CRLF và 4a/4b đỏ oan
+// (xem chú thích cùng chỗ trong wiring.test.cjs).
+const doc = (f) => fs.readFileSync(path.join(R, f), 'utf8').replace(/\r\n/g, '\n');
 
 const { docProxy, moTa, ganHangLoat } = require(path.join(R, 'src', 'proxy.cjs'));
 

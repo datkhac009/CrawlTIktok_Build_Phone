@@ -24,7 +24,10 @@ function check(name, pass, detail) {
 }
 
 const R = path.join(__dirname, '..');
-const doc = (p) => fs.readFileSync(path.join(R, p), 'utf8');
+// Đưa xuống dòng về `\n` trước khi soi (2026-09-23): máy chủ dự án để `core.autocrlf=true` nên
+// git checkout ra CRLF, mà nhiều biểu thức dưới đây tìm `\n\n`. Kéo commit về xong là 16e đỏ oan
+// trên máy này trong khi máy vừa đẩy lên (LF) vẫn xanh — cùng một mã nguồn.
+const doc = (p) => fs.readFileSync(path.join(R, p), 'utf8').replace(/\r\n/g, '\n');
 
 const rend = doc('renderer/renderer.js');
 const html = doc('renderer/index.html');

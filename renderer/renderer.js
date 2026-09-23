@@ -3,10 +3,57 @@
 // ---- State ----
 let devices = [];               // [{id,name,serial,note}]
 let deviceSettings = {};        // deviceId -> {minPosts,maxPosts,delayMin,delayMax,originalOnly,limit}
-let deviceState = {};           // deviceId -> {status, checked, qualified, log:[]}
+let deviceState = {};           // deviceId -> trangThaiMoi(): {status, checked, qualified, valid, …, log:[]}
 let crawlResults = [];          // full data giữ trong JS để export
 let settingsTargetIds = [];     // danh sách deviceId đang sửa trong modal cài đặt
 let currentLogDeviceId = null;
+
+// ── HAI CỘT ĐẾM CỦA BẢNG THIẾT BỊ (2026-09-23) ──
+//
+// "Hợp lệ" từng lấy thẳng số `qualified` của Python — số sound ĐẠT BỘ LỌC TRÊN MÁY. Nhưng sound đạt
+// lọc còn phải qua cổng của main.js (`quaCongLocTrung`): link đã nằm trong kho `known_links.txt`
+// thì bị bỏ, không vào bảng. Kho có hơn 360.000 link nên phần lớn sound đạt lọc là sound cũ. Đo
+// thật lúc 15:50 cùng ngày: các máy báo 10 sound đạt, 8 cái đã nằm sẵn trong kho từ trước, bảng
+// dưới chỉ có 2 — chủ dự án cộng cột "Hợp lệ" thấy không khớp "2 sound" và tưởng app đếm sai.
+//
+// Nay làm như bản PC (`bumpValidCount`): "Hợp lệ" = số dòng máy đó ĐƯA VÀO BẢNG, cộng lên mỗi lần
+// có `crawl-data`. Số đạt lọc của Python vẫn giữ, để ô hiện thêm "(bỏ N)" và giải thích khi rê chuột.
+//
+// Cả hai cột tính từ lúc bảng kết quả được làm mới (`clearResultsIfIdle`) và CỘNG DỒN qua các lượt
+// tự chạy lại (hết giờ nghỉ, lỗi chạy lại sau 1 phút). Mỗi lượt là một tiến trình Python mới đếm
+// lại từ 0, còn bảng thì vẫn giữ dòng của lượt trước — không cộng dồn thì tổng cột lại lệch bảng.
+function demTrang() {
+  return {
+    checked: 0, qualified: 0, valid: 0,
+    goc: { checked: 0, qualified: 0 },       // tổng của các tiến trình Python đã xong
+    lanCuoi: { checked: 0, qualified: 0 },   // số mới nhất của tiến trình đang đếm
+    lan: null,                               // mã tiến trình đang đếm (runner.cjs gửi kèm)
+  };
+}
+function trangThaiMoi() {
+  return { status: 'stop', log: [], ...demTrang() };
+}
+function datLaiDem(st) {
+  Object.assign(st, demTrang());
+}
+
+// Python gửi số của RIÊNG tiến trình nó. Sang tiến trình mới thì chốt số tiến trình trước vào
+// `goc` rồi mới cộng. Nhận ra tiến trình mới bằng `lan`; thiếu `lan` thì bằng việc số tụt xuống.
+function congDonTienDo(st, checked, qualified, lan) {
+  const c = Number(checked) || 0;
+  const q = Number(qualified) || 0;
+  const moi = lan != null
+    ? (st.lan != null && lan !== st.lan)
+    : (c < st.lanCuoi.checked || q < st.lanCuoi.qualified);
+  if (moi) {
+    st.goc.checked += st.lanCuoi.checked;
+    st.goc.qualified += st.lanCuoi.qualified;
+  }
+  if (lan != null) st.lan = lan;
+  st.lanCuoi = { checked: c, qualified: q };
+  st.checked = st.goc.checked + c;
+  st.qualified = st.goc.qualified + q;
+}
 
 // Nguồn sự thật cho giá trị mặc định. Thuộc tính `value=` trong HTML chỉ là trang trí —
 // `openSettingsModal` luôn ghi đè từ đây, đúng như bản PC làm.
@@ -165,7 +212,7 @@ async function init() {
 
   devices = await window.api.devicesList();
   devices.forEach((d) => {
-    deviceState[d.id] = { status: 'stop', checked: 0, qualified: 0, log: [] };
+    deviceState[d.id] = trangThaiMoi();
   });
 
   const runningIds = await window.api.crawlRunningIds();
@@ -190,6 +237,12 @@ function onCrawlData(payload) {
   crawlResults.push(row);
   addResultRow(row, crawlResults.length);
   renderResultCount();
+  // "Hợp lệ" = số dòng máy này đưa vào bảng — xem khối HAI CỘT ĐẾM ở đầu file.
+  const st = deviceState[deviceId];
+  if (st) {
+    st.valid = (st.valid || 0) + 1;
+    renderDeviceRow(deviceId);
+  }
 }
 
 function onCrawlStatus(payload) {
@@ -251,8 +304,7 @@ function onCrawlStatus(payload) {
     if (payload.msg) appendLog(deviceId, payload.msg);
     renderDeviceRow(deviceId);
   } else if (kind === 'progress') {
-    st.checked = payload.checked;
-    st.qualified = payload.qualified;
+    congDonTienDo(st, payload.checked, payload.qualified, payload.lan);
     renderDeviceRow(deviceId);
   } else if (kind === 'log') {
     appendLog(deviceId, payload.line);
@@ -293,7 +345,7 @@ async function napLaiDanhSachMay(doi) {
     .map((el) => el.dataset.id));
   devices = await window.api.devicesList();
   devices.forEach((d) => {
-    if (!deviceState[d.id]) deviceState[d.id] = { status: 'stop', checked: 0, qualified: 0, log: [] };
+    if (!deviceState[d.id]) deviceState[d.id] = trangThaiMoi();
   });
   renderDeviceTable();
   document.querySelectorAll('#deviceTableBody .row-check').forEach((el) => {
@@ -378,8 +430,18 @@ function oProxy(d, st) {
   return `<span class="pserial">${esc(d.proxyHien)}</span>${kq}`;
 }
 
+// Ô "Hợp lệ": số sound MỚI đã vào bảng, kèm "(bỏ N)" khi có sound đạt lọc mà không vào bảng.
+function oHopLe(st) {
+  const moi = st.valid || 0;
+  const bo = Math.max(0, (st.qualified || 0) - moi);
+  if (!bo) return String(moi);
+  const giai = `${st.qualified} sound đạt bộ lọc trên máy · ${moi} sound mới vào bảng · ${bo} bị bỏ: `
+    + 'đã thu từ trước (có sẵn trong kho link), hoặc bị lọc lại khi về app (ngôn ngữ, không phải Original Sound)';
+  return `${moi} <span class="pvalid-bo" title="${esc(giai)}">(bỏ ${bo})</span>`;
+}
+
 function deviceRowHtml(d) {
-  const st = deviceState[d.id] || { status: 'stop', checked: 0, qualified: 0 };
+  const st = deviceState[d.id] || trangThaiMoi();
   const ban = TRANG_THAI_BAN.has(st.status);
   return `
     <td><input type="checkbox" class="row-check" data-id="${d.id}"></td>
@@ -388,7 +450,7 @@ function deviceRowHtml(d) {
     <td><span class="pstat-badge ${st.status}">${esc(nhanTrangThai(st))}</span></td>
     <td class="pproxy">${oProxy(d, st)}</td>
     <td class="pchecked">${st.checked || 0}</td>
-    <td class="pvalid">${st.qualified || 0}</td>
+    <td class="pvalid">${oHopLe(st)}</td>
     <td class="prow-actions">
       <button class="btn btn-sm" data-act="toggle" data-id="${d.id}">${ban ? '■ Dừng' : '▶ Chạy'}</button>
       <button class="btn-icon" data-act="settings" data-id="${d.id}" title="Cài đặt riêng">⚙️</button>
@@ -425,6 +487,8 @@ function clearResultsIfIdle() {
   crawlResults = [];
   document.getElementById('resultBody').innerHTML = '';
   renderResultCount();
+  // Hai cột đếm tính theo ĐÚNG bảng này, nên bảng làm mới thì đếm cũng về 0 cùng lúc.
+  Object.keys(deviceState).forEach((id) => { datLaiDem(deviceState[id]); renderDeviceRow(id); });
   soPending = 0;
   renderPendingChip();
 }
@@ -466,9 +530,10 @@ function paramsFor(d) {
 async function startDeviceById(id) {
   const d = devices.find((x) => x.id === id);
   if (!d) return;
-  clearResultsIfIdle();               // lam moi bang neu day la phien chay moi
-  const st = deviceState[id];
-  if (st) { st.checked = 0; st.qualified = 0; }   // reset dem cua may nay
+  // Làm mới bảng nếu đây là phiên chạy mới — đếm của MỌI máy về 0 cùng lúc ở trong đó. KHÔNG đặt
+  // lại riêng máy này nữa: bảng còn giữ dòng của nó từ lượt trước thì cột "Hợp lệ" phải còn đếm
+  // chúng, không thì tổng cột lại lệch "N sound" của bảng.
+  clearResultsIfIdle();
   const res = await window.api.deviceStart(paramsFor(d));
   if (!res.ok) {
     toast(res.msg || 'Không chạy được', false);
@@ -661,7 +726,7 @@ async function addDevice() {
   try {
     const dev = await window.api.devicesAdd({ name, serial });
     devices.push(dev);
-    deviceState[dev.id] = { status: 'stop', checked: 0, qualified: 0, log: [] };
+    deviceState[dev.id] = trangThaiMoi();
     document.getElementById('newDeviceName').value = '';
     document.getElementById('newDeviceSerial').value = '';
     danhDauDaThem(serial);
