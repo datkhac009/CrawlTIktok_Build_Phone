@@ -94,6 +94,18 @@ PROXY_MOC = os.environ.get("PROXY_MOC", "")
 # Bao lau hoi lai mot lan "VPN con song khong" giua ca (mot lenh adb, khong mo giao dien).
 KIEM_VPN_GIAY = 120
 
+# ── PROXY CO SAN TREN MAY (2026-09-23) ── xem `college_proxy.dam_bao_proxy_san_co`.
+# May KHONG duoc gan proxy trong app nhung co cai Lalasoft (College Proxy) — 18 may USB — thi van phai
+# bat Lalasoft truoc khi mo TikTok, bang proxy dang luu tren may. May mang (khong co Lalasoft) giu
+# nguyen: chu du an chot khong dung vao. Hoi `pm` MOT lan moi tien trinh; None = chua hoi duoc.
+CO_CP = {"co": None}
+
+
+def co_college_proxy(serial):
+    if CO_CP["co"] is None:
+        CO_CP["co"] = CP.co_college_proxy(serial)
+    return bool(CO_CP["co"])
+
 HERE = os.path.dirname(__file__)
 OUTPUT_FILE = os.path.join(HERE, "sound_links.txt")
 
@@ -723,6 +735,8 @@ def setup_device(d):
             kill_all_apps(d)
             if PROXY:
                 CP.dam_bao_proxy(d, d.serial, PROXY, log, emit_event, moc=PROXY_MOC)
+            elif co_college_proxy(d.serial):
+                CP.dam_bao_proxy_san_co(d, d.serial, log, emit_event)
             pkg = ensure_tiktok_open(d)
             return pkg
         except CP.ProxyHong:
@@ -1518,10 +1532,11 @@ def main():
             # ── VPN RO GIUA CA ──
             # College Proxy co the bi Android tat giua chung; luc do TikTok lang le chay tiep bang IP
             # that. Tat TikTok NGAY roi gan lai qua `setup_device` (no do lai IP truoc khi mo TikTok).
-            if PROXY and time.time() >= kiem_vpn_luc:
+            # Ap cho ca may gan proxy trong app LAN may chi co Lalasoft nhap san (2026-09-23).
+            if time.time() >= kiem_vpn_luc:
                 kiem_vpn_luc = time.time() + KIEM_VPN_GIAY
-                if not CP.vpn_dang_bat(d.serial):
-                    log("⛔ VPN của College Proxy đã tắt giữa ca — tắt TikTok, gắn lại proxy.")
+                if (PROXY or co_college_proxy(d.serial)) and not CP.vpn_dang_bat(d.serial):
+                    log("⛔ VPN của Lalasoft (College Proxy) đã tắt giữa ca — tắt TikTok, bật lại proxy.")
                     for goi in PKGS:
                         try:
                             adb("shell", "am", "force-stop", goi, serial=d.serial, timeout=15)

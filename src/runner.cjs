@@ -372,8 +372,8 @@ function startDevice(params, onData, onStatus) {
       } else if (payload.type === 'status') {
         onStatus(deviceId, { kind: 'status', state: payload.state, msg: payload.msg });
       } else if (payload.type === 'proxy') {
-        // Kết quả đo IP sau khi gắn proxy (college_proxy.py) — hiện ở cột Proxy trên bảng.
-        onStatus(deviceId, { kind: 'proxy', ok: payload.ok === true, ip: String(payload.ip || ''), msg: String(payload.msg || '') });
+        // Kết quả đo IP sau khi gắn proxy (college_proxy.py), kèm mã nước "US"/"VN" — cột Proxy.
+        onStatus(deviceId, { kind: 'proxy', ok: payload.ok === true, ip: String(payload.ip || ''), nuoc: String(payload.nuoc || ''), msg: String(payload.msg || '') });
       } else if (payload.type === 'may_do') {
         // Python sắp thoát vì máy có vẻ ĐƠ — main.js quyết có tự khởi động lại điện thoại không.
         onStatus(deviceId, { kind: 'may_do', chac: payload.chac === true, lyDo: String(payload.ly_do || '') });

@@ -426,8 +426,15 @@ function oProxy(d, st) {
   let kq = '';
   if (p && p.dang) kq = `<div class="pproxy-wait">⏳ ${p.tat ? 'đang tắt' : 'đang gắn'}…</div>`;
   else if (p && p.cho) kq = `<div class="pproxy-wait">⏳ ${p.tat ? 'tắt tay trên máy' : 'gắn ở lượt chạy sau'}</div>`;
-  else if (p && p.ok && !p.tat) kq = `<div class="pproxy-ok">✓ IP ${esc(p.ip)}</div>`;
-  else if (p && !p.ok) kq = `<div class="pproxy-err" title="${esc(p.msg)}">✕ ${p.tat ? 'chưa tắt được' : 'không chạy'}</div>`;
+  // Máy chỉ có Lalasoft nhập sẵn (không gán proxy trong app) cũng về đây — kèm mã nước của IP (2026-09-23).
+  else if (p && p.ok && !p.tat) {
+    kq = p.ip
+      ? `<div class="pproxy-ok">✓ ${p.nuoc ? esc(p.nuoc) + ' · ' : ''}IP ${esc(p.ip)}</div>`
+      : `<div class="pproxy-ok" title="${esc(p.msg)}">✓ đang bật (chưa đo được IP)</div>`;
+  } else if (p && !p.ok) {
+    const nhan = p.tat ? 'chưa tắt được' : (/Việt Nam/.test(p.msg || '') ? 'IP Việt Nam' : 'không chạy');
+    kq = `<div class="pproxy-err" title="${esc(p.msg)}">✕ ${nhan}</div>`;
+  }
   if (!d.proxyHien) return kq || '<span class="pproxy-none">—</span>';
   return `<span class="pserial">${esc(d.proxyHien)}</span>${kq}`;
 }

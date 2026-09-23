@@ -791,7 +791,7 @@ async function _ganMot(id, tat) {
 // không thì chỉ còn host:port, trông y như "chưa gắn lần nào" dù VPN trên máy vẫn đang chạy.
 function ghiKqProxy(id, r) {
   try {
-    devices.updateDevice({ id, proxyKq: { ok: !!r.ok, ip: String(r.ip || ''), msg: String(r.msg || '').slice(0, 200), luc: Date.now() } });
+    devices.updateDevice({ id, proxyKq: { ok: !!r.ok, ip: String(r.ip || ''), nuoc: String(r.nuoc || ''), msg: String(r.msg || '').slice(0, 200), luc: Date.now() } });
   } catch (_) {}
 }
 ipcMain.handle('devices-list-adb', () => devices.listAdbSerials());

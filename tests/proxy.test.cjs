@@ -163,10 +163,20 @@ def adb_gia(*a, serial=None, timeout=60):
         return ""
     if a[:3] == ("shell", "input", "keyevent"):
         MAY.o[MAY.dang_go] = ""; return ""
+    if a[:4] == ("shell", "pm", "list", "packages"):
+        return ("package:" + CP.PKG) if IP.get("co_cp", True) else ""
+    # ip-api (nuoc + IP). "tat_ra_that": VPN tat thi may van ra mang bang IP that Viet Nam — dung
+    # canh do duoc tren 6 may USB 2026-09-23. "vn_lan": n lan dau tra VN du VPN bat.
+    if a[0] == "shell" and "ip-api.com" in a[1]:
+        if IP.get("api_hong"): return ""
+        if IP.get("vn_lan", 0) > 0:
+            IP["vn_lan"] -= 1; return "VN\\n" + IP["pc"]
+        if MAY.bat: return IP.get("nuoc_dt", "US") + "\\n" + IP["dt"]
+        return ("VN\\n" + IP["pc"]) if IP.get("tat_ra_that") else ""
     if a[0] == "shell" and "nc" in a[1]:
         if IP.get("hong", 0) > 0:
             IP["hong"] -= 1; return ""
-        return IP["dt"] if MAY.bat else ""
+        return IP["dt"] if MAY.bat else (IP["pc"] if IP.get("tat_ra_that") else "")
     return ""
 CP.adb = adb_gia
 CP.ip_may_tinh = lambda: IP["pc"]
@@ -369,6 +379,100 @@ except CP.ProxyHong:
     check('3k. Chuỗi proxy sai dạng → ProxyHong trước khi đụng tới điện thoại',
       !!saiDang.kq && saiDang.kq.hong && !saiDang.kq.mo.length, saiDang.loi);
   }
+
+  // ── 5. Lalasoft CÓ SẴN trên máy, không gán proxy trong app (2026-09-23) ──
+  // Đo thật: 6/7 máy USB đang quét ra IP Việt Nam vì VPN Lalasoft tắt, mà chưa máy nào gán proxy
+  // trong app nên đường cũ không chạy. App phải bật lại bằng ĐÚNG proxy đang lưu trên máy — không
+  // gõ gì, không bao giờ `pm clear` (xoá mất proxy người dùng nhập tay).
+  {
+    const DA_NHAP = `MAY.o = {CP.O_DIA_CHI: "203.0.113.10", CP.O_CONG: "50100", CP.O_TEN: "nguoidung01"}`;
+    const GO = `[l for l in LENH if l[:3] in (["shell", "input", "text"], ["shell", "input", "keyevent"])]`;
+    const CLEAR = `[l for l in LENH if l[:3] == ["shell", "pm", "clear"]]`;
+    const MO = `[v for v in MAY.viec if v[0] == "app_start"]`;
+
+    const tat = chay('sc_tat', `
+${DA_NHAP}
+IP["tat_ra_that"] = True
+ip, nuoc = CP.dam_bao_proxy_san_co(MAY, "S", log, emit)
+ket(ip=ip, nuoc=nuoc, bat=MAY.bat, go=${GO}, clear=${CLEAR}, mo=${MO}, o=MAY.o)`);
+    const t = tat.kq || {};
+    check('5a. Lalasoft TẮT, ô đã có proxy → mở sạch, chỉ bấm START (không gõ, không pm clear) → ra IP US',
+      t.ip === '203.0.113.10' && t.nuoc === 'US' && t.bat === true && !t.go.length && !t.clear.length
+      && t.mo.length === 1 && t.o['com.cell47.College_Proxy:id/editText_address'] === '203.0.113.10',
+      JSON.stringify({ ip: t.ip, nuoc: t.nuoc, go: t.go, clear: t.clear }) || tat.loi);
+    check('5b. Báo sự kiện proxy ok kèm mã nước cho cột Proxy, log nói rõ đã bật lại',
+      !!t.su_kien && t.su_kien.some((e) => e.type === 'proxy' && e.ok === true && e.nuoc === 'US' && e.ip === '203.0.113.10')
+      && t.log.some((l) => /đang TẮT/.test(l)) && t.log.some((l) => /Đã bật lại Lalasoft/.test(l)), JSON.stringify(t.log));
+
+    const trong = chay('sc_trong', `
+IP["tat_ra_that"] = True
+try:
+    CP.dam_bao_proxy_san_co(MAY, "S", log, emit); ket(hong=False)
+except CP.ProxyHong as e:
+    ket(hong=True, ly_do=str(e), bat=MAY.bat, bam=[v for v in MAY.viec if v[0] == "click"], mo=${MO}, clear=${CLEAR})`);
+    const tr = trong.kq || {};
+    check('5c. Lalasoft chưa nhập proxy → ProxyHong nói rõ, KHÔNG bấm START, không thử lại, không pm clear',
+      tr.hong === true && /chưa nhập proxy/.test(tr.ly_do) && tr.bat === false && !tr.bam.length
+      && tr.mo.length === 1 && !tr.clear.length && tr.su_kien.some((e) => e.type === 'proxy' && e.ok === false),
+      JSON.stringify(tr) || trong.loi);
+
+    const dangBat = chay('sc_bat', `
+MAY.bat = True
+ip, nuoc = CP.dam_bao_proxy_san_co(MAY, "S", log, emit)
+ket(ip=ip, nuoc=nuoc, viec=MAY.viec)`);
+    check('5d. Lalasoft đang bật + ra IP US → không mở app, không bấm gì, chỉ đo',
+      !!dangBat.kq && dangBat.kq.ip === '203.0.113.10' && dangBat.kq.nuoc === 'US' && !dangBat.kq.viec.length,
+      dangBat.kq ? JSON.stringify(dangBat.kq.viec) : dangBat.loi);
+
+    const roVn = chay('sc_ro_vn', `
+${DA_NHAP}
+MAY.bat = True
+IP["vn_lan"] = 1
+ip, nuoc = CP.dam_bao_proxy_san_co(MAY, "S", log, emit)
+ket(ip=ip, nuoc=nuoc, mo=${MO}, clear=${CLEAR})`);
+    check('5e. Lalasoft báo bật mà máy vẫn ra IP Việt Nam → bật lại từ đầu, ra IP US',
+      !!roVn.kq && roVn.kq.nuoc === 'US' && roVn.kq.mo.length === 1 && !roVn.kq.clear.length
+      && roVn.kq.log.some((l) => /vẫn ra IP Việt Nam/.test(l)), roVn.kq ? JSON.stringify(roVn.kq.log) : roVn.loi);
+
+    const vnMai = chay('sc_vn_mai', `
+${DA_NHAP}
+IP["tat_ra_that"] = True
+IP["nuoc_dt"] = "VN"
+try:
+    CP.dam_bao_proxy_san_co(MAY, "S", log, emit); ket(hong=False)
+except CP.ProxyHong as e:
+    ket(hong=True, ly_do=str(e), mo=${MO}, clear=${CLEAR})`);
+    check('5f. Bật rồi mà vẫn IP Việt Nam (proxy trên máy hỏng) → thử lại 1 lần rồi ProxyHong — không mở TikTok, không pm clear',
+      !!vnMai.kq && vnMai.kq.hong === true && /IP Việt Nam/.test(vnMai.kq.ly_do) && vnMai.kq.mo.length === 2
+      && !vnMai.kq.clear.length, vnMai.kq ? JSON.stringify(vnMai.kq) : vnMai.loi);
+
+    const khongDo = chay('sc_khong_do', `
+MAY.bat = True
+IP["api_hong"] = True
+IP["hong"] = 99
+ip, nuoc = CP.dam_bao_proxy_san_co(MAY, "S", log, emit)
+ket(ip=ip, nuoc=nuoc, viec=MAY.viec)`);
+    check('5g. Dịch vụ đo IP chết mà VPN đã bật → KHÔNG chặn cả farm, cho quét kèm ⚠',
+      !!khongDo.kq && khongDo.kq.ip === '' && !khongDo.kq.viec.length
+      && khongDo.kq.log.some((l) => /⚠.*không đo được IP/.test(l))
+      && khongDo.kq.su_kien.some((e) => e.type === 'proxy' && e.ok === true), khongDo.kq ? JSON.stringify(khongDo.kq.log) : khongDo.loi);
+
+    const doc2 = chay('sc_doc', `
+ket(kq=[CP.doc_ip_nuoc(s) for s in ["US\\n72.244.46.232", "HTTP/1.0 200 OK\\r\\n\\r\\nVN\\n118.68.96.56", "US", "", "abc\\nxyz", "us\\n1.2.3.4"]],
+    co=CP.co_college_proxy("S"))`);
+    const mong = [['72.244.46.232', 'US'], ['118.68.96.56', 'VN'], ['', ''], ['', ''], ['', ''], ['', '']];
+    check('5h. doc_ip_nuoc đọc đúng câu trả lời hai dòng của ip-api, câu trả lời rác ra rỗng',
+      !!doc2.kq && JSON.stringify(doc2.kq.kq) === JSON.stringify(mong), doc2.kq ? JSON.stringify(doc2.kq.kq) : doc2.loi);
+    const khongCo = chay('sc_khong_co', `
+IP["co_cp"] = False
+a = CP.co_college_proxy("S")
+def hong(*x, **k): raise RuntimeError("adb lỗi")
+CP.adb = hong
+ket(khong=a, loi=CP.co_college_proxy("S"))`);
+    check('5i. co_college_proxy: máy có Lalasoft → True, không có → False, adb lỗi → None (chưa hỏi được, không đoán)',
+      !!doc2.kq && doc2.kq.co === true && !!khongCo.kq && khongCo.kq.khong === false && khongCo.kq.loi === null,
+      JSON.stringify([doc2.kq && doc2.kq.co, khongCo.kq]) || khongCo.loi);
+  }
 }
 
 // ── 4. Nối dây: không đường nào mở TikTok mà bỏ qua proxy ──
@@ -393,13 +497,24 @@ except CP.ProxyHong:
   const iBat = main.indexOf('except CP.ProxyHong as e:');
   check('4e. Proxy hỏng lúc khởi động KHÔNG bị báo là máy đơ (không tự khởi động lại điện thoại)',
     iBat >= 0 && !main.slice(iBat, main.indexOf('except Exception as e:', iBat)).includes('bao_may_do'));
-  check('4f. Kiểm VPN định kỳ giữa ca, rớt thì tắt TikTok trước khi gắn lại',
-    /if PROXY and time\.time\(\) >= kiem_vpn_luc:[\s\S]{0,400}CP\.vpn_dang_bat\(d\.serial\)[\s\S]{0,300}am", "force-stop", goi[\s\S]{0,300}setup_device\(d\)/.test(scan));
+  check('4f. Kiểm VPN định kỳ giữa ca (máy gán proxy LẪN máy có Lalasoft sẵn), rớt thì tắt TikTok trước khi bật lại',
+    /if time\.time\(\) >= kiem_vpn_luc:[\s\S]{0,400}if \(PROXY or co_college_proxy\(d\.serial\)\) and not CP\.vpn_dang_bat\(d\.serial\):[\s\S]{0,300}am", "force-stop", goi[\s\S]{0,300}setup_device\(d\)/.test(scan));
+  // 2026-09-23: máy không gán proxy trong app nhưng có Lalasoft nhập sẵn (18 máy USB) cũng phải bật
+  // Lalasoft TRƯỚC khi mở TikTok; máy mạng (không có Lalasoft) giữ nguyên — chủ dự án chốt.
+  const iSanCo = setup.indexOf('elif co_college_proxy(d.serial):');
+  const iGoiSanCo = setup.indexOf('CP.dam_bao_proxy_san_co(');
+  check('4m. setup_device: không gán proxy mà máy có Lalasoft → bật Lalasoft rồi mới mở TikTok',
+    iSanCo > iProxy && iGoiSanCo > iSanCo && iTik > iGoiSanCo, `${iProxy} ${iSanCo} ${iGoiSanCo} ${iTik}`);
+  check('4n. Chỉ hỏi "có Lalasoft không" MỘT lần mỗi tiến trình (vòng giữa ca gọi mỗi 2 phút)',
+    /def co_college_proxy\(serial\):\s*\n\s*if CO_CP\["co"\] is None:\s*\n\s*CO_CP\["co"\] = CP\.co_college_proxy\(serial\)/.test(scan));
 
   const cp = doc('college_proxy.py');
   check('4g. college_proxy.py không in mật khẩu ra log', !/log\([^)]*\[["']pass["']\]/.test(cp) && !/emit\([^)]*pass/.test(cp));
   check('4h. Không dùng send_keys (đổi bàn phím 效卫) hay set_text (vỡ khi bàn phím toàn màn hình)',
     !/\.send_keys\(|\.set_text\(/.test(cp));
+  const sanCo = (cp.match(/def _bat_lai_san_co[\s\S]*?(?=\n# ── Chay rieng)/) || [''])[0];
+  check('4o. Chế độ Lalasoft có sẵn KHÔNG BAO GIỜ pm clear / gõ proxy (xoá mất proxy người dùng nhập tay)',
+    !!sanCo && !/pm", "clear|xoa_du_lieu=True|_dien_o\(|input", "text/.test(sanCo), sanCo.slice(0, 60));
 
   const rn = doc('src/runner.cjs');
   check('4i. runner: PROXY đi qua biến môi trường của tiến trình con', /PROXY: String\(params\.proxy \|\| ''\)/.test(rn)
@@ -416,6 +531,10 @@ except CP.ProxyHong:
   check('4i4. college_proxy.py chạy riêng: gắn thì truyền hàm tắt TikTok vào dam_bao_proxy',
     /truoc_khi_gan=tat_tiktok/.test(cp) && /"force-stop", goi/.test(cp));
   check('4j. runner chuyển sự kiện proxy lên', /payload\.type === 'proxy'[\s\S]{0,200}kind: 'proxy'/.test(rn));
+  check('4j2. Mã nước (US/VN) đi đủ đường: runner → main lưu devices.json → renderer vẽ',
+    /kind: 'proxy'[^}]*nuoc: String\(payload\.nuoc \|\| ''\)/.test(rn)
+    && /proxyKq: \{[^}]*nuoc: String\(r\.nuoc \|\| ''\)/.test(doc('main.js'))
+    && /p\.nuoc \? esc\(p\.nuoc\)/.test(doc('renderer/renderer.js')));
 
   const pkg = JSON.parse(doc('package.json'));
   check('4k. Bản build .exe mang theo college_proxy.py (extraResources)',
