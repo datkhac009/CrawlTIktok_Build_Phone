@@ -151,8 +151,15 @@ feed, 0/27 bản ngoài feed.
 
 Chọn máy → **🌐 Proxy đã chọn** → dán danh sách, mỗi dòng `host:port:user:pass`: dòng 1 cho máy
 thứ nhất đã chọn, dòng 2 cho máy thứ hai… theo thứ tự trên bảng. Có một dòng sai là không gán máy
-nào. Cột **Proxy** hiện `host:port` và kết quả đo IP của lượt chạy gần nhất. Proxy lưu ở trường
-`proxy` trong `devices.json`; mật khẩu không đi sang giao diện, không vào log.
+nào. Proxy lưu ở trường `proxy` trong `devices.json`; mật khẩu không đi sang giao diện, không vào log.
+
+**Bấm Lưu là máy nhận proxy ngay** (chủ dự án yêu cầu): máy đang rảnh được gắn luôn qua
+`src/proxyrun.cjs` → `python college_proxy.py <serial> gan` (tối đa 3 máy một lúc, chung một adb
+server); cột **Proxy** hiện `⏳ đang gắn…` rồi `✓ IP …` / `✕ không chạy` (rê chuột xem lý do). Máy
+đang chạy / xếp hàng / nghỉ giữa ca thì **không** chen vào (tiến trình quét đang giữ màn hình, và
+gắn lại = VPN tắt lúc TikTok đang chạy): hiện `⏳ gắn ở lượt chạy sau`. Đang gắn thì nút Chạy của
+máy đó bị chặn. Gắn đầy đủ tắt TikTok trên máy trước (có thể đang mở do thao tác tay). **Bỏ proxy**
+của máy rảnh thì tắt College Proxy trên điện thoại ngay (`college_proxy.py <serial> tat`).
 
 Proxy được gắn bằng app **College Proxy** (`com.cell47.College_Proxy`, bản "Lalasoft Proxy -congnv
 fix") đã cài sẵn trên máy farm — một VPN, không cần root, `college_proxy.py` bấm giao diện của nó.
@@ -171,7 +178,7 @@ fix") đã cài sẵn trên máy farm — một VPN, không cần root, `college
   VPN lần đầu. Hỏng thì lần 2 `pm clear` College Proxy rồi làm lại — app này từng tự rơi vào vòng
   lặp đẻ `LoadingActivity` (màn chờ quảng cáo) mà force-stop không gỡ được.
 - Giữ proxy **bật** khi bấm Dừng (chủ dự án chốt): TikTok trên máy luôn một IP, kể cả khi thao tác
-  tay trên 效卫. Bỏ proxy của máy trong app không tắt College Proxy trên điện thoại.
+  tay trên 效卫.
 - VPN chỉ đẩy dải IP công cộng; `192.168.*`, `10.*`, `172.16–31.*` đi thẳng `wlan0` → adb qua
   Wi-Fi của farm không bị ảnh hưởng.
 - Không gõ bằng `set_text` (bàn phím 效卫 bung toàn màn hình khi máy nằm ngang, ô nhập biến mất) và

@@ -43,7 +43,7 @@ function addDevice({ name, serial, note }) {
   return device;
 }
 
-function updateDevice({ id, name, serial, note, hw, model, proxy }) {
+function updateDevice({ id, name, serial, note, hw, model, proxy, proxyKq }) {
   const list = loadDevices();
   const dev = list.find((d) => d.id === id);
   if (!dev) throw new Error('Không tìm thấy thiết bị.');
@@ -60,8 +60,17 @@ function updateDevice({ id, name, serial, note, hw, model, proxy }) {
   if (model !== undefined) dev.model = model;
   // `host:port:user:pass` (src/proxy.cjs). Chuỗi rỗng = bỏ proxy, máy chạy mạng thật.
   if (proxy !== undefined) {
-    if (String(proxy).trim()) dev.proxy = String(proxy).trim();
+    const moi = String(proxy).trim();
+    // Đổi / bỏ proxy thì kết quả đo của proxy CŨ không còn đúng nữa.
+    if (moi !== (dev.proxy || '')) delete dev.proxyKq;
+    if (moi) dev.proxy = moi;
     else delete dev.proxy;
+  }
+  // Kết quả gắn gần nhất { ok, ip, msg, luc } — để mở lại app vẫn biết máy đã nhận proxy chưa.
+  // Không có mật khẩu. `null` = xoá.
+  if (proxyKq !== undefined) {
+    if (proxyKq) dev.proxyKq = proxyKq;
+    else delete dev.proxyKq;
   }
   saveDevices(list);
   return dev;

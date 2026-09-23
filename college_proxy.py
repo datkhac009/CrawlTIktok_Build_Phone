@@ -294,7 +294,7 @@ def _ghi_moc(moc, gia_tri):
         pass
 
 
-def dam_bao_proxy(d, serial, chuoi, log, emit=lambda *a, **k: None, moc=""):
+def dam_bao_proxy(d, serial, chuoi, log, emit=lambda *a, **k: None, moc="", truoc_khi_gan=None):
     """May phai dang ra Internet QUA proxy `chuoi`. Tra IP proxy; hong thi nem `ProxyHong`.
 
     DUONG NHANH (moi lan chay, moi lan phuc hoi): VPN dang bat + dau tren may tinh khop proxy nay
@@ -320,6 +320,11 @@ def dam_bao_proxy(d, serial, chuoi, log, emit=lambda *a, **k: None, moc=""):
                 log(f"⚠ VPN đang bật nhưng {e} — gắn lại từ đầu.")
         if not ip:
             _ghi_moc(moc, "")
+            # Gan day du = force-stop College Proxy = VPN tat vai chuc giay. TikTok dang mo luc do
+            # la chay bang IP that — noi goi truyen ham tat TikTok vao day (khi gan tu nut Luu:
+            # may co the dang mo TikTok do nguoi dung thao tac tay tren 效卫).
+            if truoc_khi_gan:
+                truoc_khi_gan()
             log(f"Đang gắn proxy {mo_ta(p)} qua College Proxy…")
             for lan in (1, 2):
                 try:
@@ -356,3 +361,76 @@ def _kiem_ip(serial):
     if ip == that:
         raise ProxyHong(f"máy vẫn ra IP thật {that} — proxy không có tác dụng")
     return ip
+
+
+# ── Chay rieng, ngoai luot quet (2026-09-23) ──
+# Chu du an: "khi toi LUU proxy thi may do da phai nhan proxy toi setup roi" — khong cho toi luc bam
+# Chay. main.js goi `python college_proxy.py <serial> gan|tat` cho tung may DANG RANH (may dang
+# chay thi tien trinh quet dang giu man hinh, gan o luot sau). Proxy + tep dau di qua bien moi
+# truong PROXY / PROXY_MOC y nhu luot quet; ket qua ve bang dong @@EVENT@@ nhu scan_feed_sounds.py.
+
+GOI_TIKTOK = ("com.zhiliaoapp.musically", "com.ss.android.ugc.trill")
+
+
+def _su_kien(loai, **k):
+    import json
+    print("@@EVENT@@" + json.dumps({"type": loai, **k}, ensure_ascii=False), flush=True)
+
+
+def tat_proxy(serial, moc, log):
+    """Tat College Proxy tren may (VPN tat theo) va xoa dau. Tra True neu VPN da tat that."""
+    adb("shell", "am", "force-stop", PKG, serial=serial, timeout=20)
+    _ghi_moc(moc, "")
+    for _ in range(10):
+        if not vpn_dang_bat(serial):
+            log("Đã tắt College Proxy — máy dùng mạng thật.")
+            return True
+        time.sleep(1)
+    return False
+
+
+def _chinh(argv):
+    import os
+    import sys
+    from adb_helper import connect
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    if len(argv) < 3 or argv[2] not in ("gan", "tat"):
+        print("Dùng: python college_proxy.py <serial> gan|tat", flush=True)
+        return 2
+    serial, viec = argv[1], argv[2]
+    moc = os.environ.get("PROXY_MOC", "")
+    log = lambda m: print(m, flush=True)
+    try:
+        if viec == "tat":
+            ok = tat_proxy(serial, moc, log)
+            _su_kien("proxy", ok=ok, tat=True, msg="" if ok else "VPN vẫn bật sau khi tắt College Proxy")
+            return 0 if ok else 1
+
+        def tat_tiktok():
+            for goi in GOI_TIKTOK:
+                try:
+                    adb("shell", "am", "force-stop", goi, serial=serial, timeout=15)
+                except Exception:
+                    pass
+        d = connect(serial)
+        dam_bao_proxy(d, serial, os.environ.get("PROXY", ""), log, _su_kien, moc=moc, truoc_khi_gan=tat_tiktok)
+        try:
+            d.press("home")
+        except Exception:
+            pass
+        return 0
+    except ProxyHong as e:
+        log(f"⛔ Proxy không chạy: {e}")
+        return 1
+    except Exception as e:
+        log(f"⛔ Lỗi khi {'tắt' if viec == 'tat' else 'gắn'} proxy: {str(e)[:160]}")
+        _su_kien("proxy", ok=False, msg=str(e)[:160])
+        return 1
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(_chinh(sys.argv))

@@ -197,7 +197,20 @@ const fakeDevices = Object.assign({}, devicesThat, {
     return r;
   },
 });
-for (const [ten, exp] of [['runner.cjs', fakeRunner], ['sheets.cjs', fakeSheets], ['devices.cjs', fakeDevices]]) {
+// ── Gắn proxy ngay lúc bấm Lưu (src/proxyrun.cjs) giả: ghi lại mọi lần gọi. `proxyTreo` = true thì
+// lời gọi TREO tới khi phép thử gọi `thaGan()` — để kiểm "đang gắn" và trần số máy gắn cùng lúc.
+const ganGoi = [];
+let proxyTreo = false;
+const choTha = [];
+const thaGan = () => { while (choTha.length) choTha.shift()({ ok: true, ip: '9.9.9.9' }); };
+const fakeProxyrun = {
+  chayProxy(a) {
+    ganGoi.push(a);
+    if (proxyTreo) return new Promise((r) => choTha.push(r));
+    return Promise.resolve(a.tat ? { ok: true } : { ok: true, ip: '9.9.9.9' });
+  },
+};
+for (const [ten, exp] of [['runner.cjs', fakeRunner], ['sheets.cjs', fakeSheets], ['devices.cjs', fakeDevices], ['proxyrun.cjs', fakeProxyrun]]) {
   const p = require.resolve(path.join(ROOT, 'src', ten));
   require.cache[p] = { id: p, filename: p, loaded: true, exports: exp };
 }
@@ -1031,6 +1044,22 @@ const start = (id, serial, cfg = {}) => {
     // Gán lúc máy đang chạy: lượt đang chạy giữ proxy cũ, lượt KẾ TIẾP dùng proxy mới.
     const ok = await handlers.get('devices-set-proxies')({}, { ids: ['dPx', 'dPy'], text: `${P2}\n${P1}` });
     check('P5. Lưu → ghi đúng máy nào proxy nấy', ok.ok && mayGia.get('dPx').proxy === P2 && mayGia.get('dPy').proxy === P1);
+    // Bấm Lưu là máy RẢNH nhận proxy ngay; máy ĐANG CHẠY không bị chen (lượt sau mới gắn).
+    await nghi(10);
+    const goiPy = ganGoi.filter((g) => g.deviceId === 'dPy');
+    check('P5b. Máy rảnh → gắn NGAY lúc Lưu, đúng điện thoại, đúng proxy',
+      ok.dangGan.includes('dPy') && goiPy.length === 1 && goiPy[0].serial === '52001c84c055c4bf'
+      && goiPy[0].proxy === P1 && !goiPy[0].tat, JSON.stringify(ganGoi));
+    check('P5c. Máy đang chạy → KHÔNG chen vào, báo "gắn ở lượt sau"',
+      ok.cho.includes('dPx') && !ganGoi.some((g) => g.deviceId === 'dPx')
+      && sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dPx' && p.kind === 'proxy' && p.cho));
+    const dsSau = await handlers.get('devices-list')({});
+    const kq = (dsSau.find((d) => d.id === 'dPy') || {}).proxyKq;
+    check('P5e. Kết quả gắn được LƯU (mở lại app vẫn thấy ✓ IP), không kèm mật khẩu',
+      !!kq && kq.ok === true && kq.ip === '9.9.9.9' && kq.luc > 0 && !JSON.stringify(dsSau).includes(MK), JSON.stringify(kq));
+    check('P5d. Giao diện thấy "đang gắn" rồi kết quả IP của máy vừa gắn',
+      sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dPy' && p.kind === 'proxy' && p.dang)
+      && sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dPy' && p.kind === 'proxy' && p.ok && p.ip === '9.9.9.9'));
     ketThuc(l1, false);
     await handlers.get('device-start')({}, { deviceId: 'dPx', serial: '520006e9ee546475', cfg: {} });
     const l2 = lanChay('dPx').slice(-1)[0];
@@ -1041,14 +1070,64 @@ const start = (id, serial, cfg = {}) => {
     l2.onStatus('dPx', { kind: 'proxy', ok: true, ip: '102.129.141.141', msg: '' });
     check('P7. Sự kiện proxy (IP đo được) chuyển lên giao diện',
       sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dPx' && p.kind === 'proxy' && p.ip === '102.129.141.141'));
+    check('P7b. Kết quả đo lúc bấm Chạy cũng được lưu',
+      !!mayGia.get('dPx').proxyKq && mayGia.get('dPx').proxyKq.ip === '102.129.141.141');
     ketThuc(l2, false);
 
+    const truocXoa = ganGoi.length;
     await handlers.get('devices-set-proxies')({}, { ids: ['dPx'], xoa: true });
+    await nghi(10);
+    check('P8a. Bỏ proxy máy đang rảnh → tắt College Proxy trên máy NGAY',
+      ganGoi.slice(truocXoa).some((g) => g.deviceId === 'dPx' && g.tat === true), JSON.stringify(ganGoi.slice(truocXoa)));
     await handlers.get('device-start')({}, { deviceId: 'dPx', serial: '520006e9ee546475', cfg: {} });
     const l3 = lanChay('dPx').slice(-1)[0];
     check('P8. Bỏ proxy → lượt sau chạy mạng thật', !('proxy' in mayGia.get('dPx')) || !mayGia.get('dPx').proxy
       ? !!l3 && l3.params.proxy === '' : false, l3 && String(l3.params.proxy));
     ketThuc(l3, false);
+
+    // Máy vừa chạy XONG bình thường (không nghỉ, không hẹn chạy lại) là máy RẢNH — dù main còn giữ
+    // tham số lượt cũ. Bản đầu xét `_lastParams` nên máy đó bị coi là bận mãi, không bao giờ gắn ngay.
+    await nghi(10);
+    const truocXong = ganGoi.length;
+    await handlers.get('devices-set-proxies')({}, { ids: ['dPx'], text: P1 });
+    await nghi(10);
+    check('P8b. Máy vừa chạy xong (còn tham số lượt cũ) vẫn được gắn NGAY',
+      ganGoi.slice(truocXong).some((g) => g.deviceId === 'dPx' && g.proxy === P1));
+
+    // ── Đang gắn: bấm Chạy bị chặn, và KHÔNG để lại dấu "đang bận" ──
+    await nghi(10);
+    proxyTreo = true;
+    await handlers.get('devices-set-proxies')({}, { ids: ['dPy'], text: P2 });
+    const soLuotPy = lanChay('dPy').length;
+    const rChen = await handlers.get('device-start')({}, { deviceId: 'dPy', serial: '52001c84c055c4bf', cfg: {} });
+    check('P9. Bấm Chạy lúc máy đang được gắn proxy → từ chối, nói rõ lý do',
+      rChen.ok === false && /đang được gắn proxy/.test(rChen.msg) && lanChay('dPy').length === soLuotPy, JSON.stringify(rChen));
+    thaGan();
+    await nghi(10);
+    const rSau = await handlers.get('device-start')({}, { deviceId: 'dPy', serial: '52001c84c055c4bf', cfg: {} });
+    check('P9b. Gắn xong → bấm Chạy được ngay (lần bị từ chối không làm máy kẹt "đang bận")',
+      rSau.ok === true && lanChay('dPy').length === soLuotPy + 1, JSON.stringify(rSau));
+    ketThuc(lanChay('dPy').slice(-1)[0], false);
+
+    // ── Trần 3 máy gắn cùng lúc (chung một adb server) ──
+    await nghi(10);
+    const nam = ['dQ1', 'dQ2', 'dQ3', 'dQ4', 'dQ5'];
+    nam.forEach((id, i) => {
+      mayGia.set(id, { id, name: id, serial: `52000000000000${i}`, note: '', hw: 'HW-' + id });
+      farmGia.set(`52000000000000${i}`, { model: id, hw: 'HW-' + id });
+    });
+    const truocTran = ganGoi.length;
+    const rTran = await handlers.get('devices-set-proxies')({}, { ids: nam, text: nam.map((_, i) => `1.1.1.${i + 1}:80:u:p`).join('\n') });
+    await nghi(20);
+    const dangChayCung = ganGoi.length - truocTran;
+    thaGan();
+    await nghi(20);
+    thaGan();
+    await nghi(20);
+    check('P10. Lưu 5 máy → gắn tối đa 3 máy một lúc, rồi đủ cả 5',
+      rTran.dangGan.length === 5 && dangChayCung === 3 && ganGoi.length - truocTran === 5,
+      `${dangChayCung} cùng lúc, tổng ${ganGoi.length - truocTran}`);
+    proxyTreo = false;
   }
 
   _xong = true;

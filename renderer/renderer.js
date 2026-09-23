@@ -222,7 +222,12 @@ function onCrawlStatus(payload) {
   }
   // Kết quả gắn proxy (college_proxy.py). Hỏng thì Python đã tự dừng và in lý do vào log.
   if (kind === 'proxy') {
-    st.proxy = { ok: payload.ok, ip: payload.ip || '', msg: payload.msg || '' };
+    st.proxy = {
+      ok: !!payload.ok, ip: payload.ip || '', msg: payload.msg || '',
+      dang: !!payload.dang, cho: !!payload.cho, tat: !!payload.tat,
+    };
+    // Tắt xong thì ô trở về "—": không còn proxy nào để báo.
+    if (payload.tat && payload.ok && !payload.dang && !payload.cho) delete st.proxy;
     renderDeviceRow(deviceId);
     return;
   }
@@ -359,12 +364,17 @@ setInterval(() => {
 
 // Ô Proxy: host:port đã gán (main.js gửi sẵn `proxyHien`, không có mật khẩu), kèm kết quả đo IP
 // của lượt chạy gần nhất (college_proxy.py → sự kiện `proxy`).
+// Bấm Lưu là máy RẢNH được gắn ngay (main.js: apProxyNgay): "⏳ đang gắn…" rồi ✓ / ✕. Máy đang
+// chạy thì "⏳ gắn ở lượt chạy sau". Chỉ có host:port, không dòng nào dưới = chưa gắn lần nào.
 function oProxy(d, st) {
-  if (!d.proxyHien) return '<span class="pproxy-none">—</span>';
-  const p = st.proxy;
+  // Chưa có sự kiện nào trong phiên này (vừa mở app) → dùng kết quả đã lưu trong devices.json.
+  const p = st.proxy || d.proxyKq;
   let kq = '';
-  if (p && p.ok) kq = `<div class="pproxy-ok">✓ IP ${esc(p.ip)}</div>`;
-  else if (p) kq = `<div class="pproxy-err" title="${esc(p.msg)}">✕ không chạy</div>`;
+  if (p && p.dang) kq = `<div class="pproxy-wait">⏳ ${p.tat ? 'đang tắt' : 'đang gắn'}…</div>`;
+  else if (p && p.cho) kq = `<div class="pproxy-wait">⏳ ${p.tat ? 'tắt tay trên máy' : 'gắn ở lượt chạy sau'}</div>`;
+  else if (p && p.ok && !p.tat) kq = `<div class="pproxy-ok">✓ IP ${esc(p.ip)}</div>`;
+  else if (p && !p.ok) kq = `<div class="pproxy-err" title="${esc(p.msg)}">✕ ${p.tat ? 'chưa tắt được' : 'không chạy'}</div>`;
+  if (!d.proxyHien) return kq || '<span class="pproxy-none">—</span>';
   return `<span class="pserial">${esc(d.proxyHien)}</span>${kq}`;
 }
 
@@ -515,10 +525,10 @@ async function xemTruocProxy() {
   document.getElementById('proxyPreview').innerHTML = dong.join('<br>');
 }
 
+// Nạp lại danh sách (cột Proxy hiện host:port mới). KHÔNG xoá trạng thái proxy ở đây: main.js đã
+// gửi "⏳ đang gắn" / "⏳ lượt sau" ngay trong lúc lưu, và sự kiện đó về TRƯỚC lời trả này.
 async function napLaiSauKhiGanProxy() {
   devices = await window.api.devicesList();
-  // Bỏ kết quả đo IP cũ của các máy vừa đổi proxy — nó là IP của proxy trước.
-  proxyIds.forEach((id) => { if (deviceState[id]) delete deviceState[id].proxy; });
   devices.forEach((d) => renderDeviceRow(d.id));
 }
 
@@ -529,17 +539,19 @@ async function saveProxies() {
   if (!r.gan.length) { toast('Chưa dán proxy nào', false); return; }
   await napLaiSauKhiGanProxy();
   closeProxyModal();
-  const chay = r.gan.filter((x) => dangBan(x.id)).length;
-  toast(`Đã gán proxy cho ${r.gan.length} máy`
-    + (chay ? ` — ${chay} máy đang chạy dùng proxy mới từ lượt chạy sau` : ''), true);
+  toast(`Đã lưu proxy cho ${r.gan.length} máy`
+    + (r.dangGan.length ? ` — đang gắn lên ${r.dangGan.length} máy (~40 giây), xem cột Proxy` : '')
+    + (r.cho.length ? ` — ${r.cho.length} máy đang chạy, gắn ở lượt chạy sau` : ''), true);
 }
 
 async function clearProxies() {
   if (!confirm(`Bỏ proxy của ${proxyIds.length} máy? Các máy này sẽ chạy bằng mạng thật.`)) return;
-  await window.api.devicesSetProxies({ ids: proxyIds, xoa: true });
+  const r = await window.api.devicesSetProxies({ ids: proxyIds, xoa: true });
   await napLaiSauKhiGanProxy();
   closeProxyModal();
-  toast(`Đã bỏ proxy của ${proxyIds.length} máy. College Proxy trên điện thoại vẫn bật cho tới khi tắt tay.`, true);
+  toast(`Đã bỏ proxy của ${proxyIds.length} máy`
+    + (r.dangGan.length ? ` — đang tắt College Proxy trên ${r.dangGan.length} máy` : '')
+    + (r.cho.length ? ` — ${r.cho.length} máy đang chạy, College Proxy trên máy vẫn bật tới khi tắt tay` : ''), true);
 }
 
 // ---- Modal: Kiểm tra (preflight) ----

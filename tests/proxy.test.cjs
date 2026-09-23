@@ -77,6 +77,13 @@ const MAU = [
   const sau = devices.loadDevices().find((x) => x.id === d.id);
   devices.updateDevice({ id: d.id, name: 'đổi tên' });
   const giu = devices.loadDevices().find((x) => x.id === d.id);
+  devices.updateDevice({ id: d.id, proxyKq: { ok: true, ip: '9.9.9.9', luc: 1 } });
+  devices.updateDevice({ id: d.id, proxy: '1.2.3.4:80:u:p' });
+  const cungProxy = devices.loadDevices().find((x) => x.id === d.id);
+  devices.updateDevice({ id: d.id, proxy: '5.6.7.8:80:u:p' });
+  const doiProxy = devices.loadDevices().find((x) => x.id === d.id);
+  check('1g. Kết quả gắn đã lưu: giữ khi lưu lại CÙNG proxy, xoá khi đổi sang proxy khác',
+    !!cungProxy.proxyKq && cungProxy.proxyKq.ip === '9.9.9.9' && !('proxyKq' in doiProxy));
   devices.updateDevice({ id: d.id, proxy: '' });
   const bo = devices.loadDevices().find((x) => x.id === d.id);
   check('1f. devices.json: lưu proxy (đã cắt khoảng trắng), đổi tên không mất proxy, chuỗi rỗng = bỏ hẳn',
@@ -248,6 +255,39 @@ ket(ip=ip, sach=[v for v in MAY.viec if v[0] == "app_start"])`);
       !!nhanhHong.kq && nhanhHong.kq.ip === '102.129.141.141' && nhanhHong.kq.sach.length === 1
       && nhanhHong.kq.log.some((l) => /gắn lại từ đầu/.test(l)), nhanhHong.loi);
 
+    // Gắn từ nút Lưu: máy có thể đang mở TikTok (thao tác tay trên 效卫). Gắn đầy đủ tắt VPN vài chục
+    // giây → phải tắt TikTok TRƯỚC khi đụng College Proxy; đường nhanh không đụng gì thì không tắt.
+    const hook = chay('truoc_khi_gan', `
+THU_TU = []
+_goc = MAY.app_start
+def _mo(pkg, stop=False):
+    THU_TU.append("mo_college_proxy"); _goc(pkg, stop)
+MAY.app_start = _mo
+CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, truoc_khi_gan=lambda: THU_TU.append("tat_tiktok"))
+day_du = list(THU_TU)
+THU_TU.clear()
+MAY.bat = True
+open("${MOC}", "w").write(CP._dau(${JSON.stringify(PX)}))
+CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}", truoc_khi_gan=lambda: THU_TU.append("tat_tiktok"))
+ket(day_du=day_du, nhanh=list(THU_TU))`);
+    check('3e8. Gắn đầy đủ: tắt TikTok TRƯỚC khi mở College Proxy; đường nhanh: không tắt TikTok',
+      !!hook.kq && hook.kq.day_du[0] === 'tat_tiktok' && hook.kq.day_du.includes('mo_college_proxy') && !hook.kq.nhanh.length,
+      hook.kq ? JSON.stringify(hook.kq) : hook.loi);
+
+    const tat = chay('tat', `
+MAY.bat = True
+open("${MOC}", "w").write("x")
+_goc_adb = CP.adb
+def adb_tat(*a, **k):
+    if a[:4] == ("shell", "am", "force-stop", CP.PKG): MAY.bat = False
+    return _goc_adb(*a, **k)
+CP.adb = adb_tat
+import os
+ok = CP.tat_proxy("S", "${MOC}", log)
+ket(ok=ok, bat=MAY.bat, con_moc=os.path.exists("${MOC}"))`);
+    check('3e9. Bỏ proxy: tắt College Proxy (VPN tắt thật) và xoá dấu',
+      !!tat.kq && tat.kq.ok === true && tat.kq.bat === false && tat.kq.con_moc === false, tat.loi);
+
     const cho = chay('cho_loading', `
 MAY.loading = 6
 CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit)
@@ -365,6 +405,14 @@ except CP.ProxyHong:
   check('4i2. runner truyền PROXY_MOC (tệp dấu riêng từng máy) và Python chuyển nó cho dam_bao_proxy',
     /PROXY_MOC: params\.proxy \? path\.join\(getDeviceDir\(deviceId\), 'proxy_da_gan\.txt'\)/.test(rn)
     && /PROXY_MOC = os\.environ\.get\("PROXY_MOC", ""\)/.test(scan) && /moc=PROXY_MOC\)/.test(scan));
+  const prun = doc('src/proxyrun.cjs');
+  check('4i3. Gắn lúc Lưu dùng CÙNG tệp dấu với lượt quét (lượt sau đi đường nhanh), mật khẩu qua biến môi trường',
+    /PROXY_MOC: path\.join\(getDeviceDir\(deviceId\), 'proxy_da_gan\.txt'\)/.test(prun)
+    && /PROXY: String\(proxy \|\| ''\)/.test(prun)
+    && /\[\.\.\.py\.args, resolveResource\('college_proxy\.py'\), serial, tat \? 'tat' : 'gan'\]/.test(prun)
+    && /ADB_PATH,\s*\n\s*ANDROID_ADB_SERVER_PORT: adbServerPort\(\)/.test(prun));
+  check('4i4. college_proxy.py chạy riêng: gắn thì truyền hàm tắt TikTok vào dam_bao_proxy',
+    /truoc_khi_gan=tat_tiktok/.test(cp) && /"force-stop", goi/.test(cp));
   check('4j. runner chuyển sự kiện proxy lên', /payload\.type === 'proxy'[\s\S]{0,200}kind: 'proxy'/.test(rn));
 
   const pkg = JSON.parse(doc('package.json'));

@@ -15,6 +15,7 @@ const chodaysheet = require('./src/chodaysheet.cjs');
 const { normalizeKey } = require('./src/linkkey.cjs');
 const phaseplan = require('./src/phaseplan.cjs');
 const proxy = require('./src/proxy.cjs');
+const proxyrun = require('./src/proxyrun.cjs');
 const { getDeviceDir } = require('./src/paths.cjs');
 
 const store = new Store({ name: 'settings' });
@@ -695,10 +696,15 @@ ipcMain.handle('devices-set-proxies', (_e, { ids, text, xoa, thu }) => {
   const ds = Array.isArray(ids) ? ids : [];
   if (xoa) {
     ds.forEach((id) => devices.updateDevice({ id, proxy: '' }));
-    return { ok: true, gan: [], loi: [], thieu: 0, thua: 0 };
+    const ap = apProxyNgay(ds, true);
+    return { ok: true, gan: [], loi: [], thieu: 0, thua: 0, ...ap };
   }
   const r = proxy.ganHangLoat(ds, text);
-  if (!thu) r.gan.forEach((x) => devices.updateDevice({ id: x.id, proxy: x.proxy }));
+  let ap = { dangGan: [], cho: [] };
+  if (!thu) {
+    r.gan.forEach((x) => devices.updateDevice({ id: x.id, proxy: x.proxy }));
+    ap = apProxyNgay(r.gan.map((x) => x.id), false);
+  }
   return {
     ok: !r.loi.length,
     // Trả về phía giao diện KHÔNG kèm mật khẩu.
@@ -706,8 +712,82 @@ ipcMain.handle('devices-set-proxies', (_e, { ids, text, xoa, thu }) => {
     loi: r.loi.map((x) => ({ dong: x.dong })),
     thieu: r.thieu,
     thua: r.thua,
+    ...ap,
   };
 });
+
+// ── BẤM LƯU LÀ MÁY NHẬN PROXY NGAY (2026-09-23) ──
+// Chủ dự án: "khi tôi lưu proxy thì máy đó đã phải nhận proxy tôi setup rồi". Máy RẢNH → gắn (hoặc
+// tắt, khi bỏ proxy) ngay qua src/proxyrun.cjs. Máy ĐANG BẬN (chạy / xếp hàng / nghỉ giữa ca) →
+// KHÔNG chen vào: tiến trình quét đang giữ màn hình, và gắn lại = VPN tắt vài chục giây trong lúc
+// TikTok đang chạy = lộ IP thật. Máy đó nhận proxy mới ở lượt chạy kế tiếp (timMay đọc từ đĩa).
+// Tối đa GAN_DONG_THOI máy một lúc: cả farm dồn lệnh qua CHUNG một adb server.
+const GAN_DONG_THOI = 3;
+const _dangGanProxy = new Set();     // deviceId đang gắn/tắt proxy — chayMot không cho chạy chen
+const _hangGanProxy = [];            // [{ id, tat }] chờ tới lượt
+// ⚠ KHÔNG xét `_lastParams`: nó còn nguyên sau khi lượt chạy xong bình thường (chạm giới hạn video),
+// nên máy đã đứng yên bị coi là bận mãi và không bao giờ được gắn ngay. `_restTimers` gom đủ ba
+// trạng thái "sẽ tự chạy lại": nghỉ giữa ca, hẹn chạy lại sau lỗi, chờ điện thoại khởi động lại.
+function _dangBan(id) {
+  return runner.isRunning(id) || devslot.isActive(id) || devslot.isWaiting(id) || _restTimers.has(id);
+}
+function apProxyNgay(ids, tat) {
+  const dangGan = [];
+  const cho = [];
+  for (const id of ids) {
+    if (_dangBan(id)) {
+      cho.push(id);
+      sendToRenderer('crawl-status', { deviceId: id, kind: 'proxy', cho: true, tat });
+      sendToRenderer('crawl-status', {
+        deviceId: id, kind: 'log',
+        line: tat ? '🌐 Đã bỏ proxy — máy đang chạy nên College Proxy trên máy vẫn bật tới khi tắt tay.'
+          : '🌐 Đã lưu proxy mới — máy đang chạy, sẽ gắn ở lượt chạy kế tiếp.',
+      });
+      continue;
+    }
+    // Đang gắn dở cho máy này (bấm Lưu hai lần liền) → lần sau xếp vào hàng, chạy khi lần trước xong.
+    const i = _hangGanProxy.findIndex((x) => x.id === id);
+    if (i >= 0) _hangGanProxy.splice(i, 1);
+    _hangGanProxy.push({ id, tat });
+    dangGan.push(id);
+    sendToRenderer('crawl-status', { deviceId: id, kind: 'proxy', dang: true, tat });
+  }
+  _chayHangGanProxy();
+  return { dangGan, cho };
+}
+function _chayHangGanProxy() {
+  while (_dangGanProxy.size < GAN_DONG_THOI) {
+    const i = _hangGanProxy.findIndex((x) => !_dangGanProxy.has(x.id));
+    if (i < 0) return;
+    const { id, tat } = _hangGanProxy.splice(i, 1)[0];
+    _dangGanProxy.add(id);
+    _ganMot(id, tat).finally(() => {
+      _dangGanProxy.delete(id);
+      _chayHangGanProxy();
+    });
+  }
+}
+async function _ganMot(id, tat) {
+  const say = (line) => sendToRenderer('crawl-status', { deviceId: id, kind: 'log', line });
+  let r;
+  try {
+    const may = await timMay(id);
+    if (!may.serial) r = { ok: false, msg: may.loi || 'không tìm thấy máy' };
+    else if (!tat && !may.proxy) r = { ok: true, tat: true };   // đã bị bỏ proxy trong lúc chờ
+    else r = await proxyrun.chayProxy({ deviceId: id, serial: may.serial, proxy: may.proxy, tat }, say);
+  } catch (e) {
+    r = { ok: false, msg: String(e && e.message || e).slice(0, 160) };
+  }
+  sendToRenderer('crawl-status', { deviceId: id, kind: 'proxy', ok: !!r.ok, ip: r.ip || '', msg: r.msg || '', tat });
+  if (!tat) ghiKqProxy(id, r);
+}
+// Kết quả gắn gần nhất vào devices.json: mở lại app, cột Proxy vẫn nói máy đã nhận proxy chưa —
+// không thì chỉ còn host:port, trông y như "chưa gắn lần nào" dù VPN trên máy vẫn đang chạy.
+function ghiKqProxy(id, r) {
+  try {
+    devices.updateDevice({ id, proxyKq: { ok: !!r.ok, ip: String(r.ip || ''), msg: String(r.msg || '').slice(0, 200), luc: Date.now() } });
+  } catch (_) {}
+}
 ipcMain.handle('devices-list-adb', () => devices.listAdbSerials());
 ipcMain.handle('device-check', (_e, serial) => devices.checkDevice(serial));
 ipcMain.handle('device-identify', (_e, serial) => devices.identifyDevice(serial));
@@ -807,6 +887,7 @@ async function chayMot(params) {
           return;
         }
         sendToRenderer('crawl-status', { deviceId, ...status });
+        if (status.kind === 'proxy') ghiKqProxy(deviceId, status);
         // Mốc xem tiếp của pha Xem: ghi NGAY mỗi lần xem xong một link, không đợi hết pha — app
         // có thể tắt giữa chừng.
         if (status.kind === 'view' && status.moc) ghiMoc(deviceId, status.idx);
@@ -887,6 +968,13 @@ async function chayMot(params) {
 }
 
 ipcMain.handle('device-start', async (_e, params) => {
+  // Đang gắn proxy vừa lưu (apProxyNgay): hai tiến trình Python cùng lái một màn hình là hỏng cả
+  // hai. Chặn TRƯỚC mọi thay đổi trạng thái — ghi `_lastParams` rồi mới từ chối là máy bị coi là
+  // "đang bận" mãi.
+  const idCho = params && params.deviceId;
+  if (_dangGanProxy.has(idCho) || _hangGanProxy.some((x) => x.id === idCho)) {
+    return { ok: false, msg: 'Máy này đang được gắn proxy vừa lưu — chờ cột Proxy báo xong rồi bấm Chạy.' };
+  }
   // Bấm Chạy tay thì huỷ mọi hẹn giờ nghỉ đang treo của máy đó, tránh chạy chồng hai lượt.
   huyNghi(params && params.deviceId);
   _lastParams.set(params.deviceId, params);

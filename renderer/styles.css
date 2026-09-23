@@ -203,6 +203,7 @@ body {
 .pproxy-none { color: var(--text-dim); }
 .pproxy-ok { color: var(--ok); }
 .pproxy-err { color: var(--primary-hover); }
+.pproxy-wait { color: #f5b942; }
 
 /* Placeholder */
 .placeholder {
