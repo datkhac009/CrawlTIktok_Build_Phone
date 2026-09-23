@@ -38,7 +38,7 @@ const { docProxy, moTa, ganHangLoat } = require(path.join(R, 'src', 'proxy.cjs')
 // Cùng một bộ chuỗi chạy qua cả bản JS lẫn bản Python (mục 2): hai bên lệch nhau là giao diện
 // báo "hợp lệ" cho một proxy mà Python từ chối lúc chạy.
 const MAU = [
-  ['102.129.141.141:50100:hung10aGtj:BkyiiPsaEU', { host: '102.129.141.141', port: '50100', user: 'hung10aGtj', pass: 'BkyiiPsaEU' }],
+  ['203.0.113.10:50100:nguoidung01:MatKhauGia01', { host: '203.0.113.10', port: '50100', user: 'nguoidung01', pass: 'MatKhauGia01' }],
   ['  1.2.3.4:8080  ', { host: '1.2.3.4', port: '8080', user: '', pass: '' }],
   ['proxy.vn:3128:u:p', { host: 'proxy.vn', port: '3128', user: 'u', pass: 'p' }],
   ['2001:db8::1:8080:u:p', { host: '2001:db8::1', port: '8080', user: 'u', pass: 'p' }],
@@ -58,7 +58,7 @@ const MAU = [
   check('1a. docProxy đọc đúng mọi mẫu (kể cả IPv6, user/pass toàn số)', !sai.length,
     sai.map(([s]) => `${s} → ${JSON.stringify(docProxy(s))}`).join(' | '));
   check('1b. moTa chỉ còn host:port — không bao giờ có mật khẩu',
-    moTa('102.129.141.141:50100:hung10aGtj:BkyiiPsaEU') === '102.129.141.141:50100' && moTa('rác') === '');
+    moTa('203.0.113.10:50100:nguoidung01:MatKhauGia01') === '203.0.113.10:50100' && moTa('rác') === '');
 
   const r = ganHangLoat(['a', 'b', 'c'], '1.1.1.1:80:u:p\r\n\n  2.2.2.2:81:u:p  \n');
   check('1c. Dòng 1 → máy 1, dòng 2 → máy 2; dòng trống bỏ qua; máy thiếu dòng được đếm',
@@ -147,7 +147,7 @@ class May:
         else: s.bat = True
 
 MAY = May()
-IP = {"dt": "102.129.141.141", "pc": "118.68.96.56"}
+IP = {"dt": "203.0.113.10", "pc": "198.51.100.20"}
 LENH = []
 def adb_gia(*a, serial=None, timeout=60):
     LENH.append(list(a))
@@ -187,8 +187,8 @@ def ket(**k):
     const dong = String(r.stdout || '').split(/\r?\n/).find((l) => l.startsWith('@@KQ@@'));
     return { kq: dong ? JSON.parse(dong.slice(6)) : null, loi: String(r.stderr || '').slice(-800) };
   };
-  const MK = 'BkyiiPsaEU';
-  const PX = `102.129.141.141:50100:hung10aGtj:${MK}`;
+  const MK = 'MatKhauGia01';
+  const PX = `203.0.113.10:50100:nguoidung01:${MK}`;
 
   // ── 2. Luật đọc chuỗi của Python khớp bản JS ──
   {
@@ -207,10 +207,10 @@ ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit)
 ket(ip=ip, o=MAY.o, bat=MAY.bat)`);
     const k = r.kq || {};
     check('3a. Máy tắt proxy → nhập đủ 4 ô, bật VPN, đo IP, trả IP proxy',
-      k.ip === '102.129.141.141' && k.bat === true && k.o && k.o[`${'com.cell47.College_Proxy'}:id/editText_password`] === MK,
+      k.ip === '203.0.113.10' && k.bat === true && k.o && k.o[`${'com.cell47.College_Proxy'}:id/editText_password`] === MK,
       JSON.stringify(k.o) || r.loi);
     check('3b. Báo sự kiện proxy ok kèm IP cho giao diện',
-      !!k.su_kien && k.su_kien.some((e) => e.type === 'proxy' && e.ok === true && e.ip === '102.129.141.141'));
+      !!k.su_kien && k.su_kien.some((e) => e.type === 'proxy' && e.ok === true && e.ip === '203.0.113.10'));
     check('3c. Mật khẩu KHÔNG xuất hiện trong log hay sự kiện',
       !!k.log && !JSON.stringify([k.log, k.su_kien]).includes(MK), JSON.stringify(k.log));
 
@@ -223,7 +223,7 @@ open("${MOC}", "w").write(CP._dau(${JSON.stringify(PX)}))
 ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}")
 ket(ip=ip, go=[l for l in LENH if l[:3] == ["shell", "input", "text"]], viec=MAY.viec)`);
     check('3d. Đường nhanh: dấu khớp + VPN bật → không mở app, không gõ, không bấm; chỉ đo IP',
-      !!nhanh.kq && nhanh.kq.ip === '102.129.141.141' && !nhanh.kq.go.length && !nhanh.kq.viec.length,
+      !!nhanh.kq && nhanh.kq.ip === '203.0.113.10' && !nhanh.kq.go.length && !nhanh.kq.viec.length,
       nhanh.kq ? JSON.stringify(nhanh.kq.viec) : nhanh.loi);
 
     const doi = chay('doi', `
@@ -233,7 +233,7 @@ open("${MOC}", "w").write(CP._dau("9.9.9.9:1:cu:x"))
 CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}")
 ket(o=MAY.o, bat=MAY.bat, sach=[v for v in MAY.viec if v[0] == "app_start"], moc=open("${MOC}").read())`);
     check('3e. Dấu là proxy KHÁC → mở College Proxy SẠCH (force-stop), nhập proxy mới, bật, ghi dấu mới',
-      !!doi.kq && doi.kq.o['com.cell47.College_Proxy:id/editText_address'] === '102.129.141.141'
+      !!doi.kq && doi.kq.o['com.cell47.College_Proxy:id/editText_address'] === '203.0.113.10'
       && doi.kq.bat === true && doi.kq.sach.length === 1 && doi.kq.sach[0][2] === true
       && doi.kq.moc.length === 64 && !doi.kq.moc.includes(MK),
       doi.kq ? JSON.stringify(doi.kq.sach) : doi.loi);
@@ -254,7 +254,7 @@ open("${MOC}", "w").write(CP._dau(${JSON.stringify(PX)}))
 ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}")
 ket(ip=ip, sach=[v for v in MAY.viec if v[0] == "app_start"])`);
     check('3e5. Đường nhanh đo IP hỏng → gắn lại từ đầu trong CÙNG lượt, được',
-      !!nhanhHong.kq && nhanhHong.kq.ip === '102.129.141.141' && nhanhHong.kq.sach.length === 1
+      !!nhanhHong.kq && nhanhHong.kq.ip === '203.0.113.10' && nhanhHong.kq.sach.length === 1
       && nhanhHong.kq.log.some((l) => /gắn lại từ đầu/.test(l)), nhanhHong.loi);
 
     // Gắn từ nút Lưu: máy có thể đang mở TikTok (thao tác tay trên 效卫). Gắn đầy đủ tắt VPN vài chục
@@ -302,7 +302,7 @@ MAY.go_hong = 1
 ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit)
 ket(ip=ip, sach=[v for v in MAY.viec if v[0] == "app_start"], clear=[l for l in LENH if l[:3] == ["shell", "pm", "clear"]])`);
     check('3e4. Lần gắn đầu hỏng → lần 2 XOÁ DỮ LIỆU College Proxy rồi mới mở, được',
-      !!lan2.kq && lan2.kq.ip === '102.129.141.141' && lan2.kq.sach.length === 2 && lan2.kq.clear.length === 1
+      !!lan2.kq && lan2.kq.ip === '203.0.113.10' && lan2.kq.sach.length === 2 && lan2.kq.clear.length === 1
       && lan2.kq.log.some((l) => /thử lần 2/.test(l)), lan2.loi);
     // Đo thật: app kẹt vòng lặp Loading, force-stop KHÔNG gỡ được, chỉ \`pm clear\` gỡ được.
     const ket = chay('ket_loading', `
@@ -310,7 +310,7 @@ MAY.loading = 10**6
 ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit)
 ket(ip=ip)`);
     check('3e6. Kẹt vòng lặp Loading (force-stop không gỡ được) → lần 2 pm clear gỡ được, gắn xong',
-      !!ket.kq && ket.kq.ip === '102.129.141.141', ket.loi);
+      !!ket.kq && ket.kq.ip === '203.0.113.10', ket.loi);
     const lan1 = chay('lan1_khong_clear', `
 CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit)
 ket(clear=[l for l in LENH if l[:3] == ["shell", "pm", "clear"]])`);

@@ -1011,7 +1011,7 @@ const start = (id, serial, cfg = {}) => {
   // runner. Mật khẩu không bao giờ đi sang giao diện.
   {
     const MK = 'MatKhauBiMat123';
-    const P1 = `102.129.141.141:50100:hung:${MK}`;
+    const P1 = `203.0.113.10:50100:hung:${MK}`;
     const P2 = `103.1.2.3:8080:u2:${MK}`;
     mayGia.set('dPx', { id: 'dPx', name: 'SM-A920F', serial: '520006e9ee546475', note: '', hw: 'HW-PX', proxy: P1 });
     farmGia.set('520006e9ee546475', { model: 'SM-A920F', hw: 'HW-PX' });
@@ -1027,12 +1027,12 @@ const start = (id, serial, cfg = {}) => {
     const ds = await handlers.get('devices-list')({});
     const px = ds.find((d) => d.id === 'dPx');
     check('P2. Danh sách gửi sang giao diện: có host:port, KHÔNG có mật khẩu',
-      !!px && px.proxyHien === '102.129.141.141:50100' && !('proxy' in px) && !JSON.stringify(ds).includes(MK),
+      !!px && px.proxyHien === '203.0.113.10:50100' && !('proxy' in px) && !JSON.stringify(ds).includes(MK),
       JSON.stringify(px));
 
     const xem = await handlers.get('devices-set-proxies')({}, { ids: ['dPx', 'dPy'], text: `${P2}\n\n${P1}`, thu: true });
     check('P3. Xem trước: ghép đúng thứ tự, KHÔNG ghi gì, không trả mật khẩu',
-      xem.ok && xem.gan.map((x) => `${x.id}=${x.hien}`).join(',') === 'dPx=103.1.2.3:8080,dPy=102.129.141.141:50100'
+      xem.ok && xem.gan.map((x) => `${x.id}=${x.hien}`).join(',') === 'dPx=103.1.2.3:8080,dPy=203.0.113.10:50100'
       && mayGia.get('dPx').proxy === P1 && !mayGia.get('dPy').proxy && !JSON.stringify(xem).includes(MK),
       JSON.stringify(xem));
 
@@ -1067,11 +1067,11 @@ const start = (id, serial, cfg = {}) => {
       l2 && l2.params.proxy);
 
     // Kết quả đo IP của Python đi thẳng lên giao diện.
-    l2.onStatus('dPx', { kind: 'proxy', ok: true, ip: '102.129.141.141', msg: '' });
+    l2.onStatus('dPx', { kind: 'proxy', ok: true, ip: '203.0.113.10', msg: '' });
     check('P7. Sự kiện proxy (IP đo được) chuyển lên giao diện',
-      sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dPx' && p.kind === 'proxy' && p.ip === '102.129.141.141'));
+      sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dPx' && p.kind === 'proxy' && p.ip === '203.0.113.10'));
     check('P7b. Kết quả đo lúc bấm Chạy cũng được lưu',
-      !!mayGia.get('dPx').proxyKq && mayGia.get('dPx').proxyKq.ip === '102.129.141.141');
+      !!mayGia.get('dPx').proxyKq && mayGia.get('dPx').proxyKq.ip === '203.0.113.10');
     ketThuc(l2, false);
 
     const truocXoa = ganGoi.length;

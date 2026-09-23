@@ -78,7 +78,7 @@ _IP_MAY_TINH = {"ip": "", "luc": 0.0}
 
 def ip_may_tinh():
     """IP cong khai cua MAY TINH = IP that cua ca farm (dien thoai va may tinh chung mot duong
-    mang: do ngay 2026-09-23, ca hai cung ra 118.68.96.56). Giu 10 phut."""
+    mang: do ngay 2026-09-23, ca hai cung ra mot IP). Giu 10 phut."""
     if _IP_MAY_TINH["ip"] and time.time() - _IP_MAY_TINH["luc"] < 600:
         return _IP_MAY_TINH["ip"]
     import requests
