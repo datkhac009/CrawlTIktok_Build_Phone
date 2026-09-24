@@ -93,13 +93,12 @@ Chạy thử MỘT máy từ dòng lệnh, in log ra màn hình (không mở app
   --dwell a,b    khoảng nghỉ ngẫu nhiên giữa hai video, tính bằng giây (vd: 3,6)
   --ask          BẬT lọc ngôn ngữ + nhãn AI. Không bấm follow/tym, NHƯNG video dính bộ lọc
                  thì VẪN bị bấm "Not interested" — cú đó dạy feed VĨNH VIỄN, không hoàn tác.
-  --visit-test   Lọc + tym + ghé trang, KHÔNG follow. Đây là luồng đang dùng thật:
-                 sound hợp lệ -> tym (theo tỉ lệ) -> ghé trang -> mở 1 video ngẫu nhiên
-                 -> xem -> tym -> về feed. Không đụng tới nút Follow.
+  --visit-test   Lọc + tym, KHÔNG follow. Tên cờ giữ từ hồi còn ghé trang — ghé trang đã
+                 tắt ở mọi chế độ từ 2026-09-24 (runner.cjs). Không đụng tới nút Follow.
   --follow-test  Như --full, NHƯNG bỏ điều kiện "sound hợp lệ" ở nhánh follow.
                  Chỉ để ĐO xem follow có bấm được không — follow sẽ xảy ra nhiều hơn hẳn
                  lúc chạy thật. ⚠ Vẫn là follow THẬT, vẫn ăn vào trần 30/ngày.
-  --full         BẬT hết: follow + tym + ghé trang + Not interested.
+  --full         BẬT hết: follow + tym + Not interested (ghé trang đã tắt từ 2026-09-24).
                  ⚠ Tác động THẬT lên tài khoản TikTok của máy đó, không hoàn tác được.
   --log <file>   ghi log song song ra file (nối vào cuối, utf-8)
 
@@ -169,10 +168,10 @@ async function main() {
   // Cờ bật tương tác. Mặc định TẮT HẾT — `ASK_ON` chỉ bật khi có ít nhất một ô bật
   // (`runner.cjs:99`), nên không cờ nào = Python không dump hierarchy, không bấm gì.
   if (t.ask || t.full) { cfg.niEnabled = true; cfg.niAi = true; }
-  if (t.full) { cfg.followOn = true; cfg.likeOn = true; cfg.visitOn = true; }
+  if (t.full) { cfg.followOn = true; cfg.likeOn = true; }
   if (t.followTest) cfg.followAnySound = true;
   // Luồng đang dùng thật: KHÔNG follow (follow chưa xác minh được là trụ lại hay không).
-  if (t.visitTest) { cfg.niEnabled = true; cfg.niAi = true; cfg.likeOn = true; cfg.visitOn = true; }
+  if (t.visitTest) { cfg.niEnabled = true; cfg.niAi = true; cfg.likeOn = true; }
   if (t.min !== null) cfg.minPosts = t.min;
   if (t.max !== null) cfg.maxPosts = t.max;
   if (t.limit !== null) cfg.limit = t.limit;
@@ -191,7 +190,7 @@ async function main() {
   const batTuongTac = [
     cfg.niEnabled && 'lọc ngôn ngữ', cfg.niAi && 'nhãn AI',
     cfg.followOn && (cfg.followAnySound ? 'FOLLOW (bỏ điều kiện sound — chế độ đo)' : 'FOLLOW'),
-    cfg.likeOn && 'TYM', cfg.visitOn && 'GHÉ TRANG',
+    cfg.likeOn && 'TYM',
   ].filter(Boolean);
   in_(`Tương tác: ${batTuongTac.length ? batTuongTac.join(' + ') : 'TẮT HẾT (chỉ quét thuần)'}`);
   in_('');

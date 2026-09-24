@@ -120,8 +120,14 @@ là kết quả thu thập. Cả hai là trạng thái riêng của từng máy 
 Original Sound · đẩy Google Sheet · lọc trùng mọi máy qua `known_links.txt` + đọc Sheet tăng dần
 (chép nguyên `sheets.cjs` bản PC) · trần số máy chạy đồng thời + hàng đợi · chu kỳ quét/nghỉ ·
 lọc theo ngôn ngữ, **không thu** sound khớp bộ lọc · nhận nhãn AI-generated · bấm "Not
-interested" · **follow / thả tim / ghé thăm trang cá nhân** kèm hạn mức · **tự thoát khi lọt vào
-TikTok Tako** (trợ lý chat AI): chỉ bấm Back, log ghi lọt vào ngay sau bước nào.
+interested" · **follow / thả tim** kèm hạn mức · **tự thoát khi lọt vào TikTok Tako** (trợ lý
+chat AI): chỉ bấm Back, log ghi lọt vào ngay sau bước nào · **proxy HTTP riêng từng máy** qua
+College Proxy, bấm Lưu là gắn ngay, đo IP trên điện thoại trước khi mở TikTok (xem "Proxy cho
+từng máy").
+
+**Đã tắt**: ghé thăm trang cá nhân, ở MỌI chế độ (2026-09-24). Chủ dự án chốt For You chỉ quét và
+tương tác; `runner.cjs` ép `visitOn: false` nên công tắc "Ghé trang" trong Cài đặt không còn tác
+dụng.
 
 **Chưa có**: Quét Mix (= Quét ⇄ Xem + ghé thăm kênh, như bản PC) · tự cập nhật.
 
@@ -215,7 +221,8 @@ deep link, bấm một video ngẫu nhiên trong lưới, xem, vuốt thêm vài
 Mốc "xem tới link nào" nằm ở `config/devices/<id>/view_cursor.json`, nên pha sau (kể cả sau khi
 tắt app) xem tiếp đúng chỗ. Khác bản PC ở một điểm: bản PC xem 40–70% **độ dài** video, còn điện
 thoại đã đo là không đọc được độ dài video, nên xem theo **giây**. Ghé thăm kênh tắt ở chế độ
-này, đúng như bản PC (ghé thăm là phần Quét Mix cộng thêm).
+này, đúng như bản PC (ghé thăm là phần Quét Mix cộng thêm). Từ 2026-09-24 For You cũng tắt ghé
+thăm, nên không chế độ nào ghé trang.
 
 ### Tìm từ khóa ⇄ For You (2026-09-24)
 
