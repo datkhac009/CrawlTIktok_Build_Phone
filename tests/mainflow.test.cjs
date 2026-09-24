@@ -447,6 +447,66 @@ const start = (id, serial, cfg = {}) => {
     await handlers.get('device-stop')({}, 'dN');
   }
 
+  // ── T. TÌM TỪ KHÓA ⇄ FOR YOU (2026-09-24): pha Tìm rồi For You, mốc từ khóa theo máy ──
+  {
+    const cfg = {
+      mode: 'tukhoa', searchHours: 0.001, searchFyHours: 0.001, searchPerKw: 12,
+      searchKeywords: 'storytime\n  \nAI   voice\nai voice\n#povtiktok',
+      cycleBreakMin: 0.001, cycleBreakMax: 0.001,
+    };
+    await start('dT', '192.168.5.232:5555', cfg);
+    const l1 = lanChay('dT')[0];
+    const p1 = l1 && l1.params.pha;
+    check('T. Chế độ Tìm từ khóa bắt đầu bằng pha TÌM, thời lượng tính bằng GIỜ',
+      !!p1 && p1.key === 'tim' && p1.ms === 3600, JSON.stringify(p1 && { key: p1.key, ms: p1.ms }));
+    check('T2. Từ khóa: bỏ dòng trống, gộp khoảng trắng, bỏ trùng không phân biệt hoa thường, GIỮ "#"',
+      !!p1 && JSON.stringify(p1.tuKhoa) === JSON.stringify(['storytime', 'AI voice', '#povtiktok']),
+      p1 && JSON.stringify(p1.tuKhoa));
+    check('T3. Máy chưa có mốc → bắt đầu ở một từ rải theo máy (trong khoảng danh sách)',
+      !!p1 && Number.isInteger(p1.mocTim) && p1.mocTim >= 0 && p1.mocTim < 3);
+    check('T4. Báo giao diện đang ở pha Tìm, kèm số từ khóa',
+      sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dT' && p.kind === 'phase' && p.key === 'tim' && p.total === 3));
+
+    // Python mở một từ → mốc lượt sau là từ KẾ. Chọn mốc KHÁC mốc đầu để T8 phân biệt được.
+    const tiep = (p1.mocTim + 1) % 3;
+    l1.onStatus('dT', { kind: 'tim', kw: 'AI voice', idx: p1.mocTim, total: 3, tiep });
+    const tep = path.join(TMP, 'config', 'devices', 'dT', 'search_cursor.json');
+    check('T5. Mốc từ khóa ghi xuống ĐĨA ngay khi mở từ (tắt app giữa chừng vẫn còn)',
+      fs.existsSync(tep) && JSON.parse(fs.readFileSync(tep, 'utf8')).idx === tiep);
+
+    ketThuc(l1, true);
+    await nghi(250);
+    const nghi1 = sent.filter(([c, p]) => c === 'crawl-status' && p.deviceId === 'dT' && p.state === 'resting').pop();
+    check('T6. Hết pha Tìm → nghỉ, nói rõ pha kế là Quét (For You)',
+      !!nghi1 && nghi1[1].next === 'Quét' && /Hết pha Tìm — nghỉ .* sang pha Quét/.test(nghi1[1].msg), nghi1 && nghi1[1].msg);
+    const l2 = lanChay('dT')[1];
+    check('T7. Nghỉ xong lướt For You (pha scan)', !!l2 && l2.params.pha.key === 'scan');
+    ketThuc(l2, true);
+    await nghi(250);
+    const l3 = lanChay('dT')[2];
+    check('T8. Rồi quay lại pha Tìm, đi tiếp từ mốc đã ghi — không quét lại từ cũ',
+      !!l3 && l3.params.pha.key === 'tim' && l3.params.pha.mocTim === tiep && tiep !== p1.mocTim, l3 && `moc=${l3.params.pha.mocTim}`);
+    await handlers.get('device-stop')({}, 'dT');
+
+    // Không có từ khóa → bỏ pha Tìm, nói ra, chỉ lướt For You.
+    await start('dT2', '192.168.5.233:5555', { ...cfg, searchKeywords: '  \n ' });
+    check('T9. Danh sách từ khóa trống → báo rõ là bỏ pha Tìm', coLog('dT2', /Danh sách từ khóa đang trống/));
+    const m1 = lanChay('dT2')[0];
+    check('T10. Và chỉ lướt For You theo chu kỳ', !!m1 && m1.params.pha.key === 'scan');
+    await handlers.get('device-stop')({}, 'dT2');
+
+    // Hai máy khác nhau thường bắt đầu ở hai từ khác nhau (mốc rải theo id máy).
+    const moc = new Set();
+    for (const id of ['dTa', 'dTb', 'dTc', 'dTd', 'dTe', 'dTf']) {
+      await start(id, `192.168.5.${240 + moc.size}:5555`, { ...cfg, searchKeywords: 'a\nb\nc\nd\ne\nf\ng\nh' });
+      const l = lanChay(id)[0];
+      if (l) moc.add(l.params.pha.mocTim);
+      await handlers.get('device-stop')({}, id);
+    }
+    check('T11. Các máy không cùng bắt đầu ở một từ khóa (6 máy, 8 từ → ít nhất 3 mốc khác nhau)',
+      moc.size >= 3, [...moc].join(','));
+  }
+
   // ── J. Cả hai pha bằng 0 → từ chối, có lý do ──
   {
     const r = await start('dO', '192.168.5.115:5555', { mode: 'cycle', cycleScanHours: 0, cycleViewMinutes: 0 });

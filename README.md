@@ -217,6 +217,18 @@ tắt app) xem tiếp đúng chỗ. Khác bản PC ở một điểm: bản PC x
 thoại đã đo là không đọc được độ dài video, nên xem theo **giây**. Ghé thăm kênh tắt ở chế độ
 này, đúng như bản PC (ghé thăm là phần Quét Mix cộng thêm).
 
+### Tìm từ khóa ⇄ For You (2026-09-24)
+
+Tìm theo danh sách từ khóa N giờ (mặc định 2) → nghỉ → lướt For You M giờ → nghỉ → lặp. Pha Tìm
+(`tim_tu_khoa.py`) mở `snssdk1233://search?keyword=<từ>` → tab Videos → video đầu → quét từng
+video y như For You (bấm sound, đọc số post, Copy link) trong cùng vòng quét của `scan_feed_sounds.py`.
+Mỗi từ tối đa K video (mặc định 30), hết kết quả thì sang từ kế sớm. Mốc từ khóa theo máy ở
+`config/devices/<id>/search_cursor.json`; máy chưa có mốc bắt đầu ở một từ rải theo id máy để các
+máy không cùng quét một từ. Pha Tìm không hỏi, không tương tác. Bản PC ("Tìm kiếm từ khóa") chỉ có
+một từ và chạy tới khi bấm Dừng. Kế hoạch pha dựng ở `main.js` (`keHoachTim`), không sửa
+`phaseplan.cjs` vì file đó bị `srcsync` khoá giống bản PC. Tab Sounds của trang kết quả không đọc
+được bằng accessibility (chữ không lộ ra), nên dùng tab Videos như bản PC.
+
 ## Phán xét ở đâu
 
 Python **không chứa luật nào**. Nó đọc chữ trên màn hình, gửi lên app, rồi thi hành phán quyết:

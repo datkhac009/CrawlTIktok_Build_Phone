@@ -147,6 +147,13 @@ function ghiDanhSachLink(deviceId, links) {
   return p;
 }
 
+// Danh sách từ khóa của pha Tìm — đi qua TỆP như danh sách link, cùng lý do giới hạn biến môi trường.
+function ghiDanhSachTu(deviceId, tuKhoa) {
+  const p = path.join(getDeviceDir(deviceId), 'search_keywords.json');
+  fs.writeFileSync(p, JSON.stringify(Array.isArray(tuKhoa) ? tuKhoa : []), 'utf8');
+  return p;
+}
+
 // Số nguyên không âm, dạng chuỗi cho biến môi trường. Rỗng / không phải số / âm → mặc định.
 // ⚠ Không dùng `Math.round(x) || mac`: 0 là giá trị HỢP LỆ (0 = không giới hạn) mà `||` biến nó
 // thành mặc định — đúng loại lỗi QĐ-27 bản PC đã ghi lại.
@@ -162,6 +169,9 @@ function startDevice(params, onData, onStatus) {
   // Không có `pha` = chế độ For You, chạy y nguyên như trước.
   const pha = params.pha || null;
   const phaXem = !!(pha && pha.key === 'view');
+  // Pha Tìm (chế độ Tìm từ khóa ⇄ For You, 2026-09-24): đi CHUNG vòng quét với pha Quét, chỉ khác
+  // chỗ đứng — trình phát kết quả tìm kiếm (xem tim_tu_khoa.py).
+  const phaTim = !!(pha && pha.key === 'tim');
   // Ghé thăm kênh TẮT trong Quét ⇄ Xem — clone QĐ-47/48 bản PC: `cycle` không ghé thăm; ghé
   // thăm chính là phần mà Quét Mix cộng thêm. Tắt ở đây (một chỗ) thì cả bộ não lẫn ASK_ON đều
   // thấy cùng một cấu hình.
@@ -213,17 +223,23 @@ function startDevice(params, onData, onStatus) {
     // Luật (lọc ngôn ngữ, nhãn AI, hạn mức follow) ở lại Node và đi qua kênh hỏi/đáp.
     PROTO_V: String(askproto.PROTO_VERSION),
     // Pha Xem không hỏi gì (không thu, không bấm) — khỏi tốn 0,5–2 giây đọc màn hình mỗi video.
-    ASK_ON: (!phaXem && (cfg.niEnabled || cfg.niAi || cfg.followOn || cfg.likeOn || cfg.visitOn)) ? '1' : '0',
+    // Pha Tìm cũng không hỏi: kết quả tìm kiếm không phải feed gợi ý nên "Not interested" vô nghĩa
+    // (bản PC tắt ở chế độ tìm kiếm, QĐ ở DECISIONS.md:839), và pha này không tương tác.
+    ASK_ON: (!phaXem && !phaTim && (cfg.niEnabled || cfg.niAi || cfg.followOn || cfg.likeOn || cfg.visitOn)) ? '1' : '0',
     // Pha Quét của Quét ⇄ Xem đi ĐÚNG đường "chạy theo chu kỳ" đã có: quét đủ thời lượng thì báo
-    // `cycle_done` rồi thoát. Không viết đường thứ hai.
-    CYCLE_ON: (pha ? pha.key === 'scan' : cfg.cycleOn) ? '1' : '0',
+    // `cycle_done` rồi thoát. Không viết đường thứ hai. Pha Tìm cũng vậy (mọi pha trừ Xem).
+    CYCLE_ON: (pha ? pha.key !== 'view' : cfg.cycleOn) ? '1' : '0',
     MODE: phaXem ? 'view' : 'scan',
+    TIM_ON: phaTim ? '1' : '0',
+    TIM_KW_FILE: phaTim ? ghiDanhSachTu(deviceId, pha.tuKhoa) : '',
+    TIM_START: soNguyen(phaTim ? pha.mocTim : 0, 0),
+    TIM_MOI_TU: soNguyen(cfg.searchPerKw, 30),
 
     // Cờ THỬ NGHIỆM, không có ô nào trong giao diện bật được: bỏ tạm điều kiện "sound hợp lệ" ở
     // nhánh follow để đo xem đường follow có bấm được thật không. Chỉ `tools/run-one.cjs --follow-test`
     // bật nó. Mặc định tắt nên app chạy y nguyên.
     FOLLOW_ANY: cfg.followAnySound ? '1' : '0',
-    CYCLE_SCAN_MIN: String(pha && pha.key === 'scan' ? pha.ms / 60000 : (cfg.cycleScanMinutes ?? 30)),
+    CYCLE_SCAN_MIN: String(pha && pha.key !== 'view' ? pha.ms / 60000 : (cfg.cycleScanMinutes ?? 30)),
     VIEW_PHASE_MIN: String(phaXem ? pha.ms / 60000 : 0),
     VIEW_START: soNguyen(phaXem ? pha.moc : 0, 0),
     VIEW_SEC_MIN: String(cfg.viewSecMin ?? 10),
@@ -369,6 +385,12 @@ function startDevice(params, onData, onStatus) {
       } else if (payload.type === 'view_progress' || payload.type === 'view_moc') {
         // Pha Xem: đang xem link nào (hiện lên bảng), và MỐC xem tiếp (main.js ghi xuống đĩa).
         onStatus(deviceId, { kind: 'view', idx: payload.idx | 0, total: payload.total | 0, moc: payload.type === 'view_moc' });
+      } else if (payload.type === 'tim') {
+        // Pha Tìm vừa mở một từ khóa. `tiep` = từ bắt đầu ở lượt sau (main.js ghi xuống đĩa).
+        onStatus(deviceId, {
+          kind: 'tim', kw: String(payload.kw || ''), idx: payload.idx | 0, total: payload.total | 0,
+          tiep: Number.isInteger(payload.tiep) ? payload.tiep : null,
+        });
       } else if (payload.type === 'status') {
         onStatus(deviceId, { kind: 'status', state: payload.state, msg: payload.msg });
       } else if (payload.type === 'proxy') {

@@ -781,9 +781,11 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
 
   check('21a. Chia pha bằng ĐÚNG phaseplan.cjs của bản PC, không tự chia',
     /phaseplan\.buildPhasePlan\('cycle', \{/.test(mj) && /require\('\.\/src\/phaseplan\.cjs'\)/.test(mj));
-  check('21b. Pha Xem chạy Python ở chế độ xem, pha Quét đi đường "chạy theo chu kỳ" có sẵn',
+  // 2026-09-24: pha Tìm (chế độ Tìm từ khóa ⇄ For You) cũng đi đường chu kỳ — mọi pha trừ Xem.
+  check('21b. Pha Xem chạy Python ở chế độ xem, pha Quét và pha Tìm đi đường "chạy theo chu kỳ" có sẵn',
     /MODE: phaXem \? 'view' : 'scan'/.test(rn)
-    && /CYCLE_ON: \(pha \? pha\.key === 'scan' : cfg\.cycleOn\)/.test(rn));
+    && /CYCLE_ON: \(pha \? pha\.key !== 'view' : cfg\.cycleOn\)/.test(rn)
+    && /CYCLE_SCAN_MIN: String\(pha && pha\.key !== 'view' \? pha\.ms \/ 60000/.test(rn));
   check('21c. Danh sách link đi qua TỆP (khối biến môi trường Windows có trần ~32K ký tự)',
     /VIEW_LINKS_FILE: phaXem \? ghiDanhSachLink\(deviceId, pha\.links\)/.test(rn));
   check('21d. Ghé thăm TẮT trong Quét ⇄ Xem (clone QĐ-47/48 — ghé thăm là phần của Quét Mix)',

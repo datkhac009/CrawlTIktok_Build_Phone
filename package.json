@@ -71,6 +71,7 @@
       "askbridge.py",
       "phone_actions.py",
       "college_proxy.py",
+      "tim_tu_khoa.py",
       "requirements.txt"
     ]
   }

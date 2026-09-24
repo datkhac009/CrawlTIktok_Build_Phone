@@ -59,6 +59,9 @@ function congDonTienDo(st, checked, qualified, lan) {
 
 // Nguồn sự thật cho giá trị mặc định. Thuộc tính `value=` trong HTML chỉ là trang trí —
 // `openSettingsModal` luôn ghi đè từ đây, đúng như bản PC làm.
+// Các chế độ hợp lệ của ô "Chế độ" — lưu / nạp cài đặt đều lọc qua đây.
+const CHE_DO = ['foryou', 'cycle', 'tukhoa'];
+
 const DEFAULT_SETTINGS = {
   minPosts: 1000,
   maxPosts: 100000,
@@ -90,6 +93,12 @@ const DEFAULT_SETTINGS = {
   viewSecMax: 20,
   viewScrollMin: 20,
   viewScrollMax: 30,
+
+  // ── Tìm từ khóa ⇄ For You (2026-09-24) ── bản PC chỉ có MỘT từ (`keyword`), chạy tới khi Dừng.
+  searchKeywords: '',
+  searchHours: 2,       // pha Tìm (giờ)
+  searchFyHours: 2,     // rồi For You (giờ); 0 = chỉ tìm
+  searchPerKw: 30,      // mỗi từ tối đa N video
 
   // Lọc nội dung. Hai ô bấm mặc định TẮT: cú "Not interested" dạy feed vĩnh viễn.
   niEnabled: false,
@@ -268,6 +277,13 @@ function onCrawlStatus(payload) {
     st.phase = { key: payload.key, ms: payload.ms || 0, at: payload.at || Date.now() };
     st.viewIdx = -1;
     st.viewTotal = payload.total || 0;
+    st.timKw = '';
+    renderDeviceRow(deviceId);
+    return;
+  }
+  // Pha Tìm vừa mở một từ khóa — hiện từ đang quét ngay trên dòng trạng thái.
+  if (kind === 'tim') {
+    st.timKw = payload.kw || '';
     renderDeviceRow(deviceId);
     return;
   }
@@ -403,6 +419,9 @@ function nhanTrangThai(st) {
     if (st.phase.key === 'view') {
       return st.viewIdx >= 0 && st.viewTotal ? `Xem link ${st.viewIdx + 1}/${st.viewTotal}` : 'Xem';
     }
+    if (st.phase.key === 'tim') {
+      return `Tìm ${gioPhut(Date.now() - st.phase.at)}/${gioPhut(st.phase.ms)}${st.timKw ? ` · ${st.timKw}` : ''}`;
+    }
     return `Quét ${gioPhut(Date.now() - st.phase.at)}/${gioPhut(st.phase.ms)}`;
   }
   return { run: 'Đang chạy', stop: 'Đã dừng', err: 'Lỗi' }[st.status] || 'Đã dừng';
@@ -412,7 +431,7 @@ function nhanTrangThai(st) {
 // mỗi 30 giây, chỉ những dòng đang ở pha Quét.
 setInterval(() => {
   for (const [id, st] of Object.entries(deviceState)) {
-    if (st.status === 'run' && st.phase && st.phase.key === 'scan') renderDeviceRow(id);
+    if (st.status === 'run' && st.phase && (st.phase.key === 'scan' || st.phase.key === 'tim')) renderDeviceRow(id);
   }
 }, 30000);
 
@@ -828,7 +847,11 @@ function openSettingsModal(ids) {
   $('cfgCycleBreakMin').value = base.cycleBreakMin;
   $('cfgCycleBreakMax').value = base.cycleBreakMax;
 
-  $('cfgMode').value = base.mode === 'cycle' ? 'cycle' : 'foryou';
+  $('cfgMode').value = CHE_DO.includes(base.mode) ? base.mode : 'foryou';
+  $('cfgSearchKeywords').value = base.searchKeywords;
+  $('cfgSearchHours').value = base.searchHours;
+  $('cfgSearchFyHours').value = base.searchFyHours;
+  $('cfgSearchPerKw').value = base.searchPerKw;
   $('cfgCycleScanHours').value = base.cycleScanHours;
   $('cfgCycleViewMinutes').value = base.cycleViewMinutes;
   $('cfgViewLinks').value = base.viewLinks;
@@ -872,12 +895,36 @@ function openSettingsModal(ids) {
 // Ẩn/hiện theo chế độ. Một ô hiện ra mà không có tác dụng ở chế độ đang chọn thì tệ hơn ô
 // không hiện (QĐ-38): "Chạy theo chu kỳ" vô nghĩa ở Quét ⇄ Xem vì chế độ đó vốn chạy theo chu kỳ.
 function apCheDo() {
-  const xenKe = document.getElementById('cfgMode').value === 'cycle';
+  const cheDo = document.getElementById('cfgMode').value;
+  const xenKe = cheDo === 'cycle';
+  const coPha = cheDo === 'cycle' || cheDo === 'tukhoa';
   document.getElementById('cfgXenKeSection').style.display = xenKe ? '' : 'none';
-  document.getElementById('khoiChuKyForYou').style.display = xenKe ? 'none' : '';
-  document.getElementById('nhanNghiGiuaLuot').textContent = xenKe
+  document.getElementById('cfgTimSection').style.display = cheDo === 'tukhoa' ? '' : 'none';
+  document.getElementById('khoiChuKyForYou').style.display = coPha ? 'none' : '';
+  document.getElementById('nhanNghiGiuaLuot').textContent = coPha
     ? 'Nghỉ giữa hai pha … – … phút (máy nhả khe cho máy đang chờ)'
     : 'Rồi nghỉ … – … phút';
+}
+
+// ── Bộ từ khóa mẫu cho pha Tìm (2026-09-24) ──
+// Lấy từ tài liệu "Quy trình phát hiện & theo dõi voice/sound thuần trên TikTok" của chủ dự án:
+// bộ từ khóa theo nhóm voice (dùng ở thanh Search → tab Sounds/Videos) và hashtag hỗ trợ (văn hoá US).
+const TU_KHOA_MAU = {
+  ai: ['Voicetrend', 'AI voice', 'text to speech', 'TTS voice', 'AI narrator', 'AI voice generator'],
+  narrator: ['narrator voice', 'dramatic reading', 'deep voice narrator', 'documentary voice', 'true story audio', 'voiceover trend'],
+  pov: ['storytime', 'POV', 'POV sound', 'plot twist audio', 'red flag audio', 'green flag voice'],
+  hashtag: ['#storytimetiktok', '#povtiktok', '#aivoice', '#texttospeech', '#voiceovertiktok', '#audiomeme',
+    '#soundcheck', '#trendingaudio', '#viralsound', '#skittok', '#comedyskit', '#redflag', '#greenflag'],
+};
+
+// Thêm một nhóm vào ô từ khóa, bỏ những từ đã có (không phân biệt hoa thường).
+function themNhomTuKhoa(nhom) {
+  const o = document.getElementById('cfgSearchKeywords');
+  const co = o.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const daCo = new Set(co.map((s) => s.toLowerCase()));
+  const them = (TU_KHOA_MAU[nhom] || []).filter((t) => !daCo.has(t.toLowerCase()));
+  o.value = co.concat(them).join('\n');
+  toast(them.length ? `Đã thêm ${them.length} từ khóa.` : 'Các từ của nhóm này đã có sẵn.', true);
 }
 
 function closeSettingsModal() {
@@ -915,7 +962,11 @@ async function saveSettings() {
     cycleBreakMin: numOf('cfgCycleBreakMin', D.cycleBreakMin),
     cycleBreakMax: numOf('cfgCycleBreakMax', D.cycleBreakMax),
 
-    mode: document.getElementById('cfgMode').value === 'cycle' ? 'cycle' : 'foryou',
+    mode: CHE_DO.includes(document.getElementById('cfgMode').value) ? document.getElementById('cfgMode').value : 'foryou',
+    searchKeywords: document.getElementById('cfgSearchKeywords').value,
+    searchHours: numOf('cfgSearchHours', D.searchHours),
+    searchFyHours: numOf('cfgSearchFyHours', D.searchFyHours),
+    searchPerKw: numOf('cfgSearchPerKw', D.searchPerKw),
     // `numOf` giữ 0 là 0 (QĐ-27): Xem = 0 phút là HỢP LỆ — nghĩa là chỉ quét theo chu kỳ.
     cycleScanHours: numOf('cfgCycleScanHours', D.cycleScanHours),
     cycleViewMinutes: numOf('cfgCycleViewMinutes', D.cycleViewMinutes),
@@ -1175,6 +1226,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('settingsCancel').addEventListener('click', closeSettingsModal);
   document.getElementById('settingsSave').addEventListener('click', saveSettings);
   document.getElementById('cfgMode').addEventListener('change', apCheDo);
+  document.getElementById('timMauNhom').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-nhom]');
+    if (b) themNhomTuKhoa(b.dataset.nhom);
+  });
   document.getElementById('settingsSelectedBtn').addEventListener('click', () => {
     const ids = getSelectedIds();
     if (!ids.length) { toast('Chưa chọn thiết bị nào', false); return; }
