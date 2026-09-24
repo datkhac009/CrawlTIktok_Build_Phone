@@ -275,6 +275,15 @@ function onCrawlStatus(payload) {
     if (!payload.moc) { st.viewIdx = payload.idx; st.viewTotal = payload.total; renderDeviceRow(deviceId); }
     return;
   }
+  // Đăng nhập TikTok (tiktok_login.py qua main.js: _dangNhapMot) — đang / chờ người / kết quả.
+  if (kind === 'login') {
+    st.login = {
+      dang: !!payload.dang, choNguoi: !!payload.choNguoi, ok: !!payload.ok,
+      trangThai: payload.trangThai || '', handle: payload.handle || '', msg: payload.msg || '',
+    };
+    renderDeviceRow(deviceId);
+    return;
+  }
   // Kết quả gắn proxy (college_proxy.py). Hỏng thì Python đã tự dừng và in lý do vào log.
   if (kind === 'proxy') {
     st.proxy = {
@@ -439,6 +448,20 @@ function oProxy(d, st) {
   return `<span class="pserial">${esc(d.proxyHien)}</span>${kq}`;
 }
 
+// Ô Tài khoản: @user đã gán (main.js gửi sẵn `taiKhoanHien`, không có mật khẩu) + kết quả đăng nhập
+// gần nhất. "Lệch" = máy đang đăng nhập tài khoản KHÁC — app cố ý không đụng vào.
+function oTaiKhoan(d, st) {
+  const k = st.login || d.taiKhoanKq;
+  let kq = '';
+  if (k && k.choNguoi) kq = `<div class="pproxy-wait" title="${esc(k.msg)}">⏳ cần giải tay trên xiaowei</div>`;
+  else if (k && k.dang) kq = '<div class="pproxy-wait">⏳ đang đăng nhập…</div>';
+  else if (k && k.ok) kq = `<div class="pproxy-ok">✓ ${esc(k.handle || 'đã đăng nhập')}</div>`;
+  else if (k && k.trangThai === 'lech') kq = `<div class="pproxy-wait" title="Máy đang đăng nhập tài khoản khác — app không đụng vào">⚠ lệch: ${esc(k.handle)}</div>`;
+  else if (k) kq = `<div class="pproxy-err" title="${esc(k.msg)}">✕ ${esc((k.msg || 'hỏng').slice(0, 40))}</div>`;
+  if (!d.taiKhoanHien) return kq || '<span class="pproxy-none">—</span>';
+  return `<span class="pserial">${esc(d.taiKhoanHien)}</span>${kq}`;
+}
+
 // Ô "Hợp lệ": CHỈ số sound mới đã vào bảng — sound bị bỏ vì trùng không hiện (xem khối HAI CỘT ĐẾM).
 function oHopLe(st) {
   return String(st.valid || 0);
@@ -453,6 +476,7 @@ function deviceRowHtml(d) {
     <td class="pserial">${esc(d.serial)}</td>
     <td><span class="pstat-badge ${st.status}">${esc(nhanTrangThai(st))}</span></td>
     <td class="pproxy">${oProxy(d, st)}</td>
+    <td class="pproxy">${oTaiKhoan(d, st)}</td>
     <td class="pchecked">${st.checked || 0}</td>
     <td class="pvalid">${oHopLe(st)}</td>
     <td class="prow-actions">
@@ -621,6 +645,67 @@ async function clearProxies() {
   toast(`Đã bỏ proxy của ${proxyIds.length} máy`
     + (r.dangGan.length ? ` — đang tắt College Proxy trên ${r.dangGan.length} máy` : '')
     + (r.cho.length ? ` — ${r.cho.length} máy đang chạy, College Proxy trên máy vẫn bật tới khi tắt tay` : ''), true);
+}
+
+// ---- Modal: Tài khoản TikTok + nút Đăng nhập (2026-09-24) ----
+// Cùng khuôn với modal proxy: luật đọc/ghép nằm ở main (src/account.cjs), ở đây chỉ vẽ bản xem trước.
+let accIds = [];
+
+function openAccModal(ids) {
+  accIds = ids;
+  document.getElementById('accTarget').textContent = ids.length === 1
+    ? ((devices.find((x) => x.id === ids[0]) || {}).name || '1 máy')
+    : `${ids.length} máy đã chọn`;
+  document.getElementById('accText').value = '';
+  xemTruocTaiKhoan();
+  document.getElementById('accModal').classList.add('open');
+}
+
+function closeAccModal() {
+  document.getElementById('accModal').classList.remove('open');
+}
+
+async function xemTruocTaiKhoan() {
+  const text = document.getElementById('accText').value;
+  const r = await window.api.devicesSetAccounts({ ids: accIds, text, thu: true });
+  const ten = (id) => esc((devices.find((x) => x.id === id) || {}).name || id);
+  const dong = [];
+  if (r.loi.length) {
+    dong.push(`<span class="pproxy-err">Dòng ${r.loi.map((x) => x.dong).join(', ')} sai dạng — cần user|pass|khoá2fa. Chưa gán gì.</span>`);
+  } else {
+    r.gan.forEach((x) => dong.push(`${ten(x.id)} ← ${esc(x.hien)}`));
+    if (!r.gan.length) dong.push('Chưa có dòng tài khoản nào.');
+  }
+  if (r.thieu) dong.push(`${r.thieu} máy không có dòng nào → giữ tài khoản cũ.`);
+  if (r.thua) dong.push(`${r.thua} dòng thừa (nhiều hơn số máy) → bỏ qua.`);
+  document.getElementById('accPreview').innerHTML = dong.join('<br>');
+}
+
+// `dangNhap: true` = nút "Lưu & đăng nhập". Ô dán để trống vẫn đăng nhập được bằng tài khoản đã lưu.
+async function saveAccounts(dangNhap) {
+  const text = document.getElementById('accText').value;
+  const r = await window.api.devicesSetAccounts({ ids: accIds, text });
+  if (!r.ok) { xemTruocTaiKhoan(); toast('Có dòng tài khoản sai dạng — chưa gán gì', false); return; }
+  if (!r.gan.length && !dangNhap) { toast('Chưa dán tài khoản nào', false); return; }
+  await napLaiSauKhiGanProxy();
+  closeAccModal();
+  if (dangNhap) { await dangNhapTikTok(accIds); return; }
+  toast(`Đã lưu tài khoản cho ${r.gan.length} máy — bấm 🔑 Đăng nhập TikTok để đăng nhập`, true);
+}
+
+async function clearAccounts() {
+  if (!confirm(`Bỏ tài khoản của ${accIds.length} máy? (Không đăng xuất TikTok trên máy.)`)) return;
+  await window.api.devicesSetAccounts({ ids: accIds, xoa: true });
+  await napLaiSauKhiGanProxy();
+  closeAccModal();
+  toast(`Đã bỏ tài khoản của ${accIds.length} máy`, true);
+}
+
+async function dangNhapTikTok(ids) {
+  const r = await window.api.devicesLogin({ ids });
+  toast(`Đang đăng nhập ${r.bat.length} máy — xem cột Tài khoản`
+    + (r.ban.length ? ` · ${r.ban.length} máy đang chạy, dừng trước đã` : '')
+    + (r.thieuTk.length ? ` · ${r.thieuTk.length} máy chưa có tài khoản` : ''), r.bat.length > 0);
 }
 
 // ---- Modal: Kiểm tra (preflight) ----
@@ -1191,6 +1276,23 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('proxySave').addEventListener('click', saveProxies);
   document.getElementById('proxyClear').addEventListener('click', clearProxies);
   document.getElementById('proxyText').addEventListener('input', xemTruocProxy);
+
+  document.getElementById('accSelectedBtn').addEventListener('click', () => {
+    const ids = getSelectedIds();
+    if (!ids.length) { toast('Chưa chọn thiết bị nào', false); return; }
+    openAccModal(ids);
+  });
+  document.getElementById('loginSelectedBtn').addEventListener('click', () => {
+    const ids = getSelectedIds();
+    if (!ids.length) { toast('Chưa chọn thiết bị nào', false); return; }
+    dangNhapTikTok(ids);
+  });
+  document.getElementById('accModalClose').addEventListener('click', closeAccModal);
+  document.getElementById('accCancel').addEventListener('click', closeAccModal);
+  document.getElementById('accSave').addEventListener('click', () => saveAccounts(false));
+  document.getElementById('accSaveLogin').addEventListener('click', () => saveAccounts(true));
+  document.getElementById('accClear').addEventListener('click', clearAccounts);
+  document.getElementById('accText').addEventListener('input', xemTruocTaiKhoan);
 
   document.getElementById('sheetsBtn').addEventListener('click', openSheetsModal);
   document.getElementById('sheetsModalClose').addEventListener('click', closeSheetsModal);

@@ -71,6 +71,7 @@
       "askbridge.py",
       "phone_actions.py",
       "college_proxy.py",
+      "tiktok_login.py",
       "requirements.txt"
     ]
   }

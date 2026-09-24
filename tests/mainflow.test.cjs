@@ -210,7 +210,20 @@ const fakeProxyrun = {
     return Promise.resolve(a.tat ? { ok: true } : { ok: true, ip: '9.9.9.9' });
   },
 };
-for (const [ten, exp] of [['runner.cjs', fakeRunner], ['sheets.cjs', fakeSheets], ['devices.cjs', fakeDevices], ['proxyrun.cjs', fakeProxyrun]]) {
+// ── Đăng nhập TikTok (src/loginrun.cjs) giả: ghi lại mọi lần gọi; `loginTreo` = true thì treo tới
+// `thaLogin(kq)`. Mặc định trả "đăng nhập xong" với handle = user trong chuỗi tài khoản.
+const loginGoi = [];
+let loginTreo = false;
+const choLogin = [];
+const thaLogin = (kq) => { while (choLogin.length) choLogin.shift()(kq || { ok: true, trangThai: 'xong', handle: '@tk' }); };
+const fakeLoginrun = {
+  chayDangNhap(a) {
+    loginGoi.push(a);
+    if (loginTreo) return new Promise((r) => choLogin.push(r));
+    return Promise.resolve({ ok: true, trangThai: 'xong', handle: '@' + String(a.taiKhoan).split('|')[0] });
+  },
+};
+for (const [ten, exp] of [['runner.cjs', fakeRunner], ['sheets.cjs', fakeSheets], ['devices.cjs', fakeDevices], ['proxyrun.cjs', fakeProxyrun], ['loginrun.cjs', fakeLoginrun]]) {
   const p = require.resolve(path.join(ROOT, 'src', ten));
   require.cache[p] = { id: p, filename: p, loaded: true, exports: exp };
 }
@@ -1126,6 +1139,89 @@ const start = (id, serial, cfg = {}) => {
       rTran.dangGan.length === 5 && dangChayCung === 3 && ganGoi.length - truocTran === 5,
       `${dangChayCung} cùng lúc, tổng ${ganGoi.length - truocTran}`);
     proxyTreo = false;
+  }
+
+  // ── TK. TÀI KHOẢN TIKTOK + NÚT ĐĂNG NHẬP (2026-09-24) ──
+  // Lưu KHÔNG tự đăng nhập (chủ dự án chọn nút riêng). Mật khẩu / khoá 2FA không sang giao diện.
+  // Máy đang chạy không bị chen; máy đang đăng nhập không cho bấm Chạy.
+  {
+    const MK = 'MkTikTok#987';
+    const KHOA = 'JBSWY3DPEHPK3PXPJBSWY3DP';
+    mayGia.set('dL1', { id: 'dL1', name: 'L1', serial: '5200000000000L1', note: '', hw: 'HW-L1', proxy: '1.2.3.4:80:u:p' });
+    farmGia.set('5200000000000L1', { model: 'L1', hw: 'HW-L1' });
+    mayGia.set('dL2', { id: 'dL2', name: 'L2', serial: '5200000000000L2', note: '', hw: 'HW-L2' });
+    farmGia.set('5200000000000L2', { model: 'L2', hw: 'HW-L2' });
+
+    const xem = await handlers.get('devices-set-accounts')({}, { ids: ['dL1', 'dL2'], text: `acc1|${MK}|${KHOA}\nacc2|${MK}`, thu: true });
+    check('TK1. Xem trước: ghép đúng thứ tự, không ghi gì, không trả mật khẩu / khoá',
+      xem.ok && xem.gan.map((x) => `${x.id}=${x.hien}`).join(',') === 'dL1=@acc1 · 2FA,dL2=@acc2'
+      && !mayGia.get('dL1').taiKhoan && !JSON.stringify(xem).includes(MK) && !JSON.stringify(xem).includes(KHOA), JSON.stringify(xem));
+    const sai = await handlers.get('devices-set-accounts')({}, { ids: ['dL1', 'dL2'], text: `acc1|${MK}\nchi-mot-truong` });
+    check('TK2. Có dòng sai → không gán máy nào', !sai.ok && sai.loi[0].dong === 2 && !mayGia.get('dL1').taiKhoan);
+
+    const truocLuu = loginGoi.length;
+    const ok = await handlers.get('devices-set-accounts')({}, { ids: ['dL1', 'dL2'], text: `acc1|${MK}|${KHOA}\nacc2|${MK}` });
+    await nghi(10);
+    check('TK3. Lưu → ghi đúng máy nào tài khoản nấy, và KHÔNG tự đăng nhập',
+      ok.ok && mayGia.get('dL1').taiKhoan === `acc1|${MK}|${KHOA}` && mayGia.get('dL2').taiKhoan === `acc2|${MK}`
+      && loginGoi.length === truocLuu);
+    const ds = await handlers.get('devices-list')({});
+    const l1 = ds.find((d) => d.id === 'dL1');
+    check('TK4. Danh sách gửi giao diện: @user, KHÔNG có mật khẩu / khoá',
+      !!l1 && l1.taiKhoanHien === '@acc1 · 2FA' && !('taiKhoan' in l1)
+      && !JSON.stringify(ds).includes(MK) && !JSON.stringify(ds).includes(KHOA), JSON.stringify(l1));
+
+    const r = await handlers.get('devices-login')({}, { ids: ['dL1', 'dL2', 'dPy'] });
+    await nghi(10);
+    const g1 = loginGoi.find((g) => g.deviceId === 'dL1');
+    check('TK5. Bấm Đăng nhập → gọi đúng điện thoại, đúng tài khoản, KÈM proxy của máy',
+      r.bat.join(',') === 'dL1,dL2' && !!g1 && g1.serial === '5200000000000L1'
+      && g1.taiKhoan === `acc1|${MK}|${KHOA}` && g1.proxy === '1.2.3.4:80:u:p', JSON.stringify({ r, g1 }));
+    check('TK5b. Máy chưa có tài khoản → không đăng nhập, báo lại', r.thieuTk.includes('dPy'));
+    check('TK6. Kết quả đăng nhập được LƯU (mở lại app vẫn thấy ✓ @handle), không kèm mật khẩu',
+      mayGia.get('dL1').taiKhoanKq && mayGia.get('dL1').taiKhoanKq.ok === true
+      && mayGia.get('dL1').taiKhoanKq.handle === '@acc1' && !JSON.stringify(mayGia.get('dL1').taiKhoanKq).includes(MK));
+    check('TK6b. Giao diện thấy "đang đăng nhập" rồi kết quả',
+      sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dL2' && p.kind === 'login' && p.dang)
+      && sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dL2' && p.kind === 'login' && p.ok && p.handle === '@acc2'));
+
+    // Lần sau: truyền handle đã đăng nhập thành công, để Python nhận ra "đã đăng nhập sẵn" cả khi
+    // tài khoản là email (không so được email với @handle).
+    await handlers.get('devices-login')({}, { ids: ['dL1'] });
+    await nghi(10);
+    check('TK7. Lần đăng nhập sau mang theo @handle lần trước', loginGoi.slice(-1)[0].handleCu === '@acc1');
+
+    // Máy đang chạy → từ chối, không chen.
+    await handlers.get('device-start')({}, { deviceId: 'dL2', serial: '5200000000000L2', cfg: {} });
+    const truocBan = loginGoi.length;
+    const rBan = await handlers.get('devices-login')({}, { ids: ['dL2'] });
+    await nghi(10);
+    check('TK8. Máy đang chạy → không đăng nhập chen vào', rBan.ban.includes('dL2') && loginGoi.length === truocBan);
+    ketThuc(lanChay('dL2').slice(-1)[0], false);
+    await nghi(10);
+
+    // Đang đăng nhập → bấm Chạy bị chặn, xong thì chạy được.
+    loginTreo = true;
+    await handlers.get('devices-login')({}, { ids: ['dL2'] });
+    await nghi(10);
+    const soLuot = lanChay('dL2').length;
+    const rChen = await handlers.get('device-start')({}, { deviceId: 'dL2', serial: '5200000000000L2', cfg: {} });
+    check('TK9. Bấm Chạy lúc máy đang đăng nhập → từ chối, nói rõ lý do',
+      rChen.ok === false && /đang đăng nhập/.test(rChen.msg) && lanChay('dL2').length === soLuot, JSON.stringify(rChen));
+    const rPx = await handlers.get('devices-set-proxies')({}, { ids: ['dL2'], text: '5.5.5.5:80:u:p' });
+    check('TK9b. Lưu proxy lúc máy đang đăng nhập → không gắn chen, để lượt sau',
+      rPx.cho.includes('dL2') && !rPx.dangGan.includes('dL2'), JSON.stringify(rPx));
+    thaLogin({ ok: false, trangThai: 'lech', handle: '@nguoikhac' });
+    await nghi(10);
+    check('TK10. Máy đang đăng nhập tài khoản khác → lưu "lệch" kèm @handle đang có',
+      mayGia.get('dL2').taiKhoanKq.trangThai === 'lech' && mayGia.get('dL2').taiKhoanKq.handle === '@nguoikhac');
+    const rSau = await handlers.get('device-start')({}, { deviceId: 'dL2', serial: '5200000000000L2', cfg: {} });
+    check('TK11. Đăng nhập xong → bấm Chạy được ngay', rSau.ok === true && lanChay('dL2').length === soLuot + 1, JSON.stringify(rSau));
+    ketThuc(lanChay('dL2').slice(-1)[0], false);
+    loginTreo = false;
+
+    await handlers.get('devices-set-accounts')({}, { ids: ['dL1'], xoa: true });
+    check('TK12. Bỏ tài khoản → xoá cả tài khoản lẫn kết quả cũ', !mayGia.get('dL1').taiKhoan || mayGia.get('dL1').taiKhoan === '');
   }
 
   _xong = true;

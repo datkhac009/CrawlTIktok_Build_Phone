@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('api', {
   devicesUpdate: (data) => ipcRenderer.invoke('devices-update', data),
   devicesDelete: (data) => ipcRenderer.invoke('devices-delete', data),
   devicesSetProxies: (data) => ipcRenderer.invoke('devices-set-proxies', data),
+  devicesSetAccounts: (data) => ipcRenderer.invoke('devices-set-accounts', data),
+  devicesLogin: (data) => ipcRenderer.invoke('devices-login', data),
   devicesListAdb: () => ipcRenderer.invoke('devices-list-adb'),
   deviceCheck: (serial) => ipcRenderer.invoke('device-check', serial),
   deviceIdentify: (serial) => ipcRenderer.invoke('device-identify', serial),

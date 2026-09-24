@@ -43,7 +43,7 @@ function addDevice({ name, serial, note }) {
   return device;
 }
 
-function updateDevice({ id, name, serial, note, hw, model, proxy, proxyKq }) {
+function updateDevice({ id, name, serial, note, hw, model, proxy, proxyKq, taiKhoan, taiKhoanKq }) {
   const list = loadDevices();
   const dev = list.find((d) => d.id === id);
   if (!dev) throw new Error('Không tìm thấy thiết bị.');
@@ -71,6 +71,19 @@ function updateDevice({ id, name, serial, note, hw, model, proxy, proxyKq }) {
   if (proxyKq !== undefined) {
     if (proxyKq) dev.proxyKq = proxyKq;
     else delete dev.proxyKq;
+  }
+  // Tài khoản TikTok `user|pass|khoá2fa` (src/account.cjs). Chuỗi rỗng = bỏ.
+  if (taiKhoan !== undefined) {
+    const moi = String(taiKhoan).trim();
+    // Đổi tài khoản thì kết quả đăng nhập của tài khoản CŨ không còn đúng nữa.
+    if (moi !== (dev.taiKhoan || '')) delete dev.taiKhoanKq;
+    if (moi) dev.taiKhoan = moi;
+    else delete dev.taiKhoan;
+  }
+  // Kết quả đăng nhập gần nhất { ok, trangThai, handle, msg, luc } — không có mật khẩu. `null` = xoá.
+  if (taiKhoanKq !== undefined) {
+    if (taiKhoanKq) dev.taiKhoanKq = taiKhoanKq;
+    else delete dev.taiKhoanKq;
   }
   saveDevices(list);
   return dev;

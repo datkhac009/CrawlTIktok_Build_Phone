@@ -18,9 +18,15 @@ renderer/ ──IPC──> main.js
                      ├── src/devices.cjs    quản lý danh sách máy (1 máy = 1 serial ADB)
                      ├── src/runner.cjs     spawn/kill  python scan_feed_sounds.py <serial>
                      ├── src/preflight.cjs  kiểm tra trước khi chạy
-                     └── src/sheets.cjs     đẩy Google Sheet + lọc trùng
+                     ├── src/sheets.cjs     đẩy Google Sheet + lọc trùng
+                     ├── src/proxy.cjs      đọc / gán hàng loạt proxy (hàm thuần)
+                     ├── src/proxyrun.cjs   bấm Lưu → python college_proxy.py <serial> gan|tat
+                     ├── src/account.cjs    đọc / gán hàng loạt tài khoản TikTok (hàm thuần)
+                     └── src/loginrun.cjs   bấm Đăng nhập → python tiktok_login.py <serial>
                                  │
-                                 └── scan_feed_sounds.py ──adb/uiautomator2──> Android
+                                 ├── scan_feed_sounds.py ──adb/uiautomator2──> Android
+                                 ├── college_proxy.py    ──(gọi từ setup_device, proxyrun, tiktok_login)
+                                 └── tiktok_login.py     ──(gọi từ loginrun)
 ```
 
 Tiến trình Python nói chuyện với Node qua **stdout** bằng dòng `@@EVENT@@<json>`.
@@ -46,7 +52,7 @@ bên tự quyết riêng thì có ngày mỗi bên một server.
 | Python 3 | **bản nào import được `uiautomator2` cũng được** — app tự dò, không chọn theo số phiên bản |
 | `uiautomator2` | `python -m pip install -r requirements.txt` |
 | `adb.exe` | app tự tìm, xem bên dưới |
-| Máy Android | đã cài TikTok và **đăng nhập sẵn** — app không tự đăng nhập |
+| Máy Android | đã cài TikTok và **đã đăng nhập** — đăng nhập tay, hoặc bằng nút **🔑 Đăng nhập TikTok** (xem "Đăng nhập TikTok") |
 
 ### App tìm `adb.exe` ở đâu
 
@@ -69,7 +75,7 @@ Theo thứ tự, dừng ở cái đầu tiên thấy được:
 ```bash
 npm install
 npm start           # hoặc start.bat
-npm test            # ~690 phép thử, ~10 giây (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
+npm test            # ~790 phép thử, ~1 phút (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
 ```
 
 Trong app, bấm **🔌 Kiểm tra** ở dòng một máy. Nó kiểm từng mục và **mục nào đỏ thì in ra đúng
@@ -121,7 +127,10 @@ Original Sound · đẩy Google Sheet · lọc trùng mọi máy qua `known_link
 (chép nguyên `sheets.cjs` bản PC) · trần số máy chạy đồng thời + hàng đợi · chu kỳ quét/nghỉ ·
 lọc theo ngôn ngữ, **không thu** sound khớp bộ lọc · nhận nhãn AI-generated · bấm "Not
 interested" · **follow / thả tim / ghé thăm trang cá nhân** kèm hạn mức · **tự thoát khi lọt vào
-TikTok Tako** (trợ lý chat AI): chỉ bấm Back, log ghi lọt vào ngay sau bước nào.
+TikTok Tako** (trợ lý chat AI): chỉ bấm Back, log ghi lọt vào ngay sau bước nào · **proxy HTTP
+riêng từng máy** qua College Proxy, bấm Lưu là gắn ngay, đo IP trên điện thoại trước khi mở TikTok
+(xem "Proxy cho từng máy") · **đăng nhập TikTok** bằng user + mật khẩu + khoá 2FA, dừng chờ người
+khi gặp captcha (xem "Đăng nhập TikTok").
 
 **Chưa có**: Quét Mix (= Quét ⇄ Xem + ghé thăm kênh, như bản PC) · tự cập nhật.
 
@@ -183,6 +192,49 @@ fix") đã cài sẵn trên máy farm — một VPN, không cần root, `college
   Wi-Fi của farm không bị ảnh hưởng.
 - Không gõ bằng `set_text` (bàn phím 效卫 bung toàn màn hình khi máy nằm ngang, ô nhập biến mất) và
   không bằng `send_keys` (đổi bàn phím mặc định của máy, phá tính năng gửi chữ của 效卫).
+
+### Đăng nhập TikTok (2026-09-24)
+
+Chọn máy → **👤 Tài khoản đã chọn** → dán danh sách, mỗi dòng `user|pass|khoá2fa` (hoặc `user|pass`;
+dòng không có `|` thì tách bằng `:`). Khoá 2FA là chuỗi base32 của app Authenticator, được bỏ dấu cách
+và viết hoa; app tự sinh mã 6 số (RFC 6238). Cùng luật gán hàng loạt với proxy. Lưu ở trường
+`taiKhoan` trong `devices.json`. Mật khẩu và khoá 2FA không sang giao diện (chỉ `@user · 2FA`),
+không vào log, không qua dòng lệnh (đi bằng biến môi trường `TAI_KHOAN` của tiến trình con).
+
+**Lưu KHÔNG tự đăng nhập**: chủ dự án chọn một nút riêng. **🔑 Đăng nhập TikTok** (hoặc **Lưu & đăng
+nhập** trong modal) → `src/loginrun.cjs` → `python tiktok_login.py <serial>`, tối đa 3 máy một lúc.
+Máy đang chạy / đang gắn proxy thì bị từ chối. Đang đăng nhập thì nút Chạy của máy đó bị chặn, và
+lưu proxy lúc đó thì để tới lượt sau. Cột **Tài khoản** hiện `⏳ đang đăng nhập…` / `⏳ cần giải
+tay trên xiaowei` / `✓ @handle` / `⚠ lệch: @handle` / `✕ lý do`, và kết quả được lưu (`taiKhoanKq`).
+
+- **Máy có proxy thì gắn proxy trước**, bằng đúng `college_proxy.dam_bao_proxy`. Không đăng nhập
+  bằng IP thật của farm.
+- Luồng xử lý là một vòng **nhìn màn → làm một bước**, không phải một chuỗi bước cứng. Đo trên máy
+  60 (TikTok 47.0.2, máy chưa đăng nhập): "Choose what you like" → **Skip**; feed có lớp **"Swipe up
+  for more"** nuốt cú bấm → vuốt lên trước; tab **Profile** → màn đăng nhập (`I18nSignUpActivity`)
+  → **Continue with email / username** → ô **Email or username** + **Log in** → ô mật khẩu → màn
+  **2-step verification** (`CommonFlowActivity`, "Authenticator app", nút **Continue**) → feed, kèm
+  tấm quảng cáo **"Create your TikTok avatar"** (Back là tắt, app tự đóng) → trang cá nhân của mình,
+  nhận ra bằng **"Profile menu" / "Profile views" / "Add bio"** (bản này KHÔNG có "Edit profile").
+  Bản chụp XML thật ở `tests/fixtures/login_*_47.0.2.xml` (tên tài khoản đã thay bằng tên giả).
+  resource-id của TikTok bị làm rối, nên chỉ khớp theo chữ.
+- **Đã chạy thật** trên máy 60 (tài khoản có 2FA, qua proxy HTTP của máy): đăng nhập xong, không gặp
+  captcha; chạy lại thì báo `✓ đã đăng nhập sẵn`, không gõ gì. Lượt thật đầu tiên lộ ra ba lỗi, nay
+  đã có phép thử: `d(password=True)` bị uiautomator2 từ chối (đọc ô nhập từ XML); bấm Log in mà màn
+  chưa chuyển thì gõ lại tên; qua 2FA rồi màn mật khẩu cũ loé lên và **gõ lại mật khẩu** — nay vừa
+  điền xong thì chờ màn chuyển (12 giây), qua 2FA thì không điền tên / mật khẩu trong 25 giây.
+- **Máy mới cài TikTok** (ô 62): có thêm màn "Welcome to TikTok" → **Agree and continue**. Sau khi
+  đăng nhập có tấm **"Viewer history turned on"** → Back (đóng mà không đổi cài đặt).
+- **Menu nguồn tự bật** (ô 62, nghi nút nguồn kẹt): "Phone options" đè lên mọi thứ nên bản dump
+  không có chữ nào. App hỏi `dumpsys window`; thấy menu thì Back rồi đi tiếp, không báo "cần người".
+- ⚠ **Chưa đo**: chữ báo sai mật khẩu / tài khoản bị chặn (mẫu trong `tiktok_login.py` là đoán).
+- **Màn lạ quá 8 giây** (captcha, xác minh email, hỏi quyền…) → báo "cần người", **chờ tối đa 5
+  phút** cho người giải tay trên 效卫, qua được thì đi tiếp. Không có phần tự giải captcha, cố ý.
+- **Đã đăng nhập đúng tài khoản** → `✓`, không làm gì. **Tài khoản khác** → `⚠ lệch`, **không đụng
+  vào**: không đăng xuất ai (chủ dự án chốt). Tài khoản email thì không so được với `@handle`, nên
+  lần sau so bằng `@handle` của lần đăng nhập thành công trước (`TK_HANDLE`).
+- Mã 2FA còn dưới 5 giây là hết hạn → chờ sang mã mới rồi mới gõ. Sai mật khẩu / bị chặn → dừng
+  ngay, không gõ lại (gõ lại nhiều lần dễ bị khoá tài khoản).
 
 ### Google Sheet (2026-09-18, v0.1.9)
 

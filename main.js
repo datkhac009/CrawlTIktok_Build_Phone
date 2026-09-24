@@ -16,6 +16,8 @@ const { normalizeKey } = require('./src/linkkey.cjs');
 const phaseplan = require('./src/phaseplan.cjs');
 const proxy = require('./src/proxy.cjs');
 const proxyrun = require('./src/proxyrun.cjs');
+const account = require('./src/account.cjs');
+const loginrun = require('./src/loginrun.cjs');
 const { getDeviceDir } = require('./src/paths.cjs');
 
 const store = new Store({ name: 'settings' });
@@ -661,13 +663,17 @@ ipcMain.handle('devices-list', async () => {
   }
   return danhSachChoGiaoDien();
 });
-// Danh sách gửi sang giao diện: proxy chỉ đi dạng `proxyHien` (host:port) — mật khẩu không rời
-// tiến trình main, và giao diện không phải giữ bản sao luật đọc proxy.
+// Danh sách gửi sang giao diện: proxy chỉ đi dạng `proxyHien` (host:port), tài khoản chỉ đi dạng
+// `taiKhoanHien` (@user) — mật khẩu và khoá 2FA không rời tiến trình main, và giao diện không phải
+// giữ bản sao luật đọc chuỗi.
+function choGiaoDien(d) {
+  const { proxy: p, taiKhoan: tk, ...con } = d;
+  if (p) con.proxyHien = proxy.moTa(p) || '(sai dạng)';
+  if (tk) con.taiKhoanHien = account.moTa(tk) || '(sai dạng)';
+  return con;
+}
 function danhSachChoGiaoDien() {
-  return devices.loadDevices().map((d) => {
-    const { proxy: p, ...con } = d;
-    return p ? { ...con, proxyHien: proxy.moTa(p) || '(sai dạng)' } : con;
-  });
+  return devices.loadDevices().map(choGiaoDien);
 }
 // Thêm / sửa máy = người dùng khẳng định "máy này ở IP kia": đọc luôn số máy phần cứng ở IP đó để
 // lần sau máy đổi IP thì app tự dò ra. Không chờ — đọc hỏng thì lần chạy đầu sẽ đọc lại.
@@ -678,8 +684,7 @@ function ghiDanhTinh(dev) {
       try { devices.updateDevice({ id: dev.id, hw: tt.hw, model: tt.model }); } catch (_) {}
     }
   }, () => {});
-  const { proxy: p, ...con } = dev;
-  return p ? { ...con, proxyHien: proxy.moTa(p) || '(sai dạng)' } : con;
+  return choGiaoDien(dev);
 }
 ipcMain.handle('devices-add', (_e, data) => ghiDanhTinh(devices.addDevice(data)));
 ipcMain.handle('devices-update', (_e, data) => ghiDanhTinh(devices.updateDevice(data)));
@@ -735,7 +740,8 @@ const _hangGanProxy = [];            // [{ id, tat }] chờ tới lượt
 // nên máy đã đứng yên bị coi là bận mãi và không bao giờ được gắn ngay. `_restTimers` gom đủ ba
 // trạng thái "sẽ tự chạy lại": nghỉ giữa ca, hẹn chạy lại sau lỗi, chờ điện thoại khởi động lại.
 function _dangBan(id) {
-  return runner.isRunning(id) || devslot.isActive(id) || devslot.isWaiting(id) || _restTimers.has(id);
+  return runner.isRunning(id) || devslot.isActive(id) || devslot.isWaiting(id) || _restTimers.has(id)
+    || _dangDangNhap.has(id) || _hangDangNhap.includes(id);
 }
 function apProxyNgay(ids, tat) {
   const dangGan = [];
@@ -793,6 +799,91 @@ function ghiKqProxy(id, r) {
   try {
     devices.updateDevice({ id, proxyKq: { ok: !!r.ok, ip: String(r.ip || ''), nuoc: String(r.nuoc || ''), msg: String(r.msg || '').slice(0, 200), luc: Date.now() } });
   } catch (_) {}
+}
+// ── TÀI KHOẢN TIKTOK + NÚT ĐĂNG NHẬP (2026-09-24) ──
+// Lưu tài khoản KHÔNG tự đăng nhập — chủ dự án chọn "Thêm một button đăng nhập Tiktok". Dán hàng loạt
+// cùng luật với proxy (src/account.cjs). `thu: true` = chỉ xem trước.
+ipcMain.handle('devices-set-accounts', (_e, { ids, text, xoa, thu }) => {
+  const ds = Array.isArray(ids) ? ids : [];
+  if (xoa) {
+    ds.forEach((id) => devices.updateDevice({ id, taiKhoan: '' }));
+    return { ok: true, gan: [], loi: [], thieu: 0, thua: 0 };
+  }
+  const r = account.ganHangLoat(ds, text);
+  if (!thu) r.gan.forEach((x) => devices.updateDevice({ id: x.id, taiKhoan: x.taiKhoan }));
+  return {
+    ok: !r.loi.length,
+    gan: r.gan.map((x) => ({ id: x.id, hien: account.moTa(x.taiKhoan) })),
+    loi: r.loi.map((x) => ({ dong: x.dong })),
+    thieu: r.thieu,
+    thua: r.thua,
+  };
+});
+// Bấm "Đăng nhập TikTok": máy RẢNH và đã có tài khoản → đăng nhập (src/loginrun.cjs). Máy đang chạy /
+// đang gắn proxy → từ chối: hai tiến trình cùng lái một màn hình là hỏng cả hai. Tối đa GAN_DONG_THOI
+// máy một lúc, như gắn proxy — cả farm dồn lệnh qua chung một adb server.
+const _dangDangNhap = new Set();
+const _hangDangNhap = [];
+function _dangGanProxyMay(id) {
+  return _dangGanProxy.has(id) || _hangGanProxy.some((x) => x.id === id);
+}
+ipcMain.handle('devices-login', (_e, { ids }) => {
+  const ds = Array.isArray(ids) ? ids : [];
+  const coTk = new Map(devices.loadDevices().map((d) => [d.id, !!account.docTaiKhoan(d.taiKhoan)]));
+  const bat = [];
+  const ban = [];
+  const thieuTk = [];
+  for (const id of ds) {
+    if (!coTk.get(id)) { thieuTk.push(id); continue; }
+    if (_dangDangNhap.has(id) || _hangDangNhap.includes(id)) continue;
+    if (_dangBan(id) || _dangGanProxyMay(id)) {
+      ban.push(id);
+      sendToRenderer('crawl-status', { deviceId: id, kind: 'log', line: '🔑 Máy đang chạy / đang gắn proxy — bấm Dừng rồi mới đăng nhập.' });
+      continue;
+    }
+    _hangDangNhap.push(id);
+    bat.push(id);
+    sendToRenderer('crawl-status', { deviceId: id, kind: 'login', dang: true });
+  }
+  _chayHangDangNhap();
+  return { ok: true, bat, ban, thieuTk };
+});
+function _chayHangDangNhap() {
+  while (_dangDangNhap.size < GAN_DONG_THOI && _hangDangNhap.length) {
+    const id = _hangDangNhap.shift();
+    _dangDangNhap.add(id);
+    _dangNhapMot(id).finally(() => {
+      _dangDangNhap.delete(id);
+      _chayHangDangNhap();
+    });
+  }
+}
+async function _dangNhapMot(id) {
+  const say = (line) => sendToRenderer('crawl-status', { deviceId: id, kind: 'log', line });
+  const suKien = (p) => {
+    if (p.type === 'login' && p.trangThai === 'cho_nguoi') sendToRenderer('crawl-status', { deviceId: id, kind: 'login', dang: true, choNguoi: true, msg: String(p.msg || '') });
+    else if (p.type === 'login') sendToRenderer('crawl-status', { deviceId: id, kind: 'login', dang: true });
+    else if (p.type === 'proxy' && p.ok !== undefined) {
+      sendToRenderer('crawl-status', { deviceId: id, kind: 'proxy', ok: p.ok === true, ip: String(p.ip || ''), msg: String(p.msg || '') });
+      ghiKqProxy(id, p);
+    }
+  };
+  let r;
+  try {
+    const may = await timMay(id);
+    const d = devices.loadDevices().find((x) => x.id === id);
+    if (!may.serial) r = { ok: false, trangThai: 'loi', msg: may.loi || 'không tìm thấy máy' };
+    else if (!d || !d.taiKhoan) r = { ok: false, trangThai: 'loi', msg: 'máy chưa có tài khoản' };
+    else {
+      const cu = d.taiKhoanKq && d.taiKhoanKq.ok ? d.taiKhoanKq.handle : '';
+      r = await loginrun.chayDangNhap({ deviceId: id, serial: may.serial, taiKhoan: d.taiKhoan, handleCu: cu, proxy: may.proxy }, say, suKien);
+    }
+  } catch (e) {
+    r = { ok: false, trangThai: 'loi', msg: String(e && e.message || e).slice(0, 160) };
+  }
+  const kq = { ok: !!r.ok, trangThai: String(r.trangThai || ''), handle: String(r.handle || ''), msg: String(r.msg || '').slice(0, 200), luc: Date.now() };
+  sendToRenderer('crawl-status', { deviceId: id, kind: 'login', ...kq });
+  try { devices.updateDevice({ id, taiKhoanKq: kq }); } catch (_) {}
 }
 ipcMain.handle('devices-list-adb', () => devices.listAdbSerials());
 ipcMain.handle('device-check', (_e, serial) => devices.checkDevice(serial));
@@ -980,6 +1071,9 @@ ipcMain.handle('device-start', async (_e, params) => {
   const idCho = params && params.deviceId;
   if (_dangGanProxy.has(idCho) || _hangGanProxy.some((x) => x.id === idCho)) {
     return { ok: false, msg: 'Máy này đang được gắn proxy vừa lưu — chờ cột Proxy báo xong rồi bấm Chạy.' };
+  }
+  if (_dangDangNhap.has(idCho) || _hangDangNhap.includes(idCho)) {
+    return { ok: false, msg: 'Máy này đang đăng nhập TikTok — chờ cột Tài khoản báo xong rồi bấm Chạy.' };
   }
   // Bấm Chạy tay thì huỷ mọi hẹn giờ nghỉ đang treo của máy đó, tránh chạy chồng hai lượt.
   huyNghi(params && params.deviceId);

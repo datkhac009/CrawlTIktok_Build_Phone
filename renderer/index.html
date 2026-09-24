@@ -29,6 +29,8 @@
           <button class="btn" id="stopSelectedBtn">■ Dừng đã chọn</button>
           <button class="btn" id="settingsSelectedBtn">⚙️ Cài đặt đã chọn</button>
           <button class="btn" id="proxySelectedBtn">🌐 Proxy đã chọn</button>
+          <button class="btn" id="accSelectedBtn">👤 Tài khoản đã chọn</button>
+          <button class="btn" id="loginSelectedBtn">🔑 Đăng nhập TikTok</button>
           <button class="btn btn-primary" id="manageDevicesBtn">➕ Thêm / Quản lý</button>
         </div>
       </div>
@@ -41,6 +43,7 @@
               <th>Serial (ADB)</th>
               <th>Trạng thái</th>
               <th>Proxy</th>
+              <th>Tài khoản</th>
               <th style="width:80px;" title="Số video máy đã quét, tính từ lúc bảng Dữ liệu thu thập được làm mới">Đã check</th>
               <th style="width:70px;" title="Số sound MỚI máy này đưa vào bảng Dữ liệu thu thập bên dưới — cộng cả cột này là ra đúng tổng của bảng">Hợp lệ</th>
               <th style="width:250px;">Hành động</th>
@@ -414,6 +417,33 @@
       <div class="modal-foot">
         <button class="btn" id="logClear">Xóa log</button>
         <button class="btn btn-primary" id="logDone">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Gán tài khoản TikTok hàng loạt cho các máy đã chọn (2026-09-24) -->
+  <div class="modal" id="accModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>👤 Tài khoản TikTok cho <span id="accTarget"></span></h3>
+        <button class="btn-icon" id="accModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="section">
+          <div class="section-title">Dán danh sách tài khoản — mỗi dòng một tài khoản</div>
+          <textarea class="input" id="accText" rows="8" placeholder="username|matkhau|KHOA2FA"></textarea>
+          <div class="section-desc">Dạng <b>user|pass|khoá2fa</b> (khoá 2FA là chuỗi base32 của app Authenticator — app tự sinh mã 6 số; tài khoản không có 2FA thì chỉ <b>user|pass</b>). Dòng 1 gán cho máy thứ nhất đã chọn, dòng 2 cho máy thứ hai… theo đúng thứ tự trên bảng. <b>Lưu</b> chỉ ghi lại; đăng nhập khi bấm <b>🔑 Đăng nhập TikTok</b>. Máy có proxy được gắn proxy <b>trước</b> rồi mới đăng nhập. Gặp captcha thì cột Tài khoản báo <b>cần giải tay trên xiaowei</b> — giải xong app tự đi tiếp. Máy đang đăng nhập tài khoản khác thì app <b>không đụng vào</b>, chỉ báo lệch.</div>
+        </div>
+        <div class="section">
+          <div class="section-title">Sẽ gán</div>
+          <div id="accPreview" class="section-desc"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="accClear">Bỏ tài khoản các máy này</button>
+        <button class="btn" id="accCancel">Huỷ</button>
+        <button class="btn" id="accSave">Lưu</button>
+        <button class="btn btn-primary" id="accSaveLogin">Lưu &amp; đăng nhập</button>
       </div>
     </div>
   </div>
