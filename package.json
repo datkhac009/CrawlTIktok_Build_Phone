@@ -72,6 +72,7 @@
       "phone_actions.py",
       "college_proxy.py",
       "tiktok_login.py",
+      "tim_tu_khoa.py",
       "requirements.txt"
     ]
   }

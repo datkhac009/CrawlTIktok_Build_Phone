@@ -30,6 +30,7 @@ from adb_helper import connect, adb, list_devices
 from askbridge import AskBridge
 import phone_actions as PA
 import college_proxy as CP
+import tim_tu_khoa as TK
 
 # Ha timeout HTTP cua uiautomator2 (mac dinh 300s = 5 phut) xuong ngan hon: khi 1 lenh RPC
 # bi TREO (hay gap khi chay nhieu may song song), no se tu RAISE loi sau HTTP_TIMEOUT giay
@@ -167,6 +168,17 @@ VIEW_SEC_MAX = float(os.environ.get("VIEW_SEC_MAX", "20") or 0)
 # Vuot them bao nhieu video sau video dau (ban PC: 20-30). 0 = khong vuot.
 VIEW_SCROLL_MIN = int(float(os.environ.get("VIEW_SCROLL_MIN", "20") or 0))
 VIEW_SCROLL_MAX = int(float(os.environ.get("VIEW_SCROLL_MAX", "30") or 0))
+
+# ── PHA TIM THEO TU KHOA (2026-09-24) — xem tim_tu_khoa.py ──
+# Pha Tim di CHUNG vong quet For You (thu sound, dem, xu ly loi, noi lai, kiem VPN y het), chi khac
+# cho DUNG: trinh phat cua ket qua tim kiem thay vi feed. Ba cho re nhanh: `setup_device` (mo xong
+# TikTok thi vao tu khoa), `ve_feed` (lac thi ve trinh phat tim kiem, KHONG ve For You), `canh_gac`.
+TIM_ON = os.environ.get("TIM_ON") == "1"
+TIM_KW_FILE = os.environ.get("TIM_KW_FILE", "")
+TIM_START = int(float(os.environ.get("TIM_START", "0") or 0))     # moc: tu khoa bat dau (theo may)
+TIM_MOI_TU = max(1, int(float(os.environ.get("TIM_MOI_TU", "30") or 30)))
+# `dem` = so video da quet cua tu dang chay; `lap` = so lan vuot lien ma video khong doi.
+TIM = {"on": False, "tu": [], "i": 0, "dem": 0, "lap": 0, "so_tu": 0}
 
 
 def log(msg):
@@ -738,6 +750,10 @@ def setup_device(d):
             elif co_college_proxy(d.serial):
                 CP.dam_bao_proxy_san_co(d, d.serial, log, emit_event)
             pkg = ensure_tiktok_open(d)
+            # Pha Tim: moi lan mo lai TikTok (luc dau, phuc hoi, noi lai) deu vao lai tu khoa —
+            # mo lai TikTok la ve For You, quet o do la quet nham pha.
+            if TIM["on"]:
+                vao_tu_khoa(d, pkg)
             return pkg
         except CP.ProxyHong:
             raise
@@ -823,13 +839,76 @@ def _ten_man_hinh(goi, act):
     return "một màn hình khác trong TikTok"
 
 
+def vao_tu_khoa(d, pkg, sang_tu_moi=False):
+    """Pha Tim: mo ket qua tim kiem cua tu dang toi luot va vao trinh phat. `sang_tu_moi` = bo tu
+    hien tai, sang tu ke. Tu nao khong mo duoc thi thu tu ke (toi da 5 tu); hong ca thi TAT pha Tim
+    va quet For You cho het pha — may van thu sound, khong dung, khong bi coi la may do."""
+    n = len(TIM["tu"])
+    for lan in range(min(n, 5)):
+        if sang_tu_moi or lan > 0:
+            TIM["i"] = (TIM["i"] + 1) % n
+        sang_tu_moi = False
+        tu = TIM["tu"][TIM["i"]]
+        BUOC["v"] = f"mở kết quả tìm kiếm «{tu}»"
+        if TK.mo_tu(d, pkg, tu):
+            TIM["dem"], TIM["lap"] = 0, 0
+            TIM["so_tu"] += 1
+            log(f"🔎 Từ khóa «{tu}» ({TIM['i'] + 1}/{n}) — quét tối đa {TIM_MOI_TU} video.")
+            # `tiep` = tu se bat dau o lan chay SAU (main.js ghi xuong dia theo may): tu nay da quet
+            # (du hay do), lan sau di tiep tu ke — xoay vong, khong quet lai tu dau danh sach.
+            emit_event("tim", idx=TIM["i"], total=n, kw=tu, tiep=(TIM["i"] + 1) % n)
+            return True
+        log(f"⚠ Không mở được kết quả tìm kiếm «{tu}» — sang từ kế.")
+    TIM["on"] = False
+    log("⛔ Không mở được kết quả tìm kiếm của từ khóa nào — quét For You cho hết pha này.")
+    ve_feed(d, "không mở được kết quả tìm kiếm")
+    return False
+
+
+def ve_tim(d, ly_do):
+    """`ve_feed` cua pha Tim: dich la TRINH PHAT ket qua tim kiem, khong phai feed For You.
+    Dang o trinh phat thi khong lam gi. O trang nhac thi mot cu Back. Lac cho khac thi mo TU KE
+    (mo lai dung tu cu la quet lai tu video dau — trung lap, va de ket vong)."""
+    a = TK.activity(d)
+    if a == TK.ACT_TRINH_PHAT:
+        return "o_feed"
+    if a == TK.ACT_TRANG_NHAC:
+        d.press("back")
+        time.sleep(1.2)
+        if TK.o_trinh_phat(d):
+            log_han_che("ve_tim_back", f"⚠ Lạc khỏi trình phát ({ly_do}) — đang ở trang nhạc → bấm Back, đã về.")
+            return "back"
+    PHUC_HOI["ve_feed"] += 1
+    log_han_che("ve_tim_mo", f"⚠ Lạc khỏi trình phát tìm kiếm ({ly_do}) — mở từ khóa kế.")
+    if vao_tu_khoa(d, ACTIVE_PKG or PKGS[0], sang_tu_moi=True):
+        return "mo_lai"
+    return "o_feed" if PA.o_feed(d) else "khong_ve_duoc"
+
+
+def vuot_tim(d):
+    """Vuot sang video ke trong ket qua tim kiem. Vuot 2 lan lien ma caption khong doi = het ket
+    qua cua tu nay -> sang tu ke. Het N video cua tu thi vong quet tu doi tu (xem `main`)."""
+    pkg = ACTIVE_PKG or PKGS[0]
+    truoc = TK.chu_video(d, pkg)
+    PA.vuot_video_ke(d, manh=TIM["lap"] >= 1)
+    time.sleep(random.uniform(0.8, 1.4))
+    sau = TK.chu_video(d, pkg)
+    TIM["lap"] = TIM["lap"] + 1 if (truoc and sau == truoc) else 0
+    if TIM["lap"] >= 2:
+        log(f"Hết kết quả của «{TIM['tu'][TIM['i']]}» sau {TIM['dem']} video — sang từ kế.")
+        vao_tu_khoa(d, pkg, sang_tu_moi=True)
+
+
 def ve_feed(d, ly_do):
     """BAC 1: dua may ve feed For You. Tra 'o_feed' | 'mo_app' | 'back' | 'mo_lai' | 'khong_ve_duoc'.
 
     Da o feed thi KHONG lam gi va KHONG in gi — canh gac goi ham nay ca khi feed binh thuong.
     ⚠ Chi bam Back va mo lai app, KHONG cham vao thu gi tren man hinh la: may dang lac o dau thi
     chua biet, bam mu la dung bai hoc QD-31 cua ban PC.
+    Pha Tim: dich la trinh phat ket qua tim kiem — xem `ve_tim`.
     """
+    if TIM["on"]:
+        return ve_tim(d, ly_do)
     pkg = ACTIVE_PKG or PKGS[0]
     try:
         cur = d.app_current() or {}
@@ -1119,6 +1198,16 @@ def canh_gac(d, khong_icon):
     if CANH_GAC["chuoi"] < CANH_GAC_KHONG_ICON:
         return ""
     CANH_GAC["chuoi"] = 0
+    # Pha Tim: ket qua cua tu nay toan bai anh / khong co sound, hoac may da lac — ca hai cach chua
+    # deu la sang tu ke (khoi dong lai TikTok la ve For You, sai pha).
+    if TIM["on"]:
+        log(f"⚠ {CANH_GAC_KHONG_ICON} video liền không có icon sound trong kết quả «{TIM['tu'][TIM['i']]}» "
+            "— sang từ kế.")
+        try:
+            vao_tu_khoa(d, ACTIVE_PKG or PKGS[0], sang_tu_moi=True)
+        except Exception:
+            return ""
+        return "mo_lai"
     try:
         kq = ve_feed(d, f"{CANH_GAC_KHONG_ICON} video liền không thấy icon sound")
     except Exception:
@@ -1460,6 +1549,19 @@ def main():
     MAY["hw"] = hw_that or hw_mong
     log(f"✅ Đã kết nối {d.serial}.")
     emit_event("status", state="connected", serial=d.serial)
+    # Pha Tim: nap tu khoa TRUOC setup_device — no la noi vao tu khoa sau khi mo TikTok.
+    if TIM_ON and MODE != "view":
+        try:
+            with open(TIM_KW_FILE, encoding="utf-8") as fh:
+                tu = TK.doc_tu_khoa(json.load(fh))
+        except Exception as e:
+            tu = []
+            log(f"⚠ Không đọc được danh sách từ khóa ({str(e)[:80]}).")
+        if tu:
+            TIM.update(on=True, tu=tu, i=TIM_START % len(tu))
+            log(f"🔎 Pha Tìm theo từ khóa: {len(tu)} từ, mỗi từ tối đa {TIM_MOI_TU} video.")
+        else:
+            log("⚠ Pha Tìm không có từ khóa nào — quét For You cho hết pha này.")
     reset_service(d)
     try:
         pkg = setup_device(d)
@@ -1551,7 +1653,15 @@ def main():
                     except Exception as e2:
                         log(f"⚠ Mở lại TikTok sau khi gắn lại proxy lỗi ({str(e2)[:80]}) — vòng sau thử tiếp.")
                     continue
+            # ── PHA TIM: HET N VIDEO CUA TU NAY THI SANG TU KE ──
+            if TIM["on"] and TIM["dem"] >= TIM_MOI_TU:
+                try:
+                    vao_tu_khoa(d, ACTIVE_PKG or PKGS[0], sang_tu_moi=True)
+                except Exception as e:
+                    log(f"⚠ Sang từ khóa kế lỗi ({str(e)[:80]}) — vòng sau thử tiếp.")
             count += 1
+            if TIM["on"]:
+                TIM["dem"] += 1
             t_video = time.time()
             khong_icon = False
             try:
@@ -1736,6 +1846,9 @@ def main():
                     dismiss_popups(d)
                     PHUC_HOI["mo_lai_tiktok"] += 1
                     lan_trung, video_truoc = 0, None
+                elif TIM["on"]:
+                    # Pha Tim: vuot trong ket qua tim kiem, het ket qua thi tu sang tu ke.
+                    vuot_tim(d)
                 else:
                     # Vong truoc da vuot ma van cung video: doi sang cach keo tung diem.
                     PA.vuot_video_ke(d, manh=lan_trung >= 1)
@@ -1765,6 +1878,8 @@ def main():
     # Khuôn bản PC: một câu nền, rồi CÁC MẢNH GHÉP THÊM chỉ khi khác 0. Nhờ vậy bật thêm một tính
     # năng không viết lại dòng cũ, và số 0 không chiếm chỗ của số đáng đọc.
     _p = [f"quét {count} video", f"lấy {qualified} sound"]
+    if TIM["so_tu"]:
+        _p.append(f"qua {TIM['so_tu']} từ khóa")
     if DEM["khong_goc"]:
         _p.append(f"bỏ {DEM['khong_goc']} sound không phải Original Sound")
     if DEM["pending"]:

@@ -59,14 +59,48 @@ const _restTimers = new Map();    // deviceId -> hẹn giờ chạy lại
 // đường thứ hai. Hết pha máy nhả khe và xếp lại CUỐI hàng: đó là thứ giúp 19 máy chia 6 khe.
 const _pha = new Map();   // deviceId -> chỉ số pha của lượt SẮP chạy / đang chạy
 
-const TEN_PHA = { scan: 'Quét', view: 'Xem' };
+const TEN_PHA = { scan: 'Quét', view: 'Xem', tim: 'Tìm' };
 
 function docDanhSachLink(raw) {
   return String(raw || '').split(/\r?\n/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
 }
 
-// Kế hoạch pha của một cấu hình; `null` = không phải chế độ Quét ⇄ Xem.
+// Từ khóa của pha Tìm: mỗi dòng một từ, gộp khoảng trắng, bỏ trùng (không phân biệt hoa thường),
+// GIỮ dấu '#' — hashtag cũng là từ khóa. Cùng luật với `tim_tu_khoa.doc_tu_khoa` bên Python.
+function docTuKhoa(raw) {
+  const ra = [];
+  const daCo = new Set();
+  for (const s of String(raw || '').split(/\r?\n/)) {
+    const tu = s.trim().replace(/\s+/g, ' ');
+    if (tu && !daCo.has(tu.toLowerCase())) { daCo.add(tu.toLowerCase()); ra.push(tu); }
+  }
+  return ra;
+}
+
+// ── CHẾ ĐỘ TÌM TỪ KHÓA ⇄ FOR YOU (2026-09-24) ──
+// Chủ dự án: tìm theo từ khóa ~2 giờ (chỉnh được) để thu sound và dạy feed, rồi lướt For You, lặp.
+// Hai pha 'tim' rồi 'scan', đi đúng đường "hết pha → nghỉ → pha kế" của Quét ⇄ Xem.
+// KHÔNG qua `phaseplan.cjs`: file đó bị srcsync khoá giống bản PC từng byte, và phép thử bên PC khoá
+// `buildPhasePlan('search')` = [] (tìm kiếm bên PC không chạy theo pha). Dựng ngay ở đây, cùng dạng.
+function keHoachTim(cfg) {
+  const tuKhoa = docTuKhoa(cfg.searchKeywords);
+  const gio = (v, mac) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : mac; };
+  let plan = [
+    { key: 'tim', label: TEN_PHA.tim, ms: Math.round(gio(cfg.searchHours, 2) * 3600000) },
+    { key: 'scan', label: TEN_PHA.scan, ms: Math.round(gio(cfg.searchFyHours, 2) * 3600000) },
+  ].filter((p) => p.ms > 0);
+  // Không có từ khóa thì pha Tìm không có gì để làm → bỏ, và NÓI RA (xem `chayMot`).
+  const boTim = !tuKhoa.length && plan.some((p) => p.key === 'tim');
+  if (boTim) plan = plan.filter((p) => p.key !== 'tim');
+  return { plan, links: [], boXem: false, tuKhoa, boTim };
+}
+
+// Tên chế độ theo pha để đưa vào câu báo lỗi.
+function cfgMode(cfg) { return cfg && cfg.mode === 'tukhoa' ? 'Tìm từ khóa ⇄ For You' : 'Quét ⇄ Xem'; }
+
+// Kế hoạch pha của một cấu hình; `null` = chế độ không chạy theo pha (For You).
 function keHoachPha(cfg) {
+  if (cfg && cfg.mode === 'tukhoa') return keHoachTim(cfg);
   if (!cfg || cfg.mode !== 'cycle') return null;
   const links = docDanhSachLink(cfg.viewLinks);
   let plan = phaseplan.buildPhasePlan('cycle', {
@@ -85,6 +119,21 @@ function docMoc(id) {
 }
 function ghiMoc(id, idx) {
   try { fs.writeFileSync(tepMoc(id), JSON.stringify({ idx, at: new Date().toISOString() }), 'utf8'); } catch (_) {}
+}
+
+// Mốc "tìm tới từ khóa nào" — theo TỪNG máy, trên đĩa, để lượt sau đi tiếp từ kế chứ không quét
+// lại từ đầu danh sách. Máy CHƯA có mốc thì bắt đầu ở một từ rải theo máy (băm id): 38 máy cùng
+// bắt đầu ở từ đầu tiên là 38 máy xem cùng một bộ kết quả — đúng loại trùng khiến 84% sound đạt
+// lọc bị bỏ (đo 2026-09-23).
+function tepMocTim(id) { return path.join(getDeviceDir(id), 'search_cursor.json'); }
+function docMocTim(id, n) {
+  try { return Math.max(0, JSON.parse(fs.readFileSync(tepMocTim(id), 'utf8')).idx | 0); } catch (_) { /* chưa có */ }
+  let h = 0;
+  for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return n > 0 ? h % n : 0;
+}
+function ghiMocTim(id, idx) {
+  try { fs.writeFileSync(tepMocTim(id), JSON.stringify({ idx, at: new Date().toISOString() }), 'utf8'); } catch (_) {}
 }
 
 function huyNghi(deviceId) {
@@ -954,7 +1003,7 @@ async function chayMot(params) {
     if (kh) {
       if (!kh.plan.length) {
         devslot.release(id);
-        return { ok: false, msg: 'Quét ⇄ Xem: cả hai pha đều bằng 0 — không có gì để chạy.' };
+        return { ok: false, msg: `${cfgMode(params.cfg)}: cả hai pha đều bằng 0 — không có gì để chạy.` };
       }
       const idx = (_pha.get(id) || 0) % kh.plan.length;
       const pha = kh.plan[idx];
@@ -964,11 +1013,22 @@ async function chayMot(params) {
           line: '⚠ Danh sách link cần xem đang trống — bỏ pha Xem, chỉ quét theo chu kỳ.',
         });
       }
+      if (kh.boTim && idx === 0) {
+        sendToRenderer('crawl-status', {
+          deviceId: id, kind: 'log',
+          line: '⚠ Danh sách từ khóa đang trống — bỏ pha Tìm, chỉ quét For You theo chu kỳ.',
+        });
+      }
+      const tuKhoa = kh.tuKhoa || [];
       chay = Object.assign({}, chay, {
-        pha: { key: pha.key, ms: pha.ms, links: kh.links, moc: docMoc(id) },
+        pha: {
+          key: pha.key, ms: pha.ms, links: kh.links, moc: docMoc(id),
+          tuKhoa, mocTim: pha.key === 'tim' ? docMocTim(id, tuKhoa.length) : 0,
+        },
       });
       sendToRenderer('crawl-status', {
-        deviceId: id, kind: 'phase', key: pha.key, ms: pha.ms, at: Date.now(), total: kh.links.length,
+        deviceId: id, kind: 'phase', key: pha.key, ms: pha.ms, at: Date.now(),
+        total: pha.key === 'tim' ? tuKhoa.length : kh.links.length,
       });
     }
 
@@ -988,6 +1048,8 @@ async function chayMot(params) {
         // Mốc xem tiếp của pha Xem: ghi NGAY mỗi lần xem xong một link, không đợi hết pha — app
         // có thể tắt giữa chừng.
         if (status.kind === 'view' && status.moc) ghiMoc(deviceId, status.idx);
+        // Mốc từ khóa của pha Tìm: ghi mỗi lần mở một từ — lượt sau bắt đầu ở từ kế.
+        if (status.kind === 'tim' && Number.isInteger(status.tiep)) ghiMocTim(deviceId, status.tiep);
         // Python báo hết ca TRƯỚC khi thoát. Ghi nhớ để lúc tiến trình đóng thì biết đây là
         // "hết ca" chứ không phải người dùng bấm Dừng hay máy lỗi.
         if (status.kind === 'status' && status.state === 'cycle_done') _cycleDone.add(deviceId);

@@ -138,7 +138,29 @@
           <select class="select" id="cfgMode">
             <option value="foryou">For You</option>
             <option value="cycle">Quét ⇄ Xem</option>
+            <option value="tukhoa">Tìm từ khóa ⇄ For You</option>
           </select>
+        </div>
+        <!-- ── Tìm từ khóa ⇄ For You (2026-09-24) ──
+             Bản PC có "Tìm kiếm từ khóa" (MỘT từ, chạy tới khi bấm Dừng). Bản phone: DANH SÁCH từ,
+             mỗi từ tối đa N video rồi sang từ kế, hết giờ pha Tìm thì lướt For You, rồi lặp lại. -->
+        <div class="section" id="cfgTimSection" style="display:none">
+          <div class="field-label">Tìm theo từ khóa trong … giờ</div>
+          <input class="input input-sm" type="number" step="0.5" id="cfgSearchHours" placeholder="2">
+          <div class="field-label">Rồi lướt For You trong … giờ (0 = chỉ tìm từ khóa)</div>
+          <input class="input input-sm" type="number" step="0.5" id="cfgSearchFyHours" placeholder="2">
+          <div class="field-label">Từ khóa — mỗi dòng một từ (có thể là hashtag, vd #storytimetiktok)</div>
+          <textarea class="input" id="cfgSearchKeywords" rows="5" placeholder="storytime&#10;AI voice&#10;#povtiktok"></textarea>
+          <div class="row gap wrap" id="timMauNhom">
+            <button type="button" class="btn btn-sm" data-nhom="ai">+ AI voice / TTS</button>
+            <button type="button" class="btn btn-sm" data-nhom="narrator">+ Voiceover / Narrator</button>
+            <button type="button" class="btn btn-sm" data-nhom="pov">+ Storytime / POV</button>
+            <button type="button" class="btn btn-sm" data-nhom="hashtag">+ Hashtag US</button>
+          </div>
+          <div class="section-desc">Bộ từ khóa theo nhóm voice cho thị trường Mỹ (quy trình "Phát hiện &amp; theo dõi voice/sound thuần"). Bấm để thêm vào danh sách — từ đã có sẽ không thêm lại.</div>
+          <div class="field-label">Mỗi từ khóa quét tối đa … video rồi sang từ kế</div>
+          <input class="input input-sm" type="number" id="cfgSearchPerKw" placeholder="30">
+          <div class="section-desc">Máy mở kết quả tìm kiếm của từ → tab Videos → quét lần lượt từng video y như For You (bấm sound, đọc số post, lấy link). Hết kết quả thì sang từ kế sớm. Mỗi máy bắt đầu ở một từ khác nhau và nhớ chỗ đang dở, nên các máy không quét trùng nhau và lượt sau đi tiếp từ kế. Pha Tìm chỉ thu sound, không tương tác.</div>
         </div>
         <div class="section" id="cfgXenKeSection">
           <div class="field-label">Quét For You trong … giờ</div>
