@@ -172,10 +172,15 @@ function startDevice(params, onData, onStatus) {
   // Pha Tìm (chế độ Tìm từ khóa ⇄ For You, 2026-09-24): đi CHUNG vòng quét với pha Quét, chỉ khác
   // chỗ đứng — trình phát kết quả tìm kiếm (xem tim_tu_khoa.py).
   const phaTim = !!(pha && pha.key === 'tim');
-  // Ghé thăm kênh TẮT trong Quét ⇄ Xem — clone QĐ-47/48 bản PC: `cycle` không ghé thăm; ghé
-  // thăm chính là phần mà Quét Mix cộng thêm. Tắt ở đây (một chỗ) thì cả bộ não lẫn ASK_ON đều
-  // thấy cùng một cấu hình.
-  const cfg = pha ? Object.assign({}, params.cfg || {}, { visitOn: false }) : (params.cfg || {});
+  // Ghé thăm kênh TẮT ở MỌI chế độ.
+  //   - Quét ⇄ Xem / Tìm: clone QĐ-47/48 bản PC — `cycle` không ghé thăm; ghé thăm chính là phần
+  //     mà Quét Mix cộng thêm.
+  //   - For You: tắt từ 2026-09-24, chủ dự án chốt "For You chỉ quét và tương tác". Follow, tym
+  //     trên feed, Not interested giữ nguyên. Công tắc "Ghé trang" trong Cài đặt vì thế không còn
+  //     tác dụng (index.html ghi rõ dưới công tắc).
+  // Tắt ở đây (một chỗ) thì cả bộ não lẫn ASK_ON đều thấy cùng một cấu hình — và `run-one.cjs`
+  // cũng đi qua đây.
+  const cfg = Object.assign({}, params.cfg || {}, { visitOn: false });
   if (_active.has(deviceId)) {
     throw new Error('Thiết bị này đang chạy rồi.');
   }

@@ -788,8 +788,9 @@ const idCfg = [...html.matchAll(/\sid="(cfg[A-Za-z0-9_]+)"/g)].map((m) => m[1]);
     && /CYCLE_SCAN_MIN: String\(pha && pha\.key !== 'view' \? pha\.ms \/ 60000/.test(rn));
   check('21c. Danh sách link đi qua TỆP (khối biến môi trường Windows có trần ~32K ký tự)',
     /VIEW_LINKS_FILE: phaXem \? ghiDanhSachLink\(deviceId, pha\.links\)/.test(rn));
-  check('21d. Ghé thăm TẮT trong Quét ⇄ Xem (clone QĐ-47/48 — ghé thăm là phần của Quét Mix)',
-    /const cfg = pha \? Object\.assign\(\{\}, params\.cfg \|\| \{\}, \{ visitOn: false \}\)/.test(rn));
+  // 2026-09-24: For You cũng tắt (chủ dự án chốt "For You chỉ quét và tương tác").
+  check('21d. Ghé thăm TẮT ở MỌI chế độ (Quét ⇄ Xem clone QĐ-47/48; For You tắt từ 2026-09-24)',
+    /const cfg = Object\.assign\(\{\}, params\.cfg \|\| \{\}, \{ visitOn: false \}\);/.test(rn));
   check('21e. Pha Xem không bật kênh hỏi/đáp (không thu, không bấm gì)',
     /ASK_ON: \(!phaXem && /.test(rn));
   check('21f. Mốc xem tiếp: runner chuyển tiếp, main ghi xuống đĩa',

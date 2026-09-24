@@ -5,6 +5,10 @@ ca. Nó nói bằng thao tác và con số, không bằng tên hàm.
 
 Mọi con số ở đây đều **đo được trên máy thật** (SM-N975F, TikTok v46.1.1), không phải ước lượng.
 
+> ⚠ **Cập nhật 2026-09-24:** máy **không còn ghé trang cá nhân** ở chế độ nào (chủ dự án chốt: For
+> You chỉ quét và tương tác). Các đoạn dưới đây nói về ghé trang, lướt trang, mở video trong lưới
+> không còn áp dụng; công tắc "Ghé trang" trong Cài đặt không có tác dụng.
+
 ---
 
 ## 1. Một ca chạy trông như thế nào
@@ -127,6 +131,6 @@ Theo thứ tự từ nhẹ tới nặng:
 | Quét sound, lọc, ghi link | **Chạy tốt** |
 | Bỏ qua livestream | **Chạy tốt** |
 | Tym (feed + trong trang), theo tỉ lệ | **Chạy tốt** |
-| Ghé trang + mở video ngẫu nhiên | **Mới, đang theo dõi** |
+| Ghé trang + mở video ngẫu nhiên | **Đã tắt** ở mọi chế độ (2026-09-24) |
 | Lọc ngôn ngữ, nhãn AI, Not interested | **Chạy tốt** |
 | **Follow** | ⚠ **CHƯA DÙNG ĐƯỢC.** Bấm được nhưng chưa xác minh chắc chắn được là follow có trụ lại không. Đã từng báo thành công giả. **Để tắt** cho tới khi có thông báo khác. |
