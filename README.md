@@ -75,7 +75,7 @@ Theo thứ tự, dừng ở cái đầu tiên thấy được:
 ```bash
 npm install
 npm start           # hoặc start.bat
-npm test            # ~790 phép thử, ~1 phút (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
+npm test            # ~880 phép thử, ~1 phút (gồm tests/mainflow — nạp NGUYÊN main.js với Electron giả)
 ```
 
 Trong app, bấm **🔌 Kiểm tra** ở dòng một máy. Nó kiểm từng mục và **mục nào đỏ thì in ra đúng
@@ -240,6 +240,31 @@ tay trên xiaowei` / `✓ @handle` / `⚠ lệch: @handle` / `✕ lý do`, và k
 - Mã 2FA còn dưới 5 giây là hết hạn → chờ sang mã mới rồi mới gõ. Sai mật khẩu / bị chặn → dừng
   ngay, không gõ lại (gõ lại nhiều lần dễ bị khoá tài khoản).
 
+### Tương tác ở pha Xem (2026-09-25)
+
+Chế độ Quét ⇄ Xem: ở pha Xem, máy **tim / lưu (Favorites) / follow VIDEO ĐẦU của mỗi link trong danh
+sách** (link video: đúng video đó; link sound: video máy mở từ trang sound). Các video vuốt thêm
+chỉ xem. Chủ dự án chốt: chỉ pha Xem, chỉ link tự điền, mỗi thao tác theo **tỉ lệ %** (Cài đặt →
+Quét ⇄ Xem: Tim / Lưu / Follow, mặc định 60 / 30 / 10; 0 = không làm).
+
+- Quyết định ở bộ não Node (`askproto.cjs`, câu hỏi `kind: 'view_act'`): tỉ lệ + **trần ngày dùng
+  chung với For You** (tim `likePerDay`, follow `followPerDay` + giãn cách + sổ chống trùng), lưu có
+  trần riêng `favPerDay` (mặc định 30). Follow vẫn qua nhịp `follow_confirm` sau khi vuốt sang trang
+  tác giả đọc @handle, bấm xong nạp lại trang để xác minh, rồi luôn quay về trình phát.
+- Python (`phone_actions.nut_tuong_tac` / `bat_nut_tuong_tac`): tìm nút theo content-desc (tiếng
+  Việt + tiếng Anh), đọc trạng thái bằng **icon con `selected=true`**, không phụ thuộc ngôn ngữ. Nút
+  đã bật sẵn thì **không bấm** (bấm là gỡ). Chỉ báo `ok` (và chỉ khi đó Node mới ghi sổ) khi đọc lại
+  thấy đã bật; riêng **lưu** thì icon không cập nhật ngay (đo: suốt 8 giây vẫn `false`), nên tấm
+  **"Đã lưu" / "Saved"** hiện ~3 giây cũng tính là xác minh.
+- Đo và chạy thật trên SM-A920F 52000352c0ee64df (TikTok 45.7.3, tiếng Việt, qua proxy): pha Xem
+  3 phút → `tym 6 · lưu 3`, không lần nào hỏng. Bản chụp thật ở `tests/fixtures/xem_*_45.7.3.xml`.
+- ⚠ **Follow ở pha Xem CHƯA chạy thật** (mới đo tới bước vuốt sang trang tác giả đọc được @handle
+  và thấy nút Follow, chưa bấm). Kênh đã follow thì không bấm lại (sổ chống trùng; nút đang là
+  "Following" thì `do_follow` không bấm), nhưng vẫn phải vào trang mới biết — dự định: kiểm nút "+"
+  dưới avatar ngay trên trình phát, cần đo trạng thái nút đó sau khi đã follow.
+- `_mo_link` chờ **30 giây** (trước 12): ngay sau khi TikTok mở lạnh, link sound mất ~26 giây mới
+  vào trang nhạc trên máy này — bản cũ báo "không mở được link" với link còn sống và bỏ cả pha Xem.
+
 ### Google Sheet (2026-09-18, v0.1.9)
 
 Modal ☁ giống bản PC: Spreadsheet ID (dán cả link cũng được), tên tab chính (cột A:E), **kho link
@@ -274,7 +299,9 @@ thoại đã đo là không đọc được độ dài video, nên xem theo **gi
 này, đúng như bản PC (ghé thăm là phần Quét Mix cộng thêm). Từ 2026-09-24 For You cũng tắt ghé
 thăm, nên không chế độ nào ghé trang.
 
-### Tìm từ khóa ⇄ For You (2026-09-24)
+### Tìm kiếm — tìm từ khóa ⇄ For You (2026-09-24)
+
+Tên hiện trên giao diện là **"Tìm kiếm"** (chủ dự án đổi tên 2026-09-25); giá trị lưu trong cài đặt vẫn là `mode: "tukhoa"`.
 
 Tìm theo danh sách từ khóa N giờ (mặc định 2) → nghỉ → lướt For You M giờ → nghỉ → lặp. Pha Tìm
 (`tim_tu_khoa.py`) mở `snssdk1233://search?keyword=<từ>` → tab Videos → video đầu → quét từng

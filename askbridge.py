@@ -50,7 +50,7 @@ FAIL_STREAK_OFF = 3          # bấy nhiêu lượt hỏng liên tiếp thì t�
 # Câu trả lời khi mọi thứ hỏng: không bấm gì.
 # ⚠ PHAI DU KHOA nhu cau tra loi that. Thieu mot khoa la duong HONG tra ve mot hinh
 # dang KHAC duong thuong, va noi goi doc phai `None` thay vi 0 — im lang va kho tim.
-SAFE = {"ni": 0, "why": "", "follow": 0, "like": 0, "visit": 0, "like_profile": 0}
+SAFE = {"ni": 0, "why": "", "follow": 0, "like": 0, "visit": 0, "like_profile": 0, "fav": 0}
 
 
 class AskBridge:
@@ -168,6 +168,8 @@ class AskBridge:
                     "like": 1 if ans.get("like") else 0,
                     "visit": 1 if ans.get("visit") else 0,
                     "like_profile": 1 if ans.get("like_profile") else 0,
+                    # Lưu video — chỉ pha Xem xin (kind "view_act", 2026-09-25).
+                    "fav": 1 if ans.get("fav") else 0,
                 }
         except Exception:
             return self._fail(aid, "error")

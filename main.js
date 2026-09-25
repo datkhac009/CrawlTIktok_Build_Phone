@@ -96,7 +96,7 @@ function keHoachTim(cfg) {
 }
 
 // Tên chế độ theo pha để đưa vào câu báo lỗi.
-function cfgMode(cfg) { return cfg && cfg.mode === 'tukhoa' ? 'Tìm từ khóa ⇄ For You' : 'Quét ⇄ Xem'; }
+function cfgMode(cfg) { return cfg && cfg.mode === 'tukhoa' ? 'Tìm kiếm' : 'Quét ⇄ Xem'; }
 
 // Kế hoạch pha của một cấu hình; `null` = chế độ không chạy theo pha (For You).
 function keHoachPha(cfg) {

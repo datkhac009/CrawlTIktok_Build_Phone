@@ -93,6 +93,12 @@ const DEFAULT_SETTINGS = {
   viewSecMax: 20,
   viewScrollMin: 20,
   viewScrollMax: 30,
+  // Tương tác với video đầu của mỗi link ở pha Xem (2026-09-25) — tỉ lệ %, 0 = không làm.
+  // Tim và follow dùng chung trần ngày với For You; lưu có trần riêng `favPerDay`.
+  viewLikePct: 60,
+  viewFavPct: 30,
+  viewFollowPct: 10,
+  favPerDay: 30,
 
   // ── Tìm từ khóa ⇄ For You (2026-09-24) ── bản PC chỉ có MỘT từ (`keyword`), chạy tới khi Dừng.
   searchKeywords: '',
@@ -944,6 +950,10 @@ function openSettingsModal(ids) {
   $('cfgViewSecMax').value = base.viewSecMax;
   $('cfgViewScrollMin').value = base.viewScrollMin;
   $('cfgViewScrollMax').value = base.viewScrollMax;
+  $('cfgViewLikePct').value = base.viewLikePct;
+  $('cfgViewFavPct').value = base.viewFavPct;
+  $('cfgViewFollowPct').value = base.viewFollowPct;
+  $('cfgFavPerDay').value = base.favPerDay;
   apCheDo();
 
   $('cfgNiBlockCollect').checked = base.niBlockCollect !== false;
@@ -1060,6 +1070,10 @@ async function saveSettings() {
     viewSecMax: numOf('cfgViewSecMax', D.viewSecMax),
     viewScrollMin: numOf('cfgViewScrollMin', D.viewScrollMin),
     viewScrollMax: numOf('cfgViewScrollMax', D.viewScrollMax),
+    viewLikePct: numOf('cfgViewLikePct', D.viewLikePct),
+    viewFavPct: numOf('cfgViewFavPct', D.viewFavPct),
+    viewFollowPct: numOf('cfgViewFollowPct', D.viewFollowPct),
+    favPerDay: numOf('cfgFavPerDay', D.favPerDay),
 
     niBlockCollect: document.getElementById('cfgNiBlockCollect').checked,
     niEnabled: document.getElementById('cfgNiEnabled').checked,

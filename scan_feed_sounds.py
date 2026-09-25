@@ -168,6 +168,8 @@ VIEW_SEC_MAX = float(os.environ.get("VIEW_SEC_MAX", "20") or 0)
 # Vuot them bao nhieu video sau video dau (ban PC: 20-30). 0 = khong vuot.
 VIEW_SCROLL_MIN = int(float(os.environ.get("VIEW_SCROLL_MIN", "20") or 0))
 VIEW_SCROLL_MAX = int(float(os.environ.get("VIEW_SCROLL_MAX", "30") or 0))
+# Pha Xem co tuong tac voi video dau cua moi link khong (2026-09-25) — runner bat khi co ti le > 0.
+VIEW_ACT_ON = os.environ.get("VIEW_ACT_ON") == "1"
 
 # ── PHA TIM THEO TU KHOA (2026-09-24) — xem tim_tu_khoa.py ──
 # Pha Tim di CHUNG vong quet For You (thu sound, dem, xu ly loi, noi lai, kiem VPN y het), chi khac
@@ -1395,6 +1397,61 @@ def _thi_hanh(d, bridge, aid, ans, info, res, da_roi_feed=True):
         bridge.acted(aid, **kq)
 
 
+def tuong_tac_xem(d, canh):
+    """Pha Xem: tim / luu / follow VIDEO DAU cua link dang xem (chu du an chot 2026-09-25: chi
+    tuong tac voi link tu dien, chi video dau, theo ti le, chung tran ngay voi For You).
+
+    Hoi bo nao (askproto: kind "view_act") xem lan nay duoc lam gi — ti le + tran ngay nam o do,
+    khong o day. Moi cu bam deu DOC LAI nut roi moi bao "ok"; Node chi ghi so khi nhan "ok".
+    Follow di DUNG duong cua For You: vuot sang trang tac gia doc @handle -> nhip `follow_confirm`
+    (chong trung, gian cach) -> bam -> nap lai trang de xac minh -> LUON quay ve trinh phat.
+    """
+    if not VIEW_ACT_ON or not canh.enabled:
+        return
+    try:
+        info = PA.read_video_info(d) or {}
+    except Exception:
+        info = {}
+    tac_gia = str(info.get("author") or "")
+    aid = canh.ask(kind="view_act", author=tac_gia, desc=str(info.get("desc") or ""))
+    ans = canh.take(aid) if aid is not None else None
+    if not ans or not (ans.get("like") or ans.get("fav") or ans.get("follow")):
+        return
+    kq = {}
+    # Thu tu: tim, luu roi moi follow — follow roi khoi trinh phat, hai cu kia can dung o day.
+    if ans.get("like"):
+        BUOC["v"] = "pha Xem: thả tim"
+        kq["like"] = PA.bat_nut_tuong_tac(d, "tim", log)
+        time.sleep(random.uniform(0.8, 2.0))
+    if ans.get("fav"):
+        BUOC["v"] = "pha Xem: lưu video"
+        kq["fav"] = PA.bat_nut_tuong_tac(d, "luu", log)
+        time.sleep(random.uniform(0.8, 2.0))
+    if ans.get("follow"):
+        BUOC["v"] = "pha Xem: mở trang tác giả để follow"
+        handle = PA.open_profile_read_handle(d, log)
+        try:
+            if not handle:
+                kq["follow"] = "fail"
+            else:
+                xn = canh.ask(kind="follow_confirm", handle=handle, author=tac_gia, desc="", badges=[])
+                quyet = canh.take(xn) if xn is not None else None
+                if quyet and quyet.get("follow"):
+                    kq["follow"] = PA.do_follow(d, log)
+                    kq["handle"] = handle
+                    if kq["follow"] == "ok":
+                        con = PA.verify_follow_after_reload(d, log)
+                        if con == "reverted":
+                            kq["follow"] = "reverted"
+                        elif con == "unknown":
+                            kq["follow"] = "ok_unverified"
+                else:
+                    kq["follow"] = "not_needed"
+        finally:
+            PA.close_profile(d, log)
+    canh.acted(aid, **kq)
+
+
 def chay_pha_xem(d, pkg):
     """Pha XEM cua che do Quet <-> Xem. KHONG thu sound, KHONG bam gi — viec cua no la nuoi tai
     khoan: mo trang sound, xem mot video, vuot them vai chuc video cua cung sound, sang link ke.
@@ -1434,7 +1491,8 @@ def chay_pha_xem(d, pkg):
             d, pkg, links[i], han, dung,
             (VIEW_SEC_MIN, max(VIEW_SEC_MIN, VIEW_SEC_MAX)),
             (VIEW_SCROLL_MIN, max(VIEW_SCROLL_MIN, VIEW_SCROLL_MAX)),
-            (DWELL_MIN, max(DWELL_MIN, DWELL_MAX)), log=log)
+            (DWELL_MIN, max(DWELL_MIN, DWELL_MAX)), log=log,
+            tuong_tac=(lambda dd: tuong_tac_xem(dd, canh)) if VIEW_ACT_ON else None)
         if kq == "dung":
             log("App đã đóng — thoát.")
             return

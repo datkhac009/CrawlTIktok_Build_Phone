@@ -1,0 +1,485 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+
+<hierarchy rotation="0">
+
+  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="0" hint="">
+
+    <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+      <node index="0" text="" resource-id="" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+        <node index="0" text="" resource-id="android:id/content" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="2" hint="">
+
+          <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+            <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/trp" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="2" hint="">
+
+              <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/trs" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+                <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/fn1" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/ixj" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="5" hint="" />
+
+                  <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/ie2" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="" />
+
+                  <node index="2" text="" resource-id="com.zhiliaoapp.musically:id/a7w" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="6" hint="" />
+
+                  <node index="3" text="" resource-id="com.zhiliaoapp.musically:id/idy" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="2" hint="">
+
+                    <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+                      <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/viewpager" class="X.18gp" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="true" focused="false" scrollable="true" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+                        <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/udi" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+                          <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/tl1" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+                            <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="11" hint="" />
+
+                            <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/svh" class="android.view.ViewGroup" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="false" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+                              <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/nix" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+                                <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/fpq" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="8" hint="" />
+
+                                <node index="2" text="" resource-id="com.zhiliaoapp.musically:id/hft" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="" />
+
+                                <node index="3" text="" resource-id="com.zhiliaoapp.musically:id/viewpager_container" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="2" hint="">
+
+                                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/view_pager_layout_wrapper" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="2" hint="">
+
+                                    <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/viewpager" class="androidx.viewpager.widget.ViewPager" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="true" focused="false" scrollable="true" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="2" hint="">
+
+                                      <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/view_rootview" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+                                        <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/ol_" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="11" hint="" />
+
+                                        <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/long_press_layout" class="android.view.View" package="com.zhiliaoapp.musically" content-desc="Video" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="3" hint="" />
+
+                                        <node index="2" text="" resource-id="com.zhiliaoapp.musically:id/hn4" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="16" hint="" />
+
+                                        <node index="3" text="" resource-id="com.zhiliaoapp.musically:id/ddw" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="19" hint="" />
+
+                                        <node index="4" text="" resource-id="com.zhiliaoapp.musically:id/a56" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="26" hint="" />
+
+                                        <node index="5" text="" resource-id="com.zhiliaoapp.musically:id/video_hot_swap_overlay_view" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="53" hint="" />
+
+                                        <node index="6" text="" resource-id="com.zhiliaoapp.musically:id/video_hot_swap_paywall_view" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="52" hint="" />
+
+                                        <node index="7" text="" resource-id="com.zhiliaoapp.musically:id/qej" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="23" hint="">
+
+                                          <node index="0" text="" resource-id="" class="android.widget.RelativeLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+                                            <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/tgd" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="" />
+
+                                          </node>
+
+                                        </node>
+
+                                        <node index="8" text="" resource-id="com.zhiliaoapp.musically:id/a4v" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="31" hint="" />
+
+                                        <node index="9" text="" resource-id="com.zhiliaoapp.musically:id/video_sticker_container_area" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="13" hint="">
+
+                                          <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/video_visible_area_container_sticker" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="2" hint="">
+
+                                            <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/kqk" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="" />
+
+                                          </node>
+
+                                        </node>
+
+                                        <node index="10" text="" resource-id="com.zhiliaoapp.musically:id/video_container_area" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="7" hint="">
+
+                                          <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/video_visible_area_container" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="2" hint="">
+
+                                            <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/o0o" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="3" hint="" />
+
+                                            <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/player_view" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="2" hint="">
+
+                                              <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/v6q" class="android.view.View" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="" />
+
+                                            </node>
+
+                                            <node index="2" text="" resource-id="com.zhiliaoapp.musically:id/video_adapted_wrapper_container" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="4" hint="" />
+
+                                          </node>
+
+                                        </node>
+
+                                        <node index="11" text="" resource-id="com.zhiliaoapp.musically:id/widget_container" class="X.1AZV" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1276]" drawing-order="22" hint="">
+
+                                          <node NAF="true" index="0" text="" resource-id="com.zhiliaoapp.musically:id/iiz" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1194]" drawing-order="11" hint="" />
+
+                                          <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/cdc" class="X.1AZV" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1130]" drawing-order="10" hint="">
+
+                                            <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/w6b" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[26,682][594,1130]" drawing-order="2" hint="" />
+
+                                          </node>
+
+                                          <node index="2" text="" resource-id="com.zhiliaoapp.musically:id/y8z" class="X.1AZV" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1130]" drawing-order="3" hint="">
+
+                                            <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/by5" class="X.1AZV" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1077]" drawing-order="10" hint="" />
+
+                                            <node NAF="true" index="1" text="" resource-id="com.zhiliaoapp.musically:id/m0o" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[346,0][374,52]" drawing-order="6" hint="">
+
+                                              <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/vfe" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[346,0][374,52]" drawing-order="1" hint="" />
+
+                                            </node>
+
+                                            <node index="2" text="" resource-id="com.zhiliaoapp.musically:id/kqi" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,466][720,1130]" drawing-order="8" hint="">
+
+                                              <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/ehq" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[607,466][720,601]" drawing-order="1" hint="">
+
+                                                <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[607,466][720,601]" drawing-order="1" hint="">
+
+                                                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/hnd" class="android.widget.RelativeLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[607,480][720,601]" drawing-order="1" hint="">
+
+                                                    <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/be1" class="android.widget.RelativeLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[614,480][720,582]" drawing-order="1" hint="">
+
+                                                      <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/i3i" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[619,483][714,578]" drawing-order="1" hint="">
+
+                                                        <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/user_avatar" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="Hồ sơ Ten Tac Gia" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[628,492][705,569]" drawing-order="2" hint="" />
+
+                                                      </node>
+
+                                                      <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/user_avatar_layout_indicator" class="android.view.View" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[625,489][709,573]" drawing-order="2" hint="" />
+
+                                                    </node>
+
+                                                    <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/i_m" class="android.widget.Button" package="com.zhiliaoapp.musically" content-desc="Follow Ten Tac Gia" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[614,540][720,601]" drawing-order="3" hint="">
+
+                                                      <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/i_w" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[642,547][691,589]" drawing-order="2" hint="" />
+
+                                                    </node>
+
+                                                  </node>
+
+                                                </node>
+
+                                              </node>
+
+                                              <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/ehq" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,601][720,706]" drawing-order="2" hint="">
+
+                                                <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/fpv" class="android.widget.Button" package="com.zhiliaoapp.musically" content-desc="Thích video. 150,3K lượt thích" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,601][720,706]" drawing-order="1" hint="">
+
+                                                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/fph" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,601][720,680]" drawing-order="1" hint="">
+
+                                                    <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/fpb" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="Thích" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[628,601][707,680]" drawing-order="1" hint="" />
+
+                                                  </node>
+
+                                                  <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/fpj" class="android.widget.RelativeLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,680][720,695]" drawing-order="2" hint="">
+
+                                                    <node index="0" text="150,3K" resource-id="com.zhiliaoapp.musically:id/fpi" class="android.widget.Button" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,680][720,695]" drawing-order="1" hint="" />
+
+                                                  </node>
+
+                                                </node>
+
+                                              </node>
+
+                                              <node index="2" text="" resource-id="com.zhiliaoapp.musically:id/ehq" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,706][720,811]" drawing-order="3" hint="">
+
+                                                <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/eb7" class="android.widget.Button" package="com.zhiliaoapp.musically" content-desc="Đọc hoặc viết bình luận. 246 bình luận" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,706][720,811]" drawing-order="1" hint="">
+
+                                                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/eb8" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,706][720,811]" drawing-order="1" hint="">
+
+                                                    <node NAF="true" index="0" text="" resource-id="com.zhiliaoapp.musically:id/e77" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,706][720,785]" drawing-order="1" hint="">
+
+                                                      <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/e8i" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[615,706][720,785]" drawing-order="1" hint="">
+
+                                                        <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/e8a" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[639,717][695,773]" drawing-order="1" hint="" />
+
+                                                      </node>
+
+                                                    </node>
+
+                                                    <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/e7b" class="android.widget.RelativeLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,785][720,800]" drawing-order="2" hint="">
+
+                                                      <node index="0" text="246" resource-id="com.zhiliaoapp.musically:id/e7a" class="android.widget.Button" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[613,785][714,800]" drawing-order="1" hint="" />
+
+                                                    </node>
+
+                                                  </node>
+
+                                                </node>
+
+                                              </node>
+
+                                              <node index="3" text="" resource-id="com.zhiliaoapp.musically:id/ehq" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,811][720,916]" drawing-order="4" hint="">
+
+                                                <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/hlx" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,811][720,916]" drawing-order="1" hint="">
+
+                                                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/hly" class="android.widget.Button" package="com.zhiliaoapp.musically" content-desc="Thêm hoặc xóa video này khỏi mục Yêu thích." checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,811][720,916]" drawing-order="1" hint="">
+
+                                                    <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/hku" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,811][720,890]" drawing-order="1" hint="">
+
+                                                      <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/hko" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[628,811][707,890]" drawing-order="1" hint="" />
+
+                                                    </node>
+
+                                                    <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/hkx" class="android.widget.RelativeLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,890][720,905]" drawing-order="2" hint="">
+
+                                                      <node index="0" text="6.661" resource-id="com.zhiliaoapp.musically:id/hkw" class="android.widget.TextView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,890][720,905]" drawing-order="1" hint="" />
+
+                                                    </node>
+
+                                                  </node>
+
+                                                </node>
+
+                                              </node>
+
+                                              <node index="4" text="" resource-id="com.zhiliaoapp.musically:id/ehq" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,964][720,1130]" drawing-order="7" hint="">
+
+                                                <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/oqb" class="android.widget.RelativeLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,964][720,1130]" drawing-order="1" hint="">
+
+                                                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/p7l" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[518,964][684,1130]" drawing-order="2" hint="" />
+
+                                                  <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/oq3" class="android.widget.Button" package="com.zhiliaoapp.musically" content-desc="Âm gốc của ten sound" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,1021][720,1130]" drawing-order="3" hint="">
+
+                                                    <node NAF="true" index="0" text="" resource-id="com.zhiliaoapp.musically:id/oqd" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,1039][720,1109]" drawing-order="2" hint="">
+
+                                                      <node NAF="true" index="0" text="" resource-id="com.zhiliaoapp.musically:id/ooe" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,1039][720,1109]" drawing-order="1" hint="">
+
+                                                        <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/ooc" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[634,1039][706,1109]" drawing-order="1" hint="">
+
+                                                          <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/oof" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[634,1039][706,1109]" drawing-order="1" hint="">
+
+                                                            <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/oo8" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[635,1039][705,1109]" drawing-order="1" hint="" />
+
+                                                          </node>
+
+                                                        </node>
+
+                                                      </node>
+
+                                                    </node>
+
+                                                  </node>
+
+                                                </node>
+
+                                              </node>
+
+                                              <node index="5" text="" resource-id="com.zhiliaoapp.musically:id/ehq" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,916][720,1021]" drawing-order="5" hint="">
+
+                                                <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/uwx" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="true" password="false" selected="false" visible-to-user="true" bounds="[608,916][720,1021]" drawing-order="1" hint="">
+
+                                                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/fpv" class="android.widget.Button" package="com.zhiliaoapp.musically" content-desc="Chia sẻ video. 19,8K lượt chia sẻ" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,916][720,1021]" drawing-order="1" hint="">
+
+                                                    <node NAF="true" index="0" text="" resource-id="com.zhiliaoapp.musically:id/ut5" class="android.view.ViewGroup" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,916][720,983]" drawing-order="1" hint="">
+
+                                                      <node NAF="true" index="0" text="" resource-id="com.zhiliaoapp.musically:id/utp" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="true" password="false" selected="false" visible-to-user="true" bounds="[640,927][696,983]" drawing-order="1" hint="" />
+
+                                                    </node>
+
+                                                    <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/ut9" class="android.widget.RelativeLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[608,983][720,1020]" drawing-order="2" hint="">
+
+                                                      <node index="0" text="19,8K" resource-id="com.zhiliaoapp.musically:id/ut8" class="android.widget.Button" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="true" password="false" selected="false" visible-to-user="true" bounds="[615,983][720,1020]" drawing-order="1" hint="" />
+
+                                                    </node>
+
+                                                  </node>
+
+                                                </node>
+
+                                              </node>
+
+                                            </node>
+
+                                            <node index="4" text="" resource-id="com.zhiliaoapp.musically:id/bi5" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1077][720,1130]" drawing-order="3" hint="">
+
+                                              <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/bi4" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[21,1077][580,1130]" drawing-order="1" hint="">
+
+                                                <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/kqe" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[21,1077][580,1130]" drawing-order="1" hint="">
+
+                                                  <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/ehq" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[21,1077][580,1116]" drawing-order="11" hint="">
+
+                                                    <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/hqf" class="android.view.ViewGroup" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[21,1077][224,1116]" drawing-order="1" hint="">
+
+                                                      <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/tl1" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[21,1077][224,1116]" drawing-order="1" hint="">
+
+                                                        <node index="0" text="Ten Tac Gia" resource-id="com.zhiliaoapp.musically:id/title" class="android.widget.Button" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[21,1077][127,1116]" drawing-order="2" hint="" />
+
+                                                        <node index="3" text="· 06-20" resource-id="com.zhiliaoapp.musically:id/zwj" class="android.widget.TextView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[134,1081][224,1114]" drawing-order="11" hint="" />
+
+                                                      </node>
+
+                                                    </node>
+
+                                                  </node>
+
+                                                </node>
+
+                                              </node>
+
+                                            </node>
+
+                                            <node NAF="true" index="5" text="" resource-id="com.zhiliaoapp.musically:id/videomusiccoverblock" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[554,964][720,1130]" drawing-order="1" hint="" />
+
+                                          </node>
+
+                                          <node index="4" text="" resource-id="com.zhiliaoapp.musically:id/kq7" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1130][720,1194]" drawing-order="4" hint="">
+
+                                            <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/ehs" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1130][720,1194]" drawing-order="2" hint="">
+
+                                              <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/egi" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1130][720,1194]" drawing-order="1" hint="">
+
+                                                <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/ho1" class="android.view.ViewGroup" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1130][720,1194]" drawing-order="1" hint="">
+
+                                                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/u61" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[21,1130][671,1194]" drawing-order="1" hint="">
+
+                                                    <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/u60" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[21,1130][671,1194]" drawing-order="1" hint="">
+
+                                                      <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/ega" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="Tìm kiếm" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[21,1148][49,1176]" drawing-order="1" hint="" />
+
+                                                      <node index="1" text="Tìm kiếm · tu goi y" resource-id="com.zhiliaoapp.musically:id/u5z" class="android.widget.TextView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[56,1148][664,1176]" drawing-order="2" hint="" />
+
+                                                    </node>
+
+                                                  </node>
+
+                                                  <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/u3d" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[671,1148][699,1176]" drawing-order="4" hint="">
+
+                                                    <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/u0f" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[671,1148][699,1176]" drawing-order="1" hint="" />
+
+                                                  </node>
+
+                                                </node>
+
+                                              </node>
+
+                                            </node>
+
+                                          </node>
+
+                                          <node index="5" text="" resource-id="com.zhiliaoapp.musically:id/kqd" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1192][720,1194]" drawing-order="6" hint="">
+
+                                            <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1192][720,1194]" drawing-order="1" hint="" />
+
+                                          </node>
+
+                                        </node>
+
+                                        <node index="12" text="" resource-id="com.zhiliaoapp.musically:id/gradual_top" class="android.view.View" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,238]" drawing-order="8" hint="" />
+
+                                        <node index="15" text="" resource-id="com.zhiliaoapp.musically:id/gradual_bottom" class="android.view.View" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1050][720,1280]" drawing-order="21" hint="" />
+
+                                      </node>
+
+                                    </node>
+
+                                  </node>
+
+                                </node>
+
+                                <node index="4" text="" resource-id="com.zhiliaoapp.musically:id/yu_" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,196][720,1079]" drawing-order="9" hint="" />
+
+                              </node>
+
+                            </node>
+
+                            <node index="2" text="" resource-id="com.zhiliaoapp.musically:id/c7g" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="8" hint="">
+
+                              <node index="0" text="" resource-id="" class="android.widget.RelativeLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="2" hint="">
+
+                                <node index="0" text="" resource-id="" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1213][720,1280]" drawing-order="1" hint="">
+
+                                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/c87" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[21,1213][699,1280]" drawing-order="4" hint="">
+
+                                    <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/ss1" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[232,1225][488,1267]" drawing-order="1" hint="">
+
+                                      <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/ssa" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[232,1225][274,1267]" drawing-order="1" hint="" />
+
+                                      <node index="1" text="Sử dụng âm thanh" resource-id="com.zhiliaoapp.musically:id/st0" class="android.widget.TextView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[281,1230][488,1262]" drawing-order="2" hint="" />
+
+                                    </node>
+
+                                  </node>
+
+                                </node>
+
+                              </node>
+
+                            </node>
+
+                            <node index="3" text="" resource-id="com.zhiliaoapp.musically:id/fnf" class="android.view.View" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,157]" drawing-order="2" hint="" />
+
+                            <node index="4" text="" resource-id="com.zhiliaoapp.musically:id/ied" class="android.view.ViewGroup" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,42][720,133]" drawing-order="6" hint="">
+
+                              <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/bj1" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="Quay lại" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[10,42][101,133]" drawing-order="1" hint="" />
+
+                              <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/ncd" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[101,56][692,119]" drawing-order="9" hint="">
+
+                                <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/ncg" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[101,56][535,119]" drawing-order="1" hint="">
+
+                                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/lpk" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="Tìm kiếm" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[122,73][150,101]" drawing-order="1" hint="" />
+
+                                  <node index="1" text="tu goi y 2" resource-id="com.zhiliaoapp.musically:id/tv_search_sug_word" class="android.widget.TextView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[161,71][428,104]" drawing-order="2" hint="" />
+
+                                </node>
+
+                                <node index="1" text="" resource-id="" class="android.view.View" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[535,75][536,100]" drawing-order="2" hint="" />
+
+                                <node index="2" text="Tìm kiếm" resource-id="com.zhiliaoapp.musically:id/z48" class="android.widget.Button" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[536,56][692,119]" drawing-order="3" hint="" />
+
+                              </node>
+
+                            </node>
+
+                            <node index="6" text="" resource-id="com.zhiliaoapp.musically:id/udm" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1168][720,1280]" drawing-order="10" hint="">
+
+                              <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1168][720,1280]" drawing-order="1" hint="">
+
+                                <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1168][720,1280]" drawing-order="1" hint="">
+
+                                  <node index="0" text="" resource-id="com.zhiliaoapp.musically:id/video_seek_bar" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1168][720,1217]" drawing-order="5" hint="">
+
+                                    <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,1168][720,1217]" drawing-order="1" hint="" />
+
+                                  </node>
+
+                                </node>
+
+                              </node>
+
+                            </node>
+
+                          </node>
+
+                        </node>
+
+                      </node>
+
+                    </node>
+
+                  </node>
+
+                  <node index="4" text="" resource-id="" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][14,14]" drawing-order="3" hint="" />
+
+                  <node index="5" text="" resource-id="" class="android.widget.ImageView" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[706,0][720,14]" drawing-order="4" hint="" />
+
+                </node>
+
+              </node>
+
+            </node>
+
+            <node index="1" text="" resource-id="com.zhiliaoapp.musically:id/xq" class="android.widget.LinearLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="1" hint="">
+
+              <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.zhiliaoapp.musically" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" visible-to-user="true" bounds="[0,0][720,1280]" drawing-order="2" hint="" />
+
+            </node>
+
+          </node>
+
+        </node>
+
+      </node>
+
+    </node>
+
+  </node>
+
+</hierarchy>
