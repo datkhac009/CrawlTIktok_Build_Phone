@@ -138,7 +138,7 @@
           <select class="select" id="cfgMode">
             <option value="foryou">For You</option>
             <option value="cycle">Quét ⇄ Xem</option>
-            <option value="tukhoa">Tìm từ khóa ⇄ For You</option>
+            <option value="tukhoa">Tìm kiếm</option>
           </select>
         </div>
         <!-- ── Tìm từ khóa ⇄ For You (2026-09-24) ──
@@ -180,7 +180,16 @@
             <input class="input input-sm" type="number" id="cfgViewScrollMin" placeholder="20">
             <input class="input input-sm" type="number" id="cfgViewScrollMax" placeholder="30">
           </div>
-          <div class="section-desc">Pha Xem KHÔNG thu sound và không bấm gì — việc của nó là nuôi tài khoản. Pha Xem sau xem tiếp từ link đang dở, kể cả sau khi tắt app. Ghé thăm kênh không chạy ở chế độ này (giống bản PC) — sẽ có ở Quét Mix.</div>
+          <div class="field-label">Tương tác với video đầu của mỗi link — tỉ lệ % (0 = không làm)</div>
+          <div class="row gap">
+            <label class="section-desc">Tim <input class="input input-sm" type="number" min="0" max="100" id="cfgViewLikePct" placeholder="60"></label>
+            <label class="section-desc">Lưu <input class="input input-sm" type="number" min="0" max="100" id="cfgViewFavPct" placeholder="30"></label>
+            <label class="section-desc">Follow <input class="input input-sm" type="number" min="0" max="100" id="cfgViewFollowPct" placeholder="10"></label>
+          </div>
+          <div class="field-label">Lưu tối đa … video mỗi ngày</div>
+          <input class="input input-sm" type="number" id="cfgFavPerDay" placeholder="30">
+          <div class="section-desc">Chỉ video ĐẦU của mỗi link trong danh sách (link video: đúng video đó; link sound: video máy mở từ trang sound) — các video vuốt thêm chỉ xem. Tim và follow dùng CHUNG trần mỗi ngày với For You (ô "Tối đa … tym" / "Tối đa … follow mỗi máy mỗi ngày" trong phần Tương tác); follow vẫn không trùng kênh và giãn cách như For You. Mỗi cú bấm đều đọc lại nút để xác minh rồi mới tính.</div>
+          <div class="section-desc">Pha Xem KHÔNG thu sound — việc của nó là nuôi tài khoản (tương tác theo các ô tỉ lệ ở trên). Pha Xem sau xem tiếp từ link đang dở, kể cả sau khi tắt app. Ghé thăm kênh không chạy ở chế độ này (giống bản PC) — sẽ có ở Quét Mix.</div>
         </div>
 
         <div class="section">

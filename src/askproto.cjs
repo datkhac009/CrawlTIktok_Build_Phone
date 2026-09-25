@@ -59,9 +59,14 @@ const { normalizeHandle } = require('./followpolicy.cjs');
 const PROTO_VERSION = 4;
 
 // Câu trả lời an toàn: không bấm gì cả. Dùng cho MỌI đường hỏng.
+// `fav` (2026-09-25) = quyền LƯU video vào Favorites — chỉ pha Xem xin (kind 'view_act').
 function safeAnswer(id) {
-  return { v: PROTO_VERSION, id: id | 0, ni: 0, why: '', follow: 0, like: 0, visit: 0, like_profile: 0 };
+  return { v: PROTO_VERSION, id: id | 0, ni: 0, why: '', follow: 0, like: 0, visit: 0, like_profile: 0, fav: 0 };
 }
+
+// Trần lưu video mỗi ngày khi cấu hình không đặt. Chưa có số đo nào về ngưỡng TikTok siết; lấy
+// bằng một nửa trần tym vì lưu là tín hiệu "thích" mạnh hơn tym.
+const FAV_PER_DAY = 30;
 
 function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random, now = Date.now }) {
   // ── TỈ LỆ TYM: bốc MỘT lần cho cả lượt chạy ──
@@ -115,6 +120,8 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random,
     trungKenh: 0,     // số lần ghé xong mới biết đã follow người này rồi
     tymTrang: 0,      // số cú tym lên video mở trong trang cá nhân
     gheTrung: 0,      // số lần vào trang rồi quay ra vì đã ghé gần đây
+    xemHoi: 0,        // pha Xem: số link đã hỏi quyền tương tác
+    fav: 0, favFail: 0,
   };
   // ── GHÉ HỎNG LIÊN TIẾP THÌ LÙI LẠI, KHÔNG ĐẬP MÃI ──
   //
@@ -179,6 +186,33 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random,
         // Nhớ handle để `noteActed` ghi sổ đúng kênh, kể cả khi Python quên gửi lại.
         dangCho = { id, handle: h };
         return { v: PROTO_VERSION, id, ni: 0, why: q.reason || '', follow: 1, like: 0, visit: 0, like_profile: 0 };
+      }
+
+      // ── PHA XEM: TƯƠNG TÁC VỚI VIDEO ĐẦU CỦA LINK NGƯỜI DÙNG ĐIỀN (2026-09-25) ──
+      //
+      // Chủ dự án: tương tác (tim, lưu, follow) CHỈ trong pha Xem, CHỈ với video đầu của mỗi link
+      // tự điền, mỗi thao tác theo một tỉ lệ % chỉnh được, và DÙNG CHUNG trần ngày với For You.
+      //
+      // Không qua bộ lọc ngôn ngữ / nhãn AI: link do chính người dùng chọn. Follow ở đây vẫn CHỈ là
+      // "đáng ghé để follow" — giấy phép thật vẫn do nhịp `follow_confirm` cấp sau khi đọc @handle,
+      // nên sổ chống trùng và giãn cách giữa hai cú follow giữ nguyên.
+      //
+      // ⚠ Tỉ lệ thiếu / hỏng = 0 = KHÔNG làm (cùng quy ước "0 là tắt" của cả file). Giao diện mới
+      // đặt giá trị mặc định; bộ não không tự bịa ra một tỉ lệ.
+      if (ask.kind === 'view_act') {
+        dem.xemHoi++;
+        const r = { ...safeAnswer(id), why: 'view' };
+        const bocTrung = (pt) => { const p = _pt(pt, 0); return p > 0 && rng() * 100 < p; };
+        if (bocTrung(cfg.viewLikePct) && daycount.remaining(dir, 'like', cfg.likePerDay) > 0) r.like = 1;
+        if (bocTrung(cfg.viewFavPct) && daycount.remaining(dir, 'fav', cfg.favPerDay ?? FAV_PER_DAY) > 0) r.fav = 1;
+        if (bocTrung(cfg.viewFollowPct)) {
+          const q = followquota.canFollowBudget({
+            deviceId, dir,
+            opts: { perDay: cfg.followPerDay, gapMinSec: cfg.followGapMin, gapMaxSec: cfg.followGapMax },
+          });
+          if (q.ok) r.follow = 1;
+        }
+        return r;
       }
 
       // ── NHỊP 2b: CÓ NÊN Ở LẠI TRANG NÀY KHÔNG — chống ghé trùng qua ngày ──
@@ -403,6 +437,10 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random,
       if (evt.like_profile === 'ok') { daycount.record(dir, 'like'); dem.like++; dem.tymTrang++; }
       else if (evt.like_profile === 'fail') { dem.likeFail++; }
 
+      // Lưu video (pha Xem) — trần ngày riêng `favPerDay`, chỉ ghi khi Python đã thấy nút đổi.
+      if (evt.fav === 'ok') { daycount.record(dir, 'fav'); dem.fav++; }
+      else if (evt.fav === 'fail') { dem.favFail++; }
+
       // ── KẾT QUẢ GHÉ: đếm, và điều chỉnh quãng lùi ──
       // `skip_trung` KHÔNG phải hỏng: máy đã vào được trang và đọc được @handle, chỉ là sổ bảo
       // thôi. Tính nó thành hỏng là sổ chống trùng càng chạy tốt thì ghé thăm càng bị phạt nặng.
@@ -469,6 +507,8 @@ function makeBrain({ deviceId, dir, cfg = {}, say = () => {}, rng = Math.random,
       if (dem.tymTrang) phu.push(`${dem.tymTrang} trong trang`);
       p.push(`tym ${dem.like}${phu.length ? ` (${phu.join(', ')})` : ''}`);
     }
+    if (dem.fav || dem.favFail) p.push(`lưu ${dem.fav}${dem.favFail ? ` (hỏng ${dem.favFail})` : ''}`);
+    if (dem.xemHoi) p.push(`pha Xem hỏi tương tác ${dem.xemHoi} link`);
     // `bỏ qua N đã ghé` là thước đo xem sổ chống trùng có đang chạy không. Số này bằng 0 suốt
     // nhiều ca trong khi `ghé` vẫn tăng nghĩa là sổ không ghi được (thư mục máy sai quyền, hoặc
     // @handle đọc trượt) — và hỏng kiểu đó không tự lộ ra ở đâu khác.

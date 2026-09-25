@@ -103,6 +103,7 @@ const VIEC_TUONG_TAC = {
   like: 'Tym',
   like_profile: 'Tym video trong trang',
   ni: 'Not interested',
+  fav: 'Lưu video',
 };
 
 const KET_QUA_TUONG_TAC = {
@@ -251,6 +252,9 @@ function startDevice(params, onData, onStatus) {
     VIEW_SEC_MAX: String(cfg.viewSecMax ?? 20),
     VIEW_SCROLL_MIN: soNguyen(cfg.viewScrollMin, 20),
     VIEW_SCROLL_MAX: soNguyen(cfg.viewScrollMax, 30),
+    // Pha Xem có tương tác với video đầu của mỗi link không (2026-09-25). Bật khi có ít nhất một
+    // tỉ lệ > 0; quyết định từng link vẫn do bộ não (askproto: kind 'view_act') — tỉ lệ + trần ngày.
+    VIEW_ACT_ON: (phaXem && [cfg.viewLikePct, cfg.viewFavPct, cfg.viewFollowPct].some((v) => Number(v) > 0)) ? '1' : '0',
     // Danh sách link đi qua TỆP, không qua biến môi trường: Windows giới hạn cả khối biến môi
     // trường ~32.767 ký tự — vài trăm link là tràn, và `spawn` hỏng với một lỗi chẳng nói gì.
     VIEW_LINKS_FILE: phaXem ? ghiDanhSachLink(deviceId, pha.links) : '',

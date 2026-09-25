@@ -383,6 +383,95 @@ def do_like(d, log=lambda s: None):
         return "fail"
 
 
+# ── TIM / LƯU TRONG TRÌNH PHÁT (pha Xem, 2026-09-25) ──
+#
+# ĐO THẬT trên SM-A920F 52000352c0ee64df (TikTok 45.7.3, giao diện tiếng Việt), trình phát
+# `DetailActivity` mở từ trang sound:
+#   tim  — nút `content-desc="Thích video. 150,3K lượt thích"` (feed tiếng Anh: "Like video. …").
+#          Bấm xong: nhãn thành "Đã thích video", và ICON CON có `selected="true"`.
+#   lưu  — nút cha bấm được, bên trong là nhãn "Thêm hoặc xóa video này khỏi mục Yêu thích."
+#          (tiếng Anh: "Add or remove this video from Favorites."). Bấm xong nhãn KHÔNG đổi,
+#          `selected` của nút cũng không — chỉ ICON CON có `selected="true"`, kèm tấm "Đã lưu".
+#   Bấm lại lần nữa là gỡ, cả hai quay về `selected="false"` (đã gỡ ngay sau khi đo).
+# Vậy dấu hiệu chung, KHÔNG phụ thuộc ngôn ngữ: có nút nào `selected="true"` nằm TRONG khung nút.
+#
+# ⚠ RIÊNG NÚT LƯU, ICON KHÔNG ĐỔI NGAY (đo lại 2026-09-25, lượt chạy thật pha Xem): bấm xong tấm
+# "Đã lưu" hiện ở 0,6 giây và tắt ở ~3,5 giây, nhưng suốt 8 giây đọc lại icon vẫn `selected=false`
+# — chỉ khi MỞ LẠI video mới thấy `true`. Lượt chạy báo "lưu hỏng" 3/3 trong khi video đã được lưu
+# thật. Nên SAU KHI BẤM lưu: icon bật HOẶC thấy tấm "Đã lưu" / "Saved" đều là thành công. TRƯỚC khi
+# bấm vẫn chỉ tin icon — video vừa tải thì icon đúng (đo: 2/6 video đã lưu hiện `true`).
+_RE_DA_LUU = re.compile(r"(?i)^(đã lưu|saved|added to favorites)$")
+# ⚠ Không dùng `do_like` (chạm đúp giữa màn): nó không xác minh được; ở đây đọc lại được thì đọc.
+_RE_NUT_TIM = re.compile(r"(?i)^((đã |bỏ )?thích|like|unlike|liked) video")
+_RE_NUT_LUU = re.compile(r"(?i)(from favorites|to favorites|khỏi mục yêu thích|vào mục yêu thích)")
+
+
+def _khung(node):
+    m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
+    return tuple(map(int, m.groups())) if m else None
+
+
+def nut_tuong_tac(xml_str, loai):
+    """`loai` = 'tim' | 'luu'. Trả `((x, y), da_bat)` — tâm nút để bấm và nút đang bật chưa —
+    hoặc None nếu màn này không có nút đó. Hàm THUẦN trên XML."""
+    try:
+        cay = ET.fromstring(xml_str)
+    except Exception:
+        return None
+    nodes = list(cay.iter("node"))
+    mau = _RE_NUT_TIM if loai == "tim" else _RE_NUT_LUU
+    goc = next((n for n in nodes if mau.search(n.get("content-desc", "") or "")), None)
+    k = _khung(goc) if goc is not None else None
+    if not k:
+        return None
+    x1, y1, x2, y2 = k
+    bat = any(
+        n.get("selected") == "true" and (kk := _khung(n)) and kk[0] >= x1 and kk[1] >= y1 and kk[2] <= x2 and kk[3] <= y2
+        for n in nodes)
+    return ((x1 + x2) // 2, (y1 + y2) // 2), bat
+
+
+def thay_thong_bao_da_luu(xml_str):
+    """Tấm "Đã lưu" (tiếng Anh: "Saved") TikTok hiện ~3 giây sau khi lưu video. Hàm THUẦN."""
+    for t in re.findall(r' (?:text|content-desc)="([^"]*)"', xml_str or ""):
+        if _RE_DA_LUU.match(t.strip()):
+            return True
+    return False
+
+
+def bat_nut_tuong_tac(d, loai, log=lambda s: None):
+    """Bật tim / lưu cho video đang ở trình phát rồi ĐỌC LẠI. Trả 'ok' | 'fail' | 'not_needed'.
+    'not_needed' = đã bật sẵn — không bấm (bấm nữa là GỠ), và không tính là đã làm để ghi sổ."""
+    ten = "Tim" if loai == "tim" else "Lưu"
+    try:
+        kq = nut_tuong_tac(d.dump_hierarchy(), loai)
+    except Exception:
+        kq = None
+    if kq is None:
+        log(f"⚠ {ten}: không thấy nút trên trình phát.")
+        return "fail"
+    (x, y), bat = kq
+    if bat:
+        return "not_needed"
+    try:
+        d.click(x, y)
+    except Exception as e:
+        log(f"⚠ {ten}: bấm lỗi ({str(e)[:80]}).")
+        return "fail"
+    # Đọc lại mỗi 0,5 giây trong ~3 giây: tấm "Đã lưu" chỉ sống ~3 giây.
+    for _ in range(6):
+        time.sleep(0.5)
+        try:
+            xml = d.dump_hierarchy()
+        except Exception:
+            continue
+        kq = nut_tuong_tac(xml, loai)
+        if (kq and kq[1]) or (loai == "luu" and thay_thong_bao_da_luu(xml)):
+            return "ok"
+    log(f"⚠ {ten}: đã bấm nhưng nút không đổi trạng thái.")
+    return "fail"
+
+
 def tap_not_interested(d, log=lambda s: None):
     """Nhấn giữ video rồi chọn "Not interested". Trả 'ok' | 'fail'.
 
@@ -1145,8 +1234,14 @@ def _cho(con_han, giay, dung):
     return True
 
 
-def _mo_link(d, goi, link, cho=12.0):
-    """Mở link bằng deep link. Trả 'nhac' | 'video' | '' (không mở được)."""
+def _mo_link(d, goi, link, cho=30.0):
+    """Mở link bằng deep link. Trả 'nhac' | 'video' | '' (không mở được).
+
+    ⚠ CHỜ 30 GIÂY, KHÔNG PHẢI 12 (đo 2026-09-25, SM-A920F 52000352c0ee64df qua proxy): ngay sau khi
+    TikTok vừa mở lạnh, link sound mất ~26 giây mới vào `MusicDetailActivity` (suốt quãng đó màn hình
+    không có cửa sổ nào giữ focus). Bản cũ chờ 12 giây × 2 lần = 24 giây → pha Xem báo "không mở
+    được link" với một link còn sống, và bỏ nguyên pha. Thấy trang là trả về ngay, nên chỉ link chết
+    thật mới tốn đủ 30 giây."""
     try:
         # Truyền dạng DANH SÁCH: link có `&`, `?` — ghép chuỗi là bị shell cắt ngang.
         d.shell(["am", "start", "-a", "android.intent.action.VIEW", "-d", link, goi])
@@ -1186,7 +1281,8 @@ def _ve_ngoai(d):
         time.sleep(1.2)
 
 
-def xem_mot_link(d, goi, link, con_han, dung, xem_giay, so_vuot, dung_giay, log=lambda s: None):
+def xem_mot_link(d, goi, link, con_han, dung, xem_giay, so_vuot, dung_giay, log=lambda s: None,
+                 tuong_tac=None):
     """Xem MỘT link của pha Xem. Trả:
         'ok'       — đã xem xong
         'het_gio'  — hết hạn pha GIỮA CHỪNG (lần sau xem lại CHÍNH link này)
@@ -1195,6 +1291,8 @@ def xem_mot_link(d, goi, link, con_han, dung, xem_giay, so_vuot, dung_giay, log=
 
     `xem_giay` = (min, max) giây cho video đầu; `so_vuot` = (min, max) số video vuốt thêm;
     `dung_giay` = (min, max) giây trên mỗi video vuốt thêm — đúng ô "Delay" bản PC dùng ở đây.
+    `tuong_tac(d)` (2026-09-25): gọi MỘT lần, sau khi xem xong video đầu, khi còn đứng ở trình
+    phát — chủ dự án chỉ cho tương tác với video đầu của link, các video vuốt thêm chỉ xem.
     """
     loai = _mo_link(d, goi, link)
     if not loai:
@@ -1231,6 +1329,14 @@ def xem_mot_link(d, goi, link, con_han, dung, xem_giay, so_vuot, dung_giay, log=
     if not _cho(con_han, random.uniform(*xem_giay), dung):
         _ve_ngoai(d)
         return "dung" if dung() else "het_gio"
+
+    # So đúng TÊN activity: "MusicDetailActivity" (trang nhạc) cũng kết thúc bằng "DetailActivity".
+    if tuong_tac is not None and _activity(d).rsplit(".", 1)[-1] == ACT_TRINH_PHAT:
+        try:
+            tuong_tac(d)
+        except Exception as e:
+            # Tương tác hỏng không được làm hỏng việc xem — xem vẫn là việc chính của pha này.
+            log(f"⚠ Tương tác với video đầu lỗi ({str(e)[:80]}) — bỏ qua, xem tiếp.")
 
     for _ in range(random.randint(*so_vuot)):
         try:
