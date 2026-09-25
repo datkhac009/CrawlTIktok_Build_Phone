@@ -4,7 +4,7 @@ cd /d "%~dp0"
 set "ELECTRON_RUN_AS_NODE="
 setlocal enabledelayedexpansion
 
-set "RELEASE=..\Crawl_Data_Tiktok_Phone_release"
+set "RELEASE=..\Crawlphone_Release"
 
 REM ============================================================================
 REM  BUILD TikTok Phone Crawler  ->  .exe
@@ -105,7 +105,7 @@ if errorlevel 1 (
 :xong
 echo.
 echo ============================================
-echo   XONG! File .exe o: %RELEASE%
+echo   XONG - File .exe o: %RELEASE%
 echo.
 echo   LUU Y khi chay tren may khac:
 echo    - Can Python 3 va thu vien uiautomator2.
