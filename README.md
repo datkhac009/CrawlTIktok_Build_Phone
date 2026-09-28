@@ -190,6 +190,20 @@ fix") đã cài sẵn trên máy farm — một VPN, không cần root, `college
   đủ ~40 giây: force-stop → mở → gõ bằng `adb shell input text` → START → tự đồng ý hộp thoại quyền
   VPN lần đầu. Hỏng thì lần 2 `pm clear` College Proxy rồi làm lại — app này từng tự rơi vào vòng
   lặp đẻ `LoadingActivity` (màn chờ quảng cáo) mà force-stop không gỡ được.
+- **Chỉ gõ proxy vào Lalasoft khi trong đó chưa có đúng proxy này** (sửa 2026-09-28 — chủ dự án:
+  "mỗi lần bấm Chạy / Đăng nhập nó lại điền lại proxy dù Lalasoft đang start"). VPN đang bật + ra
+  mạng: tệp dấu khớp HOẶC IP ra đúng IP của proxy → không đụng. Cần bật lại (VPN tắt, điện thoại
+  khởi động lại): ô Lalasoft đã đúng host/port/user → chỉ bấm START. Proxy chết thật (Lalasoft giữ
+  đúng proxy mà không ra mạng) → báo "đổi proxy khác", **không gõ lại, không `pm clear`** — gõ lại
+  cùng một chuỗi không chữa được gì. Tệp dấu nay nghĩa là "Lalasoft đang giữ đúng chuỗi này", không
+  còn bị xoá mỗi lần đo IP hỏng.
+- **Đo IP qua Lalasoft rất chập chờn** (đo 2026-09-28, proxy còn sống — từ máy tính qua cùng proxy
+  18/18 lần, 0,5 giây): trên điện thoại mỗi lần hỏi HTTP cổng 80 chỉ ~50% được, lần hỏng không giới
+  hạn thì treo ~128 giây, và Lalasoft có quãng "đứng" vài chục giây làm mọi dịch vụ cùng hỏng. Bản cũ
+  (2 lần ip-api + 2 lần ipify) kết luận nhầm "proxy hỏng" → xoá dấu → gõ lại: gốc của lỗi trên. Giờ
+  mỗi vòng hỏi song song ip-api + ipify + icanhazip, mỗi cái `toybox timeout 12`, tối đa 6 vòng
+  (~90 giây), dừng ở vòng được đầu tiên. Xét IP theo NƯỚC (ip-api) trước, không bắt máy tính đọc
+  được IP của chính nó (máy tính có Cloudflare WARP). TikTok vẫn chạy trong lúc đó vì nó đi HTTPS.
 - Giữ proxy **bật** khi bấm Dừng (chủ dự án chốt): TikTok trên máy luôn một IP, kể cả khi thao tác
   tay trên 效卫.
 - VPN chỉ đẩy dải IP công cộng; `192.168.*`, `10.*`, `172.16–31.*` đi thẳng `wlan0` → adb qua
