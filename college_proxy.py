@@ -41,6 +41,12 @@ class ProxyHong(Exception):
     """Khong gan duoc proxy, hoac gan roi ma may van ra IP that. Noi goi phai DUNG."""
 
 
+class ProxyChet(ProxyHong):
+    """Lalasoft DA BAT voi dung proxy nay ma may khong ra Internet / van ra IP Viet Nam: loi nam o
+    CHINH proxy (chet, het han, sai mat khau, cong SOCKS5). Go lai cung chuoi do khong chua duoc —
+    khac voi loi giao dien (man Loading, go khong khop), thu lai co the duoc."""
+
+
 # ── Chuoi proxy ──
 
 def doc_proxy(chuoi):
@@ -98,22 +104,60 @@ def ip_may_tinh():
     return ""
 
 
-def ip_dien_thoai(serial, lan=3):
-    """IP cong khai do TREN DIEN THOAI. Tien trinh `adb shell` cung di qua VPN nhu moi app, nen
-    IP nay la IP ma TikTok dang dung. Rong = khong ra duoc Internet."""
+# ── Do IP tren dien thoai ──
+#
+# ⚠ DO QUA LALASOFT RAT CHAP CHON — PHAI THU NHIEU LAN, CO GIOI HAN CUNG (do 2026-09-28, may
+# 52000352c0ee64df, proxy HTTP con song: tu MAY TINH qua cung proxy do 18/18 lan, 0,5 giay):
+#   - tren dien thoai, MOI lan hoi (ip-api / ipify / icanhazip, cong 80) chi duoc ~50%: 3/6 moi dich
+#     vu; lan duoc mat ~6 giay, lan hong la ket noi TCP khong mo duoc;
+#   - khong co gioi han cung thi lan hong TREO ~128 giay (thoi gian Linux cho mo ket noi — `nc -w`
+#     khong ap vao buoc nay): do duoc 64 / 128 / 128 giay.
+# Ban cu thu 2 lan ip-api + 2 lan ipify, khong gioi han -> ~1/16 so luot ket luan nham "proxy khong
+# ra Internet" voi proxy CON SONG, va luc hong thi treo vai phut. Moi lan ket luan nham, `dam_bao_proxy`
+# ban cu xoa dau roi go lai proxy vao Lalasoft — dung loi chu du an bao ngay 2026-09-28.
+# TikTok van chay vi no di HTTPS (cong 443) — duong khac trong Lalasoft.
+# Gio: moi VONG hoi CA BA dich vu CUNG LUC trong mot lenh adb (moi cai `toybox timeout` cung), toi da
+# DO_IP_VONG vong. Hoi lan luot thi do that ton 69-95 giay moi lan bam Chay (moi lan hong mat 12 giay);
+# song song thi mot vong <= ~13 giay.
+# ⚠ Hong KHONG doc lap giua cac dich vu: Lalasoft co nhung quang "dung" vai chuc giay, ca ba cung hong
+# (do: mot lan hong ca 3 vong song song, 38 giay; cac lan khac xong o vong 1-2). Nen can CUA SO THOI
+# GIAN du dai de qua quang dung, khong phai nhieu dich vu hon: 6 vong, toi da ~90 giay — chi proxy
+# chet that moi ton het; proxy song thuong xong sau 12-25 giay.
+DO_IP = (("A", NUOC_HOST, "/line/?fields=countryCode,query"), ("B", IP_HOST, "/"), ("C", "icanhazip.com", "/"))
+DO_IP_VONG = 6
+DO_IP_GIAY = 12
+
+
+def _lenh_hoi_ip():
+    """MOT lenh shell hoi ca ba dich vu song song; moi dong ra mang tien to "A|" / "B|" / "C|"."""
     # `sleep` giu stdin mo: `toybox nc` dong ket noi ngay khi stdin het, truoc khi kip nhan tra loi.
-    lenh = (f'(printf "GET / HTTP/1.0\\r\\nHost: {IP_HOST}\\r\\n\\r\\n"; sleep 5) '
-            f'| toybox nc -w 8 {IP_HOST} 80 | tail -1')
-    for i in range(lan):
-        try:
-            ip = adb("shell", lenh, serial=serial, timeout=25).strip()
-            if ip_hop_le(ip):
-                return ip
-        except Exception:
-            pass
-        if i < lan - 1:
-            time.sleep(2)
-    return ""
+    phan = [f'((printf "GET {duong} HTTP/1.0\\r\\nHost: {host}\\r\\n\\r\\n"; sleep 6) '
+            f'| toybox timeout {DO_IP_GIAY} toybox nc -w 10 {host} 80 | tail -2 | toybox sed "s/^/{nhan}|/") &'
+            for nhan, host, duong in DO_IP]
+    return " ".join(phan) + " wait"
+
+
+def doc_hoi_ip(tra_loi):
+    """Tra loi cua `_lenh_hoi_ip` -> (ip, nuoc). Uu tien ip-api (co nuoc); khong co thi IP cua ipify /
+    icanhazip, nuoc rong. Khong co gi -> ("", "")."""
+    theo = {}
+    for dong in (tra_loi or "").splitlines():
+        nhan, _, gt = dong.partition("|")
+        if gt.strip():
+            theo.setdefault(nhan.strip(), []).append(gt.strip())
+    ip, nuoc = doc_ip_nuoc("\n".join(theo.get("A", [])))
+    if ip:
+        return ip, nuoc
+    for nhan in ("B", "C"):
+        dong = theo.get(nhan, [])
+        if dong and ip_hop_le(dong[-1]):
+            return dong[-1], ""
+    return "", ""
+
+
+def ip_dien_thoai(serial, lan=DO_IP_VONG):
+    """IP cong khai do TREN DIEN THOAI (khong can nuoc). Rong = khong ra duoc Internet."""
+    return do_ip_nuoc(serial, lan)[0]
 
 
 def doc_ip_nuoc(tra_loi):
@@ -125,21 +169,21 @@ def doc_ip_nuoc(tra_loi):
     return "", ""
 
 
-def do_ip_nuoc(serial, lan=2):
-    """(ip, nuoc) do TREN DIEN THOAI. ip-api hong thi lui ve `ip_dien_thoai` (ipify) — co IP ma
-    khong co nuoc. Khong do duoc gi -> ("", "")."""
-    lenh = (f'(printf "GET /line/?fields=countryCode,query HTTP/1.0\\r\\nHost: {NUOC_HOST}\\r\\n\\r\\n"; sleep 5) '
-            f'| toybox nc -w 8 {NUOC_HOST} 80 | tail -2')
+def do_ip_nuoc(serial, lan=DO_IP_VONG):
+    """(ip, nuoc) do TREN DIEN THOAI, qua `adb shell` — di qua VPN nhu moi app, nen la IP ma TikTok
+    dang dung. Moi vong hoi song song ip-api (co nuoc) / ipify / icanhazip; dung o vong duoc dau tien.
+    Khong do duoc gi -> ("", "")."""
     for i in range(lan):
         try:
-            ip, nuoc = doc_ip_nuoc(adb("shell", lenh, serial=serial, timeout=25))
-            if ip:
-                return ip, nuoc
+            tra_loi = adb("shell", _lenh_hoi_ip(), serial=serial, timeout=DO_IP_GIAY + 15) or ""
         except Exception:
-            pass
+            tra_loi = ""
+        ip, nuoc = doc_hoi_ip(tra_loi)
+        if ip:
+            return ip, nuoc
         if i < lan - 1:
             time.sleep(2)
-    return ip_dien_thoai(serial, lan=2), ""
+    return "", ""
 
 
 def ip_viet_nam(ip, nuoc):
@@ -291,6 +335,15 @@ def _khop(d, p):
             and _doc_o(d, O_TEN) == p["user"])
 
 
+def _go_proxy(d, serial, p):
+    """Go du 4 o roi DOC LAI (tru o mat khau — o an, khong doc duoc). App phai dang o man chinh."""
+    for rid, gt in ((O_DIA_CHI, p["host"]), (O_CONG, p["port"]), (O_TEN, p["user"]), (O_MAT_KHAU, p["pass"])):
+        _dien_o(d, serial, rid, gt)
+    _an_ban_phim(d, serial)
+    if not _khop(d, p):
+        raise ProxyHong("gõ proxy vào College Proxy không khớp (bàn phím nuốt ký tự, hoặc app chen màn Loading)")
+
+
 def gan_proxy(d, serial, p, log, xoa_du_lieu=False):
     """Nhap proxy vao College Proxy va bat VPN. Khong do IP — viec do cua `dam_bao_proxy`.
 
@@ -298,11 +351,7 @@ def gan_proxy(d, serial, p, log, xoa_du_lieu=False):
     giay bang IP that (setup_device da `kill_all_apps` truoc khi goi toi day).
     """
     _mo_app_sach(d, serial, xoa_du_lieu)
-    for rid, gt in ((O_DIA_CHI, p["host"]), (O_CONG, p["port"]), (O_TEN, p["user"]), (O_MAT_KHAU, p["pass"])):
-        _dien_o(d, serial, rid, gt)
-    _an_ban_phim(d, serial)
-    if not _khop(d, p):
-        raise ProxyHong("gõ proxy vào College Proxy không khớp (bàn phím nuốt ký tự, hoặc app chen màn Loading)")
+    _go_proxy(d, serial, p)
     _bat_vpn(d, serial, log)
 
 
@@ -355,47 +404,47 @@ def _ghi_moc(moc, gia_tri):
 def dam_bao_proxy(d, serial, chuoi, log, emit=lambda *a, **k: None, moc="", truoc_khi_gan=None):
     """May phai dang ra Internet QUA proxy `chuoi`. Tra IP proxy; hong thi nem `ProxyHong`.
 
-    DUONG NHANH (moi lan chay, moi lan phuc hoi): VPN dang bat + dau tren may tinh khop proxy nay
-    -> chi do IP, KHONG mo College Proxy. DUONG DAY DU: mo sach, nhap, bat, do IP; hong thi thu
-    them MOT lan tu dau (giao dien app chap chon, xem tren).
-    Proxy duoc GIU BAT khi dung (chu du an chot 2026-09-23): TikTok tren may luon mot IP, ke ca
-    khi thao tac tay tren 效卫.
-    ⚠ Dau chi biet LAN GAN CUOI app gan gi. Ai sua tay College Proxy sang proxy khac ma VPN van
-    bat thi duong nhanh khong nhan ra — nhung phep do IP van chan duoc IP THAT.
+    ⚠ CHI GO PROXY VAO LALASOFT KHI TRONG DO CHUA CO DUNG PROXY NAY (sua 2026-09-28).
+    Chu du an: "moi lan click vao Chay la no lai phai dien lai proxy mac du toi da thay proxy dang
+    start roi", va "neu no hien status proxy hong thi moi lan dang nhap hay an Chay la no lai dien
+    lai proxy trong Lalasoft". Ban cu chi tin TEP DAU; khong co dau (nguoi dung tu bat Lalasoft, hoac
+    dau bi xoa) la force-stop + go lai. Va MOI lan hong — ke ca hong thoang qua cua dich vu do IP —
+    no XOA dau, nen tu do moi luot deu go lai; proxy chet that thi con `pm clear` + go lai o lan 2,
+    moi luot, du go lai cung mot chuoi khong chua duoc gi. Gio:
+      1. VPN dang bat va ra mang qua proxy: dau khop, HOAC IP ra dung IP cua proxy -> khong dung gi.
+      2. Can bat lai: mo sach Lalasoft, cac o DA DUNG proxy nay -> chi bam START, khong go.
+      3. Chi go khi o khac proxy nay (gan proxy moi / Lalasoft bi xoa du lieu).
+      4. `ProxyChet` (Lalasoft da chay dung proxy ma khong ra mang) khi chuoi nay chac chan dang nam
+         trong Lalasoft (chinh app go, dau khop) -> dung, bao proxy chet; KHONG go lai, KHONG xoa dau.
+    Tep dau = "Lalasoft dang giu DUNG chuoi nay (ca mat khau) do chinh app go" — ghi ngay sau khi go
+    xong, khong phai "proxy dang chay tot". Chi xoa khi khong con chac Lalasoft dang giu gi.
+    Proxy duoc GIU BAT khi dung (chu du an chot 2026-09-23).
     """
     p = doc_proxy(chuoi)
     if not p:
         raise ProxyHong("proxy sai dạng — cần host:port:user:pass")
     dau = _dau(chuoi)
+    da_go_dung = bool(moc) and _doc_moc(moc) == dau
     try:
         ip = ""
-        if moc and _doc_moc(moc) == dau and vpn_dang_bat(serial):
+        if vpn_dang_bat(serial):
             try:
-                ip = _kiem_ip(serial)
+                ip = _kiem_ip(serial, p["host"])
             except ProxyHong as e:
-                # Khong dung o day: dung thi lan chay sau lai di duong nhanh, lai hong — ket mai ma
-                # khong bao gio thu gan lai.
-                log(f"⚠ VPN đang bật nhưng {e} — gắn lại từ đầu.")
+                log(f"⚠ Lalasoft đang bật nhưng {e} — bật lại.")
+            if ip and not (da_go_dung or ip == p["host"]):
+                log(f"Lalasoft đang chạy (IP {ip}) nhưng app chưa chắc nó giữ proxy {mo_ta(p)} — mở Lalasoft xem ô proxy.")
+                ip = ""
+            elif ip and not da_go_dung:
+                # Ra DUNG IP cua proxy nay: Lalasoft dang giu no (vd nguoi dung tu nhap, tu bat).
+                _ghi_moc(moc, dau)
         if not ip:
-            _ghi_moc(moc, "")
-            # Gan day du = force-stop College Proxy = VPN tat vai chuc giay. TikTok dang mo luc do
-            # la chay bang IP that — noi goi truyen ham tat TikTok vao day (khi gan tu nut Luu:
-            # may co the dang mo TikTok do nguoi dung thao tac tay tren 效卫).
+            # Mo Lalasoft = force-stop = VPN tat vai chuc giay. TikTok dang mo luc do la chay bang IP
+            # that — noi goi truyen ham tat TikTok vao day.
             if truoc_khi_gan:
                 truoc_khi_gan()
-            log(f"Đang gắn proxy {mo_ta(p)} qua College Proxy…")
-            for lan in (1, 2):
-                try:
-                    gan_proxy(d, serial, p, log, xoa_du_lieu=lan == 2)
-                    ip = _kiem_ip(serial)
-                    break
-                except ProxyHong as e:
-                    if lan == 2:
-                        raise
-                    log(f"⚠ Gắn proxy lần 1 hỏng ({e}) — xoá dữ liệu College Proxy, thử lần 2.")
-            _ghi_moc(moc, dau)
+            ip = _bat_lai_hoac_go(d, serial, p, dau, moc, da_go_dung, log)
     except ProxyHong as e:
-        _ghi_moc(moc, "")
         emit("proxy", ok=False, msg=str(e))
         raise
     except Exception as e:
@@ -407,17 +456,72 @@ def dam_bao_proxy(d, serial, chuoi, log, emit=lambda *a, **k: None, moc="", truo
     return ip
 
 
-def _kiem_ip(serial):
-    """IP do tren dien thoai phai la IP proxy: ra duoc Internet, va KHAC IP that cua farm."""
-    ip = ip_dien_thoai(serial)
-    that = ip_may_tinh()
+def _bat_lai_hoac_go(d, serial, p, dau, moc, da_go_dung, log):
+    """Mo sach Lalasoft; o da dung proxy -> chi bat VPN, khong thi go. Do IP. Toi da hai lan:
+      - loi giao dien (man Loading, go khong khop, VPN khong len) -> lan 2 `pm clear` roi go;
+      - `ProxyChet` khi o khop host/port/user nhung mat khau chua chac (khong phai app go) -> lan 2
+        go lai du 4 o, KHONG `pm clear`;
+      - `ProxyChet` khi chuoi nay chac chan dang nam trong Lalasoft (app vua go, hoac dau khop) ->
+        dung ngay: proxy chet that, go lai khong chua duoc.
+    """
+    xoa_du_lieu = False
+    go_lai = False
+    for lan in (1, 2):
+        vua_go = False
+        try:
+            if xoa_du_lieu:
+                _ghi_moc(moc, "")          # pm clear = Lalasoft trong tron
+            _mo_app_sach(d, serial, xoa_du_lieu)
+            if not go_lai and _khop(d, p):
+                log(f"Lalasoft đã có sẵn đúng proxy {mo_ta(p)} — chỉ bật lại, KHÔNG gõ lại.")
+            else:
+                log(f"Đang gõ proxy {mo_ta(p)} vào Lalasoft (College Proxy)…")
+                _ghi_moc(moc, "")
+                _go_proxy(d, serial, p)
+                _ghi_moc(moc, dau)
+                vua_go = True
+            _bat_vpn(d, serial, log)
+            ip = _kiem_ip(serial, p["host"])
+            # Ra mang bang cac o dang co -> Lalasoft dang giu proxy nay: lan sau di duong nhanh.
+            _ghi_moc(moc, dau)
+            return ip
+        except ProxyChet as e:
+            if vua_go or da_go_dung or lan == 2:
+                raise ProxyChet(f"{e} — Lalasoft đang giữ đúng proxy này nên KHÔNG gõ lại; đổi proxy khác cho máy")
+            go_lai = True
+            log(f"⚠ Bật lại bằng proxy có sẵn trong Lalasoft mà {e} — gõ lại đủ 4 ô (mật khẩu có thể khác).")
+        except ProxyHong as e:
+            if lan == 2:
+                _ghi_moc(moc, "")
+                raise
+            xoa_du_lieu = True
+            log(f"⚠ Gắn proxy lần 1 hỏng ({e}) — xoá dữ liệu College Proxy, thử lần 2.")
+
+
+def _kiem_ip(serial, host=""):
+    """IP do tren dien thoai phai la IP proxy: ra duoc Internet, va KHONG phai IP Viet Nam cua farm.
+
+    Xet theo NUOC (ip-api) truoc, nhu `dam_bao_proxy_san_co`: may tinh cua chu du an co Cloudflare
+    WARP, va may tinh doc IP hong la ban cu bao "proxy hong" oan -> go lai proxy. Khong co nuoc thi:
+    ra dung IP cua proxy la dat; con lai moi so voi IP may tinh.
+    """
+    ip, nuoc = do_ip_nuoc(serial)
     if not ip:
-        raise ProxyHong("máy KHÔNG ra được Internet qua proxy — proxy chết, sai mật khẩu, "
+        raise ProxyChet("máy KHÔNG ra được Internet qua proxy — proxy chết, sai mật khẩu, "
                         "hoặc đang dùng cổng SOCKS5 (College Proxy chỉ chạy HTTP)")
+    if nuoc:
+        if nuoc == "VN":
+            raise ProxyChet(f"máy vẫn ra IP Việt Nam {ip} — proxy không có tác dụng")
+        return ip
+    if host and ip == host:
+        return ip
+    that = ip_may_tinh()
     if not that:
-        raise ProxyHong("không đọc được IP thật của máy tính để so — không chắc proxy đã che IP")
+        # ProxyChet chu khong phai ProxyHong: day la "khong kiem duoc", KHONG phai loi giao dien —
+        # khong duoc dan toi `pm clear` + go lai (xem `_bat_lai_hoac_go`).
+        raise ProxyChet("không đọc được nước của IP lẫn IP thật của máy tính để so — không chắc proxy đã che IP")
     if ip == that:
-        raise ProxyHong(f"máy vẫn ra IP thật {that} — proxy không có tác dụng")
+        raise ProxyChet(f"máy vẫn ra IP thật {that} — proxy không có tác dụng")
     return ip
 
 

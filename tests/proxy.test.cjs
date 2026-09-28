@@ -148,6 +148,11 @@ class May:
 
 MAY = May()
 IP = {"dt": "203.0.113.10", "pc": "198.51.100.20"}
+def ip_ra():
+    # VPN bat: ra mang bang proxy DANG NAM TRONG O cua Lalasoft (nhu may that). "co_dinh" ep mot IP;
+    # dt rong = proxy chet; dt = pc = lo IP that.
+    if IP.get("co_dinh") or IP["dt"] in ("", IP["pc"]): return IP["dt"]
+    return MAY.o.get(CP.O_DIA_CHI) or IP["dt"]
 LENH = []
 def adb_gia(*a, serial=None, timeout=60):
     LENH.append(list(a))
@@ -167,17 +172,28 @@ def adb_gia(*a, serial=None, timeout=60):
         return ("package:" + CP.PKG) if IP.get("co_cp", True) else ""
     # ip-api (nuoc + IP). "tat_ra_that": VPN tat thi may van ra mang bang IP that Viet Nam — dung
     # canh do duoc tren 6 may USB 2026-09-23. "vn_lan": n lan dau tra VN du VPN bat.
-    if a[0] == "shell" and "ip-api.com" in a[1]:
-        if IP.get("api_hong"): return ""
-        if IP.get("vn_lan", 0) > 0:
-            IP["vn_lan"] -= 1; return "VN\\n" + IP["pc"]
-        if MAY.bat: return IP.get("nuoc_dt", "US") + "\\n" + IP["dt"]
-        return ("VN\\n" + IP["pc"]) if IP.get("tat_ra_that") else ""
-    if a[0] == "shell" and "nc" in a[1]:
-        if IP.get("hong", 0) > 0:
-            IP["hong"] -= 1; return ""
-        return IP["dt"] if MAY.bat else (IP["pc"] if IP.get("tat_ra_that") else "")
+    # Do IP: MOT lenh hoi song song ip-api (A) / ipify (B) / icanhazip (C), moi dong "A|..." —
+    # xem _lenh_hoi_ip. "hong": n lan hoi ipify/icanhazip dau tien khong tra gi.
+    if a[0] == "shell" and "toybox nc" in a[1]:
+        ra = []
+        if "ip-api.com" in a[1]:
+            ra += ["A|" + x for x in _api().split("\\n") if x]
+        for nhan, host in (("B", "api.ipify.org"), ("C", "icanhazip.com")):
+            if host in a[1]:
+                r = _nc()
+                if r: ra.append(nhan + "|" + r)
+        return "\\n".join(ra)
     return ""
+def _api():
+    if IP.get("api_hong"): return ""
+    if IP.get("vn_lan", 0) > 0:
+        IP["vn_lan"] -= 1; return "VN\\n" + IP["pc"]
+    if MAY.bat: return (IP.get("nuoc_dt", "US") + "\\n" + ip_ra()) if ip_ra() else ""
+    return ("VN\\n" + IP["pc"]) if IP.get("tat_ra_that") else ""
+def _nc():
+    if IP.get("hong", 0) > 0:
+        IP["hong"] -= 1; return ""
+    return ip_ra() if MAY.bat else (IP["pc"] if IP.get("tat_ra_that") else "")
 CP.adb = adb_gia
 CP.ip_may_tinh = lambda: IP["pc"]
 LOG, SK = [], []
@@ -208,6 +224,39 @@ def ket(**k):
     const q = chay('quote', `ket(kq=[CP.chuoi_input_text("a b"), CP.chuoi_input_text("x'y")])`);
     check("2b. Gõ chữ: dấu cách → %s, dấu ' được bọc cho shell trên điện thoại",
       !!q.kq && q.kq.kq[0] === "'a%sb'" && q.kq.kq[1] === "'x'\\''y'", q.kq ? JSON.stringify(q.kq.kq) : q.loi);
+  }
+
+  // ── 2c. Đo IP trên điện thoại (2026-09-28) ──
+  // Đo thật qua Lalasoft: mỗi lần hỏi chỉ ~50% được, lần hỏng không giới hạn thì TREO ~128 giây, và
+  // Lalasoft có quãng "đứng" vài chục giây làm cả ba dịch vụ cùng hỏng.
+  {
+    const r = chay('do_ip', `
+GOI = []
+TL = {"n_hong": 3, "chi_b": False}
+def adb_do(*a, serial=None, timeout=60):
+    GOI.append(a[1])
+    if TL["n_hong"] > 0:
+        TL["n_hong"] -= 1; return ""
+    if TL["chi_b"]: return "B|203.0.113.10\\nC|<html>"
+    return "A|US\\nA|203.0.113.10\\nB|203.0.113.10"
+CP.adb = adb_do
+ip1 = CP.do_ip_nuoc("S"); goi1 = list(GOI)
+GOI.clear(); TL["n_hong"] = 10**6
+ip2 = CP.do_ip_nuoc("S"); so2 = len(GOI)
+GOI.clear(); TL["n_hong"] = 0; TL["chi_b"] = True
+ip3 = CP.do_ip_nuoc("S")
+ket(ip1=ip1, goi1=goi1, ip2=ip2, so2=so2, ip3=ip3)`);
+    const k = r.kq || {};
+    check('2c. Đo IP: 3 vòng đầu hỏng (Lalasoft "đứng") → đo tiếp, được ở vòng 4 và DỪNG ngay',
+      !!r.kq && JSON.stringify(k.ip1) === '["203.0.113.10","US"]' && k.goi1.length === 4, r.kq ? JSON.stringify(k.ip1) + ' ' + k.goi1.length : r.loi);
+    check('2d. Đo IP: mỗi vòng hỏi SONG SONG ip-api + ipify + icanhazip, mỗi cái có giới hạn cứng (toybox timeout)',
+      !!r.kq && k.goi1.every((c) => /ip-api\.com/.test(c) && /api\.ipify\.org/.test(c) && /icanhazip\.com/.test(c)
+        && (c.match(/toybox timeout \d+ toybox nc/g) || []).length === 3 && /&\s*wait$/.test(c)),
+      r.kq ? k.goi1[0] : r.loi);
+    check('2e. Đo IP: hỏng hết → trả rỗng sau ĐÚNG 6 vòng (không treo, không thử vô hạn)',
+      !!r.kq && k.ip2[0] === '' && k.so2 === 6, r.kq ? String(k.so2) : r.loi);
+    check('2f. Đo IP: ip-api không trả mà ipify trả → vẫn có IP (không có nước)',
+      !!r.kq && JSON.stringify(k.ip3) === '["203.0.113.10",""]', r.kq ? JSON.stringify(k.ip3) : r.loi);
   }
 
   // ── 3. dam_bao_proxy: hành vi ──
@@ -259,13 +308,15 @@ ket(bat=MAY.bat, sach=[v for v in MAY.viec if v[0] == "app_start"])`);
     // lượt sau lại đi đường nhanh, lại hỏng — kẹt mãi mà không bao giờ thử gắn lại.
     const nhanhHong = chay('nhanh_hong', `
 MAY.bat = True
-IP["hong"] = 3
+MAY.o = {CP.O_DIA_CHI: "203.0.113.10", CP.O_CONG: "50100", CP.O_TEN: "nguoidung01", CP.O_MAT_KHAU: "x"}
+IP["api_hong"] = True
+IP["hong"] = 12     # ca 6 vong do o duong nhanh deu hong (moi vong 2 lan ipify/icanhazip; ip-api hong)
 open("${MOC}", "w").write(CP._dau(${JSON.stringify(PX)}))
 ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}")
-ket(ip=ip, sach=[v for v in MAY.viec if v[0] == "app_start"])`);
-    check('3e5. Đường nhanh đo IP hỏng → gắn lại từ đầu trong CÙNG lượt, được',
-      !!nhanhHong.kq && nhanhHong.kq.ip === '203.0.113.10' && nhanhHong.kq.sach.length === 1
-      && nhanhHong.kq.log.some((l) => /gắn lại từ đầu/.test(l)), nhanhHong.loi);
+ket(ip=ip, sach=[v for v in MAY.viec if v[0] == "app_start"], go=[l for l in LENH if l[:3] == ["shell", "input", "text"]])`);
+    check('3e5. Đường nhanh đo IP hỏng thoáng qua → bật lại trong CÙNG lượt, KHÔNG gõ lại (ô đã đúng proxy)',
+      !!nhanhHong.kq && nhanhHong.kq.ip === '203.0.113.10' && nhanhHong.kq.sach.length === 1 && !nhanhHong.kq.go.length
+      && nhanhHong.kq.log.some((l) => /KHÔNG gõ lại/.test(l)), nhanhHong.kq ? JSON.stringify(nhanhHong.kq.log) : nhanhHong.loi);
 
     // Gắn từ nút Lưu: máy có thể đang mở TikTok (thao tác tay trên 效卫). Gắn đầy đủ tắt VPN vài chục
     // giây → phải tắt TikTok TRƯỚC khi đụng College Proxy; đường nhanh không đụng gì thì không tắt.
@@ -345,20 +396,47 @@ except CP.ProxyHong as e:
       && socks.kq.su_kien.some((e) => e.type === 'proxy' && e.ok === false), socks.loi);
 
     const lo = chay('lo', `
-IP["dt"] = IP["pc"]
+IP["dt"] = IP["pc"]; IP["nuoc_dt"] = "VN"
 try:
     CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit); ket(hong=False)
 except CP.ProxyHong as e:
     ket(hong=True, ly_do=str(e))`);
-    check('3h. Máy vẫn ra IP thật của farm → ProxyHong', !!lo.kq && lo.kq.hong && /IP thật/.test(lo.kq.ly_do), lo.loi);
+    check('3h. Máy vẫn ra IP Việt Nam (ip-api báo VN) → ProxyHong', !!lo.kq && lo.kq.hong && /IP Việt Nam/.test(lo.kq.ly_do), lo.loi);
+    const lo2 = chay('lo2', `
+IP["dt"] = IP["pc"]; IP["api_hong"] = True
+try:
+    CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit); ket(hong=False)
+except CP.ProxyHong as e:
+    ket(hong=True, ly_do=str(e))`);
+    check('3h2. ip-api hỏng, IP máy = IP thật của máy tính → ProxyHong', !!lo2.kq && lo2.kq.hong && /IP thật/.test(lo2.kq.ly_do), lo2.loi);
 
+    const dungHost = chay('dung_host', `
+CP.ip_may_tinh = lambda: ""
+IP["api_hong"] = True
+ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit)
+ket(ip=ip)`);
+    check('3i0. ip-api không trả lời, máy tính không đọc được IP, nhưng máy ra ĐÚNG IP của proxy → cho chạy',
+      !!dungHost.kq && dungHost.kq.ip === '203.0.113.10', dungHost.loi);
     const khongPc = chay('khong_pc', `
 CP.ip_may_tinh = lambda: ""
+IP["api_hong"] = True; IP["co_dinh"] = True; IP["dt"] = "203.0.113.77"
 try:
     CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit); ket(hong=False)
 except CP.ProxyHong as e:
     ket(hong=True)`);
-    check('3i. Không đọc được IP thật để so → KHÔNG cho chạy (không đoán)', !!khongPc.kq && khongPc.kq.hong, khongPc.loi);
+    check('3i. Không biết nước của IP, IP khác IP proxy, không đọc được IP máy tính → KHÔNG cho chạy (không đoán)', !!khongPc.kq && khongPc.kq.hong, khongPc.loi);
+    const khongKiem = chay('khong_kiem_duoc', `
+CP.ip_may_tinh = lambda: ""
+IP["api_hong"] = True; IP["co_dinh"] = True; IP["dt"] = "203.0.113.77"
+MAY.o = {CP.O_DIA_CHI: "203.0.113.10", CP.O_CONG: "50100", CP.O_TEN: "nguoidung01", CP.O_MAT_KHAU: "?"}
+open("${MOC}", "w").write(CP._dau(${JSON.stringify(PX)}))
+try:
+    CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}"); ket(hong=False)
+except CP.ProxyHong:
+    ket(hong=True, go=[l for l in LENH if l[:3] == ["shell", "input", "text"]], clear=[l for l in LENH if l[:3] == ["shell", "pm", "clear"]])`);
+    check('3i2. "Không kiểm được IP" KHÔNG phải lỗi giao diện → không pm clear, không gõ lại proxy',
+      !!khongKiem.kq && khongKiem.kq.hong && !khongKiem.kq.go.length && !khongKiem.kq.clear.length,
+      khongKiem.kq ? JSON.stringify(khongKiem.kq.clear) : khongKiem.loi);
 
     const goHong = chay('go_hong', `
 MAY.go_hong = 2
@@ -370,6 +448,78 @@ except CP.ProxyHong as e:
     ket(hong=True, bat=MAY.bat, con_moc=os.path.exists("${MOC}"))`);
     check('3j. Gõ hỏng cả 2 lần (ô đọc lại không khớp) → ProxyHong, KHÔNG bấm START, xoá dấu cũ',
       !!goHong.kq && goHong.kq.hong && goHong.kq.bat === false && goHong.kq.con_moc === false, goHong.loi);
+
+    // ── 2026-09-28: "mỗi lần bấm Chạy / Đăng nhập nó lại điền lại proxy" ──
+    const O_DUNG = `{CP.O_DIA_CHI: "203.0.113.10", CP.O_CONG: "50100", CP.O_TEN: "nguoidung01", CP.O_MAT_KHAU: "?"}`;
+    const GO = '[l for l in LENH if l[:3] == ["shell", "input", "text"]]';
+    const tuBat = chay('tu_bat', `
+import os
+MAY.bat = True
+MAY.o = ${O_DUNG}
+if os.path.exists("${MOC}"): os.remove("${MOC}")
+ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}")
+ket(ip=ip, go=${GO}, viec=MAY.viec, moc=open("${MOC}").read() == CP._dau(${JSON.stringify(PX)}))`);
+    check('3m. Người dùng tự bật Lalasoft (không có dấu), máy ra đúng IP proxy → KHÔNG đụng Lalasoft, ghi dấu',
+      !!tuBat.kq && tuBat.kq.ip === '203.0.113.10' && !tuBat.kq.go.length && !tuBat.kq.viec.length && tuBat.kq.moc,
+      tuBat.kq ? JSON.stringify(tuBat.kq.viec) : tuBat.loi);
+
+    const khacIp = chay('khac_ip', `
+import os
+MAY.bat = True
+MAY.o = ${O_DUNG}
+IP["co_dinh"] = True; IP["dt"] = "203.0.113.55"
+if os.path.exists("${MOC}"): os.remove("${MOC}")
+ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}")
+ip2 = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}")
+ket(ip=ip, ip2=ip2, go=${GO}, sach=[v for v in MAY.viec if v[0] == "app_start"])`);
+    check('3n. Không có dấu, IP ra khác host proxy (proxy xoay IP), ô đã đúng → mở kiểm ô, chỉ bật, KHÔNG gõ; lượt sau không đụng',
+      !!khacIp.kq && khacIp.kq.ip === '203.0.113.55' && khacIp.kq.ip2 === '203.0.113.55' && !khacIp.kq.go.length
+      && khacIp.kq.sach.length === 1, khacIp.kq ? JSON.stringify(khacIp.kq) : khacIp.loi);
+
+    const khoiDong = chay('khoi_dong_lai', `
+MAY.o = ${O_DUNG}
+open("${MOC}", "w").write(CP._dau(${JSON.stringify(PX)}))
+ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}")
+ket(ip=ip, bat=MAY.bat, go=${GO})`);
+    check('3o. Điện thoại khởi động lại (VPN tắt), ô Lalasoft còn đúng → chỉ bấm START, KHÔNG gõ lại',
+      !!khoiDong.kq && khoiDong.kq.ip === '203.0.113.10' && khoiDong.kq.bat === true && !khoiDong.kq.go.length, khoiDong.loi);
+
+    const chet = chay('chet', `
+import os
+MAY.bat = True
+MAY.o = ${O_DUNG}
+IP["dt"] = ""
+open("${MOC}", "w").write(CP._dau(${JSON.stringify(PX)}))
+kq = []
+for lan in range(3):   # bấm Chạy / Đăng nhập ba lần liền
+    try:
+        CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}"); kq.append("ok")
+    except CP.ProxyChet as e:
+        kq.append("chet")
+ket(kq=kq, go=${GO}, clear=[l for l in LENH if l[:3] == ["shell", "pm", "clear"]], sach=[v for v in MAY.viec if v[0] == "app_start"],
+    con_moc=os.path.exists("${MOC}"))`);
+    check('3p. Proxy CHẾT, bấm Chạy 3 lần → mỗi lần báo proxy chết, KHÔNG gõ lại, KHÔNG xoá dữ liệu Lalasoft, giữ dấu',
+      !!chet.kq && chet.kq.kq.join() === 'chet,chet,chet' && !chet.kq.go.length && !chet.kq.clear.length
+      && chet.kq.con_moc && chet.kq.sach.length === 3, chet.kq ? JSON.stringify(chet.kq) : chet.loi);
+    check('3p2. Báo rõ cho người dùng: đổi proxy khác, không gõ lại',
+      !!chet.kq && chet.kq.su_kien.some((e) => e.type === 'proxy' && e.ok === false && /KHÔNG gõ lại/.test(e.msg)));
+
+    const chetMk = chay('chet_mk', `
+import os
+MAY.bat = True
+MAY.o = ${O_DUNG}
+IP["dt"] = ""
+if os.path.exists("${MOC}"): os.remove("${MOC}")
+kq = []
+for lan in range(2):
+    try:
+        CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}"); kq.append("ok")
+    except CP.ProxyChet:
+        kq.append("chet")
+ket(kq=kq, so_go=len(${GO}), clear=[l for l in LENH if l[:3] == ["shell", "pm", "clear"]])`);
+    check('3q. Không có dấu, ô khớp nhưng mật khẩu chưa chắc, không ra mạng → gõ lại đủ 4 ô MỘT lần (không pm clear); lần bấm sau không gõ nữa',
+      !!chetMk.kq && chetMk.kq.kq.join() === 'chet,chet' && chetMk.kq.so_go === 4 && !chetMk.kq.clear.length,
+      chetMk.kq ? JSON.stringify(chetMk.kq) : chetMk.loi);
 
     const saiDang = chay('sai_dang', `
 try:

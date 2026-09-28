@@ -17,8 +17,10 @@ const { adbPath, adbServerPort } = require('./adbpath.cjs');
 const { findPython } = require('./pythonpath.cjs');
 
 const EVENT_PREFIX = '@@EVENT@@';
-// Gắn đầy đủ đo được ~40 giây, hỏng cả hai lần ~2 phút. Quá 4 phút là tiến trình kẹt.
-const HAN_MS = 4 * 60 * 1000;
+// Gắn đầy đủ đo được ~40 giây, hỏng cả hai lần ~2 phút. Từ 2026-09-28 mỗi lần đo IP chờ tới ~90 giây
+// (Lalasoft có quãng "đứng" vài chục giây — xem college_proxy.DO_IP_VONG), proxy chết thật đo hai lần
+// cộng màn Loading là ~4 phút. Quá 6 phút mới là tiến trình kẹt.
+const HAN_MS = 6 * 60 * 1000;
 
 // { deviceId, serial, proxy, tat } → Promise<{ ok, ip, msg }>. `onLog(line)` nhận từng dòng log.
 function chayProxy({ deviceId, serial, proxy, tat }, onLog = () => {}) {
@@ -42,7 +44,7 @@ function chayProxy({ deviceId, serial, proxy, tat }, onLog = () => {}) {
       { cwd: getBaseDir(), env, windowsHide: true });
     const hen = setTimeout(() => {
       try { proc.kill(); } catch (_) {}
-      ket({ ok: false, msg: 'gắn proxy quá 4 phút không xong — đã dừng' });
+      ket({ ok: false, msg: 'gắn proxy quá 6 phút không xong — đã dừng' });
     }, HAN_MS);
     const doc = (line) => {
       if (!line) return;
