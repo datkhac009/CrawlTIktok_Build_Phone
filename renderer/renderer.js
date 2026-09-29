@@ -315,6 +315,8 @@ function onCrawlStatus(payload) {
     // Tắt xong thì ô trở về "—": không còn proxy nào để báo.
     if (payload.tat && payload.ok && !payload.dang && !payload.cho) delete st.proxy;
     renderDeviceRow(deviceId);
+    // Modal proxy đang mở cho máy này → ô "Đang lưu" đổi theo (⏳ đang gắn… → ✓ / ✕).
+    if (document.getElementById('proxyModal').classList.contains('open') && proxyIds.includes(deviceId)) veProxyDangLuu();
     return;
   }
 
@@ -466,7 +468,13 @@ function oProxy(d, st) {
       ? `<div class="pproxy-ok">✓ ${p.nuoc ? esc(p.nuoc) + ' · ' : ''}IP ${esc(p.ip)}</div>`
       : `<div class="pproxy-ok" title="${esc(p.msg)}">✓ đang bật (chưa đo được IP)</div>`;
   } else if (p && !p.ok) {
-    const nhan = p.tat ? 'chưa tắt được' : (/Việt Nam/.test(p.msg || '') ? 'IP Việt Nam' : 'không chạy');
+    // Nói đúng bệnh ngay trên ô (2026-09-29): máy tắt Wi-Fi mà ghi "không chạy" thì người dùng đi đổi
+    // proxy — trong khi proxy vẫn sống.
+    const m = p.msg || '';
+    const nhan = p.tat ? 'chưa tắt được'
+      : /không có mạng/.test(m) ? 'máy không có mạng (Wi-Fi?)'
+        : /407/.test(m) ? 'sai mật khẩu proxy'
+          : /Việt Nam/.test(m) ? 'IP Việt Nam' : 'không chạy';
     kq = `<div class="pproxy-err" title="${esc(p.msg)}">✕ ${nhan}</div>`;
   }
   if (!d.proxyHien) return kq || '<span class="pproxy-none">—</span>';
@@ -619,8 +627,62 @@ function openProxyModal(ids) {
     ? ((devices.find((x) => x.id === ids[0]) || {}).name || '1 máy')
     : `${ids.length} máy đã chọn`;
   document.getElementById('proxyText').value = '';
+  document.getElementById('proxyCheckBox').hidden = true;
+  veProxyDangLuu();
   xemTruocProxy();
   document.getElementById('proxyModal').classList.add('open');
+}
+
+// Ô "Đang lưu": proxy ĐÃ LƯU của từng máy đã chọn + kết quả gắn gần nhất — cùng chữ với cột Proxy.
+// VÌ SAO (2026-09-29): ô dán luôn mở ra trống (mật khẩu không bao giờ sang giao diện), nên lưu xong mở
+// lại modal, chủ dự án tưởng "không lưu lại".
+function veProxyDangLuu() {
+  document.getElementById('proxyCurrent').innerHTML = proxyIds.map((id) => {
+    const d = devices.find((x) => x.id === id) || { id, name: id };
+    const st = deviceState[id] || trangThaiMoi();
+    const o = d.proxyHien || st.proxy || d.proxyKq ? oProxy(d, st) : '<span class="pproxy-none">chưa có proxy</span>';
+    return `<div class="proxy-dong"><b>${esc(d.name || id)}</b>: ${o}</div>`;
+  }).join('');
+}
+
+// Nút "🔌 Kiểm tra proxy" (main.js: proxies-check → src/proxycheck.cjs). Ô dán có dòng → thử các dòng
+// đó; ô trống → thử proxy đang lưu. Thử từ MÁY TÍNH + hỏi điện thoại có mạng (Wi-Fi) không.
+async function kiemTraProxy() {
+  const nut = document.getElementById('proxyCheck');
+  const o = document.getElementById('proxyCheckResult');
+  document.getElementById('proxyCheckBox').hidden = false;
+  o.innerHTML = '⏳ Đang thử proxy từ máy tính và hỏi mạng của từng điện thoại…';
+  nut.disabled = true;
+  try {
+    const r = await window.api.proxiesCheck({ ids: proxyIds, text: document.getElementById('proxyText').value });
+    if (!r.ok) {
+      o.innerHTML = `<span class="pproxy-err">Dòng ${r.loi.map((x) => x.dong).join(', ')} sai dạng — cần host:port:user:pass.</span>`;
+    } else if (!r.kq.length) {
+      o.innerHTML = 'Không có máy nào để kiểm.';
+    } else {
+      o.innerHTML = (r.dan ? 'Thử các dòng vừa dán (CHƯA lưu):' : 'Thử proxy đang lưu:')
+        + r.kq.map(dongKiemTraProxy).join('');
+    }
+  } catch (e) {
+    o.innerHTML = `<span class="pproxy-err">Không kiểm được: ${esc(String(e && e.message || e))}</span>`;
+  } finally {
+    nut.disabled = false;
+    o.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function dongKiemTraProxy(x) {
+  const ten = esc((devices.find((d) => d.id === x.id) || {}).name || x.id);
+  const giay = (ms) => `${(ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giây`;
+  const p = x.proxy;
+  const px = !p ? '<span class="pproxy-none">chưa có proxy</span>'
+    : p.ok ? `<span class="pproxy-ok">✓ proxy chạy${p.ip ? ` · IP ${esc(p.ip)}` : ''} (${giay(p.ms)})</span>`
+      : `<span class="pproxy-err">✕ ${esc(p.msg)}</span>`;
+  const m = x.mang || {};
+  const mang = m.co === true ? '<span class="pproxy-ok">✓ điện thoại có mạng</span>'
+    : m.co === false ? `<span class="pproxy-err">✕ điện thoại KHÔNG có mạng — Wi-Fi ${m.wifiTat ? 'đang TẮT' : 'chưa kết nối'}: bật Wi-Fi trên máy</span>`
+      : '<span class="pproxy-none">? chưa hỏi được điện thoại (không online?)</span>';
+  return `<div class="proxy-dong"><b>${ten}</b>${x.hien ? ` ← ${esc(x.hien)}` : ''}<br>${px} · ${mang}</div>`;
 }
 
 function closeProxyModal() {
@@ -629,6 +691,11 @@ function closeProxyModal() {
 
 async function xemTruocProxy() {
   const text = document.getElementById('proxyText').value;
+  if (!text.trim()) {
+    document.getElementById('proxyPreview').innerHTML =
+      'Ô dán trống → bấm <b>Lưu &amp; Kết nối</b> để kết nối lại proxy <b>đang lưu</b> (máy chưa có proxy thì bỏ qua).';
+    return;
+  }
   const r = await window.api.devicesSetProxies({ ids: proxyIds, text, thu: true });
   const ten = (id) => esc((devices.find((x) => x.id === id) || {}).name || id);
   const dong = [];
@@ -652,14 +719,22 @@ async function napLaiSauKhiGanProxy() {
 
 async function saveProxies() {
   const text = document.getElementById('proxyText').value;
-  const r = await window.api.devicesSetProxies({ ids: proxyIds, text });
+  // Ô trống + "Lưu & Kết nối" = KẾT NỐI LẠI proxy đang lưu (2026-09-29): mật khẩu đã lưu không hiện lại
+  // ở đây, nên không bắt dán lại chỉ để gắn lại (vd vừa bật Wi-Fi cho máy).
+  const r = text.trim()
+    ? await window.api.devicesSetProxies({ ids: proxyIds, text })
+    : await window.api.devicesSetProxies({ ids: proxyIds, ketNoi: true });
   if (!r.ok) { xemTruocProxy(); toast('Có dòng proxy sai dạng — chưa gán gì', false); return; }
-  if (!r.gan.length) { toast('Chưa dán proxy nào', false); return; }
+  const soMay = text.trim() ? r.gan.length : r.ketNoi;
+  if (!soMay) {
+    toast(text.trim() ? 'Chưa dán proxy nào' : 'Chưa dán proxy nào, và các máy này chưa có proxy đang lưu', false);
+    return;
+  }
   await napLaiSauKhiGanProxy();
   closeProxyModal();
-  toast(`Đã lưu proxy cho ${r.gan.length} máy`
-    + (r.dangGan.length ? ` — đang gắn lên ${r.dangGan.length} máy (~40 giây), xem cột Proxy` : '')
-    + (r.cho.length ? ` — ${r.cho.length} máy đang chạy, gắn ở lượt chạy sau` : ''), true);
+  toast((text.trim() ? `Đã lưu proxy cho ${soMay} máy` : `Kết nối lại proxy đang lưu cho ${soMay} máy`)
+    + (r.dangGan.length ? ` — đang kết nối ${r.dangGan.length} máy (~40 giây), xem cột Proxy` : '')
+    + (r.cho.length ? ` — ${r.cho.length} máy đang chạy, kết nối ở lượt chạy sau` : ''), true);
 }
 
 async function clearProxies() {
@@ -1343,6 +1418,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('proxyModalClose').addEventListener('click', closeProxyModal);
   document.getElementById('proxyCancel').addEventListener('click', closeProxyModal);
   document.getElementById('proxySave').addEventListener('click', saveProxies);
+  document.getElementById('proxyCheck').addEventListener('click', kiemTraProxy);
   document.getElementById('proxyClear').addEventListener('click', clearProxies);
   document.getElementById('proxyText').addEventListener('input', xemTruocProxy);
 

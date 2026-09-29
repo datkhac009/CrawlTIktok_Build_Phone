@@ -16,6 +16,7 @@ const { normalizeKey } = require('./src/linkkey.cjs');
 const phaseplan = require('./src/phaseplan.cjs');
 const proxy = require('./src/proxy.cjs');
 const proxyrun = require('./src/proxyrun.cjs');
+const proxycheck = require('./src/proxycheck.cjs');
 const account = require('./src/account.cjs');
 const loginrun = require('./src/loginrun.cjs');
 const { getDeviceDir } = require('./src/paths.cjs');
@@ -752,12 +753,20 @@ ipcMain.handle('devices-delete', (_e, data) => {
 // proxy của các máy đó. Máy đang chạy dùng proxy mới từ lượt chạy KẾ TIẾP (timMay đọc từ đĩa).
 // `thu: true` = chỉ xem trước (ô "Sẽ gán" trong modal), không ghi gì — để renderer không phải giữ bản
 // sao thứ hai của luật đọc proxy.
-ipcMain.handle('devices-set-proxies', (_e, { ids, text, xoa, thu }) => {
+ipcMain.handle('devices-set-proxies', (_e, { ids, text, xoa, thu, ketNoi }) => {
   const ds = Array.isArray(ids) ? ids : [];
   if (xoa) {
     ds.forEach((id) => devices.updateDevice({ id, proxy: '' }));
     const ap = apProxyNgay(ds, true);
     return { ok: true, gan: [], loi: [], thieu: 0, thua: 0, ...ap };
+  }
+  // "Lưu & Kết nối" với ô dán TRỐNG (2026-09-29) = gắn lại proxy ĐANG LƯU của các máy đó. Mật khẩu đã lưu
+  // không bao giờ hiện lại trong modal, nên không bắt người dùng dán lại chỉ để kết nối lại.
+  if (ketNoi) {
+    const coProxy = new Set(devices.loadDevices().filter((d) => d.proxy).map((d) => d.id));
+    const cac = ds.filter((id) => coProxy.has(id));
+    const ap = apProxyNgay(cac, false);
+    return { ok: true, gan: [], loi: [], thieu: 0, thua: 0, ketNoi: cac.length, ...ap };
   }
   const r = proxy.ganHangLoat(ds, text);
   let ap = { dangGan: [], cho: [] };
@@ -773,6 +782,28 @@ ipcMain.handle('devices-set-proxies', (_e, { ids, text, xoa, thu }) => {
     thieu: r.thieu,
     thua: r.thua,
     ...ap,
+  };
+});
+// ── NÚT "🔌 KIỂM TRA PROXY" TRONG MODAL (2026-09-29) ──
+// Chủ dự án: "thêm kiểm tra kết nối proxy, tránh việc bị lỗi như trước" (src/proxycheck.cjs). Ô dán có
+// dòng → thử ĐÚNG các dòng đó theo thứ tự máy, chưa lưu gì; ô trống → thử proxy ĐÃ LƯU của các máy đã
+// chọn. Kèm câu hỏi "điện thoại có mạng (Wi-Fi) không". Trả host:port + kết quả, KHÔNG kèm mật khẩu.
+ipcMain.handle('proxies-check', async (_e, { ids, text }) => {
+  const ds = Array.isArray(ids) ? ids : [];
+  const may = new Map(devices.loadDevices().map((d) => [d.id, d]));
+  const dan = String(text || '').trim() !== '';
+  let cap;
+  if (dan) {
+    const r = proxy.ganHangLoat(ds, text);
+    if (r.loi.length) return { ok: false, dan, loi: r.loi.map((x) => ({ dong: x.dong })), kq: [] };
+    cap = r.gan.map((x) => ({ id: x.id, chuoi: x.proxy }));
+  } else {
+    cap = ds.map((id) => ({ id, chuoi: (may.get(id) || {}).proxy || '' }));
+  }
+  const kq = await proxycheck.kiemNhieu(cap.map((x) => ({ ...x, serial: (may.get(x.id) || {}).serial || '' })));
+  return {
+    ok: true, dan, loi: [],
+    kq: kq.map((x, i) => ({ id: x.id, hien: proxy.moTa(cap[i].chuoi), proxy: x.proxy, mang: x.mang })),
   };
 });
 
@@ -909,13 +940,10 @@ function _chayHangDangNhap() {
 }
 async function _dangNhapMot(id) {
   const say = (line) => sendToRenderer('crawl-status', { deviceId: id, kind: 'log', line });
+  // Đăng nhập không đụng tới proxy (2026-09-29, xem tiktok_login.py) nên không có sự kiện `proxy`.
   const suKien = (p) => {
     if (p.type === 'login' && p.trangThai === 'cho_nguoi') sendToRenderer('crawl-status', { deviceId: id, kind: 'login', dang: true, choNguoi: true, msg: String(p.msg || '') });
     else if (p.type === 'login') sendToRenderer('crawl-status', { deviceId: id, kind: 'login', dang: true });
-    else if (p.type === 'proxy' && p.ok !== undefined) {
-      sendToRenderer('crawl-status', { deviceId: id, kind: 'proxy', ok: p.ok === true, ip: String(p.ip || ''), msg: String(p.msg || '') });
-      ghiKqProxy(id, p);
-    }
   };
   let r;
   try {
@@ -925,7 +953,7 @@ async function _dangNhapMot(id) {
     else if (!d || !d.taiKhoan) r = { ok: false, trangThai: 'loi', msg: 'máy chưa có tài khoản' };
     else {
       const cu = d.taiKhoanKq && d.taiKhoanKq.ok ? d.taiKhoanKq.handle : '';
-      r = await loginrun.chayDangNhap({ deviceId: id, serial: may.serial, taiKhoan: d.taiKhoan, handleCu: cu, proxy: may.proxy }, say, suKien);
+      r = await loginrun.chayDangNhap({ deviceId: id, serial: may.serial, taiKhoan: d.taiKhoan, handleCu: cu }, say, suKien);
     }
   } catch (e) {
     r = { ok: false, trangThai: 'loi', msg: String(e && e.message || e).slice(0, 160) };

@@ -52,6 +52,20 @@ const MAU = [
   [':8080:u:p', null],
 ];
 
+// Mạng nền của điện thoại (`settings get global wifi_on; ip route show table all`) → [có mạng, Wi-Fi tắt].
+// CÙNG bộ mẫu chạy qua doc_mang_nen (Python, lượt quét) và docMangNen (JS, nút 🔌 Kiểm tra): hai bên
+// lệch là nút Kiểm tra nói "có mạng" mà lượt quét lại chặn, hoặc ngược lại. Mẫu 1–2 chép từ máy thật
+// ngày 2026-09-29 (5200b3985a969423 có Wi-Fi; 5200c637ea67c41b Wi-Fi tắt, Lalasoft vẫn Connected).
+const MAU_MANG = [
+  ['1\ndefault via 192.168.5.1 dev wlan0 table wlan0 proto static\nunreachable default dev lo table tun0 proto static metric 1024 error -101', [true, false]],
+  ['0\nunreachable default dev lo table tun0 proto static metric 1024 error -101\nunreachable default dev lo proto kernel metric 4294967295 error -101', [false, true]],
+  ['0\ndefault dev rmnet_data0 table rmnet_data0 proto static scope link', [true, true]],
+  ['1\r\ndefault via 192.168.4.1 dev wlan0 table wlan0 proto static\r\n', [true, false]],
+  ['', [null, false]],
+  ['1\n192.168.4.0/23 dev wlan0 proto kernel scope link src 192.168.4.149', [null, false]],
+  ['null\nunreachable default dev lo table tun0', [false, false]],
+];
+
 // ── 1. Đọc chuỗi, che mật khẩu, gán hàng loạt (JS) ──
 {
   const sai = MAU.filter(([s, mong]) => JSON.stringify(docProxy(s)) !== JSON.stringify(mong));
@@ -154,8 +168,11 @@ def ip_ra():
     if IP.get("co_dinh") or IP["dt"] in ("", IP["pc"]): return IP["dt"]
     return MAY.o.get(CP.O_DIA_CHI) or IP["dt"]
 LENH = []
+# Mang nen (wifi_on + bang dinh tuyen). Rong = "chua hoi duoc" -> khong chan (nhu cu).
+MANG = {"out": ""}
 def adb_gia(*a, serial=None, timeout=60):
     LENH.append(list(a))
+    if a[0] == "shell" and len(a) > 1 and "ip route" in a[1]: return MANG["out"]
     if a[:2] == ("shell", "ls"): return "lo wlan0 tun0" if MAY.bat else "lo wlan0"
     if a[:2] == ("shell", "dumpsys"): return "mInputShown=false"
     if a[:3] == ("shell", "pm", "clear"):
@@ -196,6 +213,10 @@ def _nc():
     return ip_ra() if MAY.bat else (IP["pc"] if IP.get("tat_ra_that") else "")
 CP.adb = adb_gia
 CP.ip_may_tinh = lambda: IP["pc"]
+# Thu proxy tu MAY TINH: mac dinh "khong thu duoc" -> hanh vi cu. Phep thu KHONG ra mang that.
+_THU_PC_GOC = CP.thu_proxy_tu_may_tinh
+PC = {"kq": ("", "")}
+CP.thu_proxy_tu_may_tinh = lambda p: PC["kq"]
 LOG, SK = [], []
 log = LOG.append
 emit = lambda t, **k: SK.append(dict(type=t, **k))
@@ -385,7 +406,9 @@ ket(bat=MAY.bat)`);
       && hoi.kq.log.some((l) => /quyền VPN/.test(l)), hoi.loi);
 
     // Máy báo "Connected" nhưng không ra Internet — ĐÚNG ca SOCKS5 đo được trên máy 60.
-    const socks = chay('socks', `
+    // ⚠ Tên tệp KHÔNG được là `socks`: tệp thử nằm đầu sys.path, và `requests` (3u) import module
+    // `socks` — nó sẽ chạy nhầm tệp này.
+    const socks = chay('cong_socks5', `
 IP["dt"] = ""
 try:
     CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit); ket(hong=False)
@@ -528,6 +551,104 @@ except CP.ProxyHong:
     ket(hong=True, mo=[v for v in MAY.viec if v[0] == "app_start"])`);
     check('3k. Chuỗi proxy sai dạng → ProxyHong trước khi đụng tới điện thoại',
       !!saiDang.kq && saiDang.kq.hong && !saiDang.kq.mo.length, saiDang.loi);
+
+    // ── 2026-09-29: Lalasoft báo "Connected" mà app báo "✕ không chạy" ──
+    // Đo thật 4 máy USB: Wi-Fi TẮT → không có đường ra Internet, dù proxy (thử từ máy tính) vẫn sống.
+    // Bản cũ bảo "đổi proxy khác" — chẩn đoán sai.
+    const CO_MANG = '"1\\ndefault via 192.168.5.1 dev wlan0 table wlan0 proto static"';
+    const KHONG_MANG = '"0\\nunreachable default dev lo table tun0 proto static metric 1024 error -101"';
+    const khongMang = chay('khong_mang', `
+import os
+MAY.bat = True
+MAY.o = ${O_DUNG}
+MANG["out"] = ${KHONG_MANG}
+open("${MOC}", "w").write(CP._dau(${JSON.stringify(PX)}))
+try:
+    CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}"); ket(hong=False)
+except CP.MayKhongCoMang as e:
+    ket(hong=True, ly_do=str(e), mo=[v for v in MAY.viec if v[0] == "app_start"], go=${GO}, con_moc=os.path.exists("${MOC}"))`);
+    check('3r. Máy TẮT Wi-Fi (Lalasoft vẫn Connected) → báo "Wi-Fi đang TẮT", KHÔNG bảo đổi proxy, KHÔNG đụng Lalasoft, giữ dấu',
+      !!khongMang.kq && khongMang.kq.hong && /Wi-Fi đang TẮT/.test(khongMang.kq.ly_do) && !/đổi proxy/.test(khongMang.kq.ly_do)
+      && !khongMang.kq.mo.length && !khongMang.kq.go.length && khongMang.kq.con_moc
+      && khongMang.kq.su_kien.some((e) => e.type === 'proxy' && e.ok === false && /không có mạng/.test(e.msg)),
+      khongMang.kq ? JSON.stringify(khongMang.kq) : khongMang.loi);
+
+    const mangDoc = chay('mang_doc', `ket(kq=[list(CP.doc_mang_nen(s)) for s in ${JSON.stringify(MAU_MANG.map(([s]) => s))}])`);
+    const lechMang = mangDoc.kq ? MAU_MANG.filter(([, mong], i) => JSON.stringify(mangDoc.kq.kq[i]) !== JSON.stringify(mong)) : MAU_MANG;
+    check('3r2. doc_mang_nen: Wi-Fi / di động có đường → có mạng; chỉ "unreachable default" → KHÔNG (kèm Wi-Fi tắt); không đọc được gì → chưa biết, không chặn',
+      !lechMang.length, mangDoc.kq ? JSON.stringify(mangDoc.kq.kq) : mangDoc.loi);
+
+    const duPhong = chay('du_phong_pc', `
+MAY.bat = True
+MAY.o = ${O_DUNG}
+MANG["out"] = ${CO_MANG}
+IP["dt"] = ""
+PC["kq"] = ("ok", "203.0.113.10")
+open("${MOC}", "w").write(CP._dau(${JSON.stringify(PX)}))
+ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}")
+ket(ip=ip, mo=[v for v in MAY.viec if v[0] == "app_start"], go=${GO})`);
+    check('3s. Lalasoft đã start ĐÚNG proxy (dấu khớp), đo trên máy không ra, proxy sống khi thử từ máy tính → ✓ nhận IP proxy, không đụng Lalasoft',
+      !!duPhong.kq && duPhong.kq.ip === '203.0.113.10' && !duPhong.kq.mo.length && !duPhong.kq.go.length
+      && duPhong.kq.su_kien.some((e) => e.type === 'proxy' && e.ok === true && e.ip === '203.0.113.10')
+      && duPhong.kq.log.some((l) => /thử từ máy tính/.test(l)), duPhong.kq ? JSON.stringify(duPhong.kq) : duPhong.loi);
+
+    const duPhongKhongDau = chay('du_phong_khong_dau', `
+import os
+MAY.bat = True
+MAY.o = ${O_DUNG}
+MANG["out"] = ${CO_MANG}
+IP["dt"] = ""
+PC["kq"] = ("ok", "203.0.113.10")
+if os.path.exists("${MOC}"): os.remove("${MOC}")
+ip = CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}")
+ket(ip=ip, so_go=len(${GO}), clear=[l for l in LENH if l[:3] == ["shell", "pm", "clear"]])`);
+    check('3s2. Không có dấu (mật khẩu trong Lalasoft chưa chắc) → KHÔNG nhận ngay; gõ lại đủ 4 ô MỘT lần rồi mới nhận IP proxy',
+      !!duPhongKhongDau.kq && duPhongKhongDau.kq.ip === '203.0.113.10' && duPhongKhongDau.kq.so_go === 4
+      && !duPhongKhongDau.kq.clear.length, duPhongKhongDau.kq ? JSON.stringify(duPhongKhongDau.kq) : duPhongKhongDau.loi);
+
+    const saiMk = chay('sai_mk_pc', `
+MAY.bat = True
+MAY.o = ${O_DUNG}
+MANG["out"] = ${CO_MANG}
+IP["dt"] = ""
+PC["kq"] = ("sai_mk", "")
+open("${MOC}", "w").write(CP._dau(${JSON.stringify(PX)}))
+try:
+    CP.dam_bao_proxy(MAY, "S", ${JSON.stringify(PX)}, log, emit, moc="${MOC}"); ket(hong=False)
+except CP.ProxyHong as e:
+    ket(hong=True, ly_do=str(e), mo=[v for v in MAY.viec if v[0] == "app_start"], go=${GO})`);
+    check('3t. Proxy SAI mật khẩu (407 khi thử từ máy tính) → báo đúng, KHÔNG mở / gõ lại Lalasoft',
+      !!saiMk.kq && saiMk.kq.hong && /407/.test(saiMk.kq.ly_do) && !saiMk.kq.mo.length && !saiMk.kq.go.length,
+      saiMk.kq ? JSON.stringify(saiMk.kq) : saiMk.loi);
+
+    // Hàm thử proxy từ máy tính THẬT, với `requests` giả (không ra mạng).
+    const thuPc = chay('thu_pc', `
+import requests
+URL = []
+class R:
+    def __init__(s, code, text): s.status_code, s.text = code, text
+TL = {"kieu": "ok"}
+def get_gia(url, proxies=None, timeout=None):
+    URL.append(proxies["http"])
+    if TL["kieu"] == "loi": raise requests.exceptions.ProxyError("Unable to connect to proxy " + proxies["http"])
+    if TL["kieu"] == "407": return R(407, "")
+    return R(200, "203.0.113.10\\n")
+requests.get = get_gia
+f = _THU_PC_GOC
+kq = {"ok": f(CP.doc_proxy(${JSON.stringify(PX)}))}
+TL["kieu"] = "407"; kq["sai_mk"] = f(CP.doc_proxy(${JSON.stringify(PX)}))
+TL["kieu"] = "loi"; kq["chet"] = f(CP.doc_proxy(${JSON.stringify(PX)}))
+CP.ip_may_tinh = lambda: ""
+kq["pc_mat_mang"] = f(CP.doc_proxy(${JSON.stringify(PX)}))
+TL["kieu"] = "ok"; f(CP.doc_proxy("2001:db8::1:8080:u:p@x"))
+ket(kq=kq, url0=URL[0], url6=URL[-1])`);
+    const tp = thuPc.kq || {};
+    check('3u. thu_proxy_tu_may_tinh: 200 → ("ok", IP); 407 → sai_mk; không nối được → chet; máy tính mất mạng → chưa biết',
+      !!thuPc.kq && JSON.stringify(tp.kq) === JSON.stringify({ ok: ['ok', '203.0.113.10'], sai_mk: ['sai_mk', ''], chet: ['chet', ''], pc_mat_mang: ['', ''] }),
+      thuPc.kq ? JSON.stringify(tp.kq) : thuPc.loi);
+    check('3u2. URL proxy: tài khoản được mã hoá (@ trong mật khẩu), host IPv6 có ngoặc; lỗi của requests không lọt ra log',
+      !!thuPc.kq && tp.url0 === `http://nguoidung01:${MK}@203.0.113.10:50100` && tp.url6 === 'http://u:p%40x@[2001:db8::1]:8080'
+      && !JSON.stringify([tp.log, tp.su_kien]).includes(MK), thuPc.kq ? `${tp.url0} ${tp.url6}` : thuPc.loi);
   }
 
   // ── 5. Lalasoft CÓ SẴN trên máy, không gán proxy trong app (2026-09-23) ──
@@ -622,6 +743,20 @@ ket(khong=a, loi=CP.co_college_proxy("S"))`);
     check('5i. co_college_proxy: máy có Lalasoft → True, không có → False, adb lỗi → None (chưa hỏi được, không đoán)',
       !!doc2.kq && doc2.kq.co === true && !!khongCo.kq && khongCo.kq.khong === false && khongCo.kq.loi === null,
       JSON.stringify([doc2.kq && doc2.kq.co, khongCo.kq]) || khongCo.loi);
+
+    // 2026-09-29: bản cũ ở đây "không đo được IP — vẫn quét" → TikTok mở trên máy không có mạng.
+    const scKhongMang = chay('sc_khong_mang', `
+${DA_NHAP}
+MAY.bat = True
+MANG["out"] = "0\\nunreachable default dev lo table tun0 proto static metric 1024 error -101"
+try:
+    CP.dam_bao_proxy_san_co(MAY, "S", log, emit); ket(hong=False)
+except CP.MayKhongCoMang as e:
+    ket(hong=True, ly_do=str(e), mo=${MO}, go=${GO})`);
+    check('5j. Lalasoft có sẵn nhưng máy TẮT Wi-Fi → báo "Wi-Fi đang TẮT", không mở Lalasoft, không cho quét',
+      !!scKhongMang.kq && scKhongMang.kq.hong && /Wi-Fi đang TẮT/.test(scKhongMang.kq.ly_do) && !scKhongMang.kq.mo.length
+      && !scKhongMang.kq.go.length && scKhongMang.kq.su_kien.some((e) => e.type === 'proxy' && e.ok === false),
+      scKhongMang.kq ? JSON.stringify(scKhongMang.kq) : scKhongMang.loi);
   }
 }
 
@@ -692,13 +827,107 @@ ket(khong=a, loi=CP.co_college_proxy("S"))`);
 
   const html = doc('renderer/index.html');
   const rend = doc('renderer/renderer.js');
-  const idHtml = ['proxySelectedBtn', 'proxyModal', 'proxyText', 'proxyPreview', 'proxySave', 'proxyClear', 'proxyCancel', 'proxyModalClose', 'proxyTarget'];
+  const idHtml = ['proxySelectedBtn', 'proxyModal', 'proxyText', 'proxyPreview', 'proxySave', 'proxyClear', 'proxyCancel', 'proxyModalClose', 'proxyTarget',
+    'proxyCurrent', 'proxyCheck', 'proxyCheckBox', 'proxyCheckResult'];
   const thieuId = idHtml.filter((id) => !html.includes(`id="${id}"`) || !rend.includes(`'${id}'`));
   check('4l. Giao diện: mọi phần tử của modal proxy có trong HTML VÀ được renderer dùng', !thieuId.length, thieuId.join(', '));
   const cot = (html.match(/<thead>[\s\S]*?<\/thead>/) || [''])[0].match(/<th\b/g).length;
   const o = (rend.match(/function deviceRowHtml[\s\S]*?\n}/) || [''])[0].match(/<td\b/g).length;
   check('4m. Bảng thiết bị: số cột tiêu đề = số ô mỗi dòng', cot === o, `${cot} tiêu đề, ${o} ô`);
   check('4n. preload lộ devicesSetProxies', /devicesSetProxies: \(data\) => ipcRenderer\.invoke\('devices-set-proxies'/.test(doc('preload.cjs')));
+
+  // 2026-09-29: nút "Lưu" đổi thành "Lưu & Kết nối"; thêm nút "🔌 Kiểm tra proxy"; modal hiện proxy đang lưu.
+  const mainJs = doc('main.js');
+  check('4p. Modal proxy: nút "Lưu & Kết nối" + nút 🔌 Kiểm tra proxy nối tới main (proxies-check → proxycheck.kiemNhieu)',
+    /id="proxySave">Lưu &amp; Kết nối</.test(html) && /id="proxyCheck">🔌 Kiểm tra proxy</.test(html)
+    && /proxiesCheck: \(data\) => ipcRenderer\.invoke\('proxies-check'/.test(doc('preload.cjs'))
+    && /ipcMain\.handle\('proxies-check'[\s\S]{0,1500}proxycheck\.kiemNhieu\(/.test(mainJs)
+    && /window\.api\.proxiesCheck\(/.test(rend) && /addEventListener\('click', kiemTraProxy\)/.test(rend));
+  check('4q. Kiểm tra proxy trả về giao diện KHÔNG kèm mật khẩu (chỉ host:port qua moTa)',
+    /kq: kq\.map\(\(x, i\) => \(\{ id: x\.id, hien: proxy\.moTa\(cap\[i\]\.chuoi\), proxy: x\.proxy, mang: x\.mang \}\)\)/.test(mainJs));
+  check('4r. Cột Proxy nói đúng bệnh: máy không có mạng (Wi-Fi) / sai mật khẩu proxy, thay vì chỉ "không chạy"',
+    /không có mạng/.test(rend) && /sai mật khẩu proxy/.test(rend) && /máy không có mạng/.test(doc('college_proxy.py')));
 }
 
-done();
+// ── 6. Nút "🔌 Kiểm tra proxy" (src/proxycheck.cjs, 2026-09-29) ──
+// Proxy giả chạy trên 127.0.0.1 — phép thử KHÔNG ra mạng thật.
+(async () => {
+  const http = require('http');
+  const net = require('net');
+  const pc = require(path.join(R, 'src', 'proxycheck.cjs'));
+  const MKJ = 'MatKhauGia01';
+  const AUTH = 'Basic ' + Buffer.from(`nguoidung01:${MKJ}`).toString('base64');
+
+  const lech = MAU_MANG.filter(([s, mong]) => {
+    const r = pc.docMangNen(s);
+    return JSON.stringify([r.co, r.wifiTat]) !== JSON.stringify(mong);
+  });
+  check('6a. docMangNen (JS, nút Kiểm tra) khớp doc_mang_nen (Python, lượt quét) trên cùng bộ mẫu', !lech.length,
+    lech.map(([s]) => JSON.stringify(s)).join(' | '));
+
+  const moProxyGia = (chanConnect) => new Promise((xong) => {
+    const s = http.createServer((req, res) => {
+      if (req.headers['proxy-authorization'] !== AUTH) { res.writeHead(407, { 'Proxy-Authenticate': 'Basic' }); res.end(); return; }
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('203.0.113.10');
+    });
+    s.on('connect', (req, sock) => {
+      if (req.headers['proxy-authorization'] !== AUTH) { sock.end('HTTP/1.1 407 Proxy Authentication Required\r\n\r\n'); return; }
+      sock.end(chanConnect ? 'HTTP/1.1 403 Forbidden\r\n\r\n' : 'HTTP/1.1 200 Connection Established\r\n\r\n');
+    });
+    s.listen(0, '127.0.0.1', () => xong(s));
+  });
+  const moIm = () => new Promise((xong) => {
+    const giu = [];
+    const s = net.createServer((sock) => giu.push(sock));   // nhận kết nối rồi im lặng mãi
+    s.giu = giu;
+    s.listen(0, '127.0.0.1', () => xong(s));
+  });
+
+  const tot = await moProxyGia(false);
+  const chan = await moProxyGia(true);
+  const im = await moIm();
+  const dong = await moIm();
+  const congDong = dong.address().port;
+  await new Promise((x) => dong.close(x));
+
+  const px = (s, mk = MKJ) => `127.0.0.1:${s.address ? s.address().port : s}:nguoidung01:${mk}`;
+  const kqTot = await pc.thuProxy(px(tot));
+  const kqSai = await pc.thuProxy(px(tot, 'SaiMatKhau'));
+  const kqChan = await pc.thuProxy(px(chan));
+  const kqDong = await pc.thuProxy(px(congDong), { hanMs: 8000 });
+  const kqIm = await pc.thuProxy(px(im), { hanMs: 400 });
+  const kqDang = await pc.thuProxy('1.2.3.4');
+  im.giu.forEach((x) => x.destroy());
+  await Promise.all([tot, chan, im].map((s) => new Promise((x) => s.close(x))));
+
+  check('6b. Proxy sống: GET ra IP + CONNECT tới TikTok được → ✓ kèm IP và thời gian',
+    kqTot.ok === true && kqTot.ip === '203.0.113.10' && kqTot.ms >= 0 && !kqTot.msg, JSON.stringify(kqTot));
+  check('6c. Sai mật khẩu → nói rõ 407, không phải "proxy chết"', kqSai.ok === false && /407/.test(kqSai.msg), JSON.stringify(kqSai));
+  check('6d. GET được mà CONNECT bị chặn → ✕ "không mở được đường HTTPS tới TikTok" (TikTok đi HTTPS)',
+    kqChan.ok === false && kqChan.ip === '203.0.113.10' && /HTTPS tới TikTok/.test(kqChan.msg), JSON.stringify(kqChan));
+  check('6e. Cổng không mở → "từ chối kết nối"', kqDong.ok === false && /từ chối kết nối/.test(kqDong.msg), JSON.stringify(kqDong));
+  check('6f. Proxy nhận kết nối rồi im lặng → dừng đúng hạn, "không trả lời"', kqIm.ok === false && /không trả lời/.test(kqIm.msg)
+    && kqIm.ms < 3000, JSON.stringify(kqIm));
+  check('6g. Chuỗi sai dạng → báo ngay, không kết nối', kqDang.ok === false && /sai dạng/.test(kqDang.msg));
+  check('6h. Kết quả kiểm tra KHÔNG chứa mật khẩu',
+    !JSON.stringify([kqTot, kqSai, kqChan, kqDong, kqIm]).includes(MKJ) && !JSON.stringify([kqSai]).includes('SaiMatKhau'));
+
+  let dangThu = 0;
+  let dinh = 0;
+  const thuGia = async (chuoi) => {
+    dangThu++; dinh = Math.max(dinh, dangThu);
+    await new Promise((x) => setTimeout(x, 20));
+    dangThu--;
+    return { ok: true, ip: chuoi.split(':')[0], ms: 1, msg: '' };
+  };
+  const hoiGia = async (serial) => ({ co: serial !== 'S3', wifiTat: serial === 'S3' });
+  const dsMay = Array.from({ length: 7 }, (_, i) => ({ id: `d${i}`, chuoi: i === 2 ? '' : `203.0.113.${i}:80:u:p`, serial: `S${i}` }));
+  const kqNhieu = await pc.kiemNhieu(dsMay, { dongThoi: 3, thu: thuGia, hoiMang: hoiGia });
+  check('6i. kiemNhieu: giữ đúng thứ tự máy, tối đa 3 máy một lúc (chung một adb server), máy chưa có proxy vẫn được hỏi mạng',
+    kqNhieu.map((x) => x.id).join() === dsMay.map((x) => x.id).join() && dinh === 3 && kqNhieu[2].proxy === null
+    && kqNhieu[2].mang.co === true && kqNhieu[3].mang.co === false && kqNhieu[3].mang.wifiTat === true
+    && kqNhieu[4].proxy.ip === '203.0.113.4', JSON.stringify({ dinh, kqNhieu }));
+
+  done();
+})().catch((e) => { check('6. Phần kiểm tra proxy chạy không lỗi', false, String(e && e.stack || e)); done(); });

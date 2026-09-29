@@ -20,12 +20,13 @@ renderer/ ──IPC──> main.js
                      ├── src/preflight.cjs  kiểm tra trước khi chạy
                      ├── src/sheets.cjs     đẩy Google Sheet + lọc trùng
                      ├── src/proxy.cjs      đọc / gán hàng loạt proxy (hàm thuần)
-                     ├── src/proxyrun.cjs   bấm Lưu → python college_proxy.py <serial> gan|tat
+                     ├── src/proxyrun.cjs   bấm Lưu & Kết nối → python college_proxy.py <serial> gan|tat
+                     ├── src/proxycheck.cjs bấm 🔌 Kiểm tra proxy: thử proxy từ máy tính + hỏi Wi-Fi điện thoại
                      ├── src/account.cjs    đọc / gán hàng loạt tài khoản TikTok (hàm thuần)
                      └── src/loginrun.cjs   bấm Đăng nhập → python tiktok_login.py <serial>
                                  │
                                  ├── scan_feed_sounds.py ──adb/uiautomator2──> Android
-                                 ├── college_proxy.py    ──(gọi từ setup_device, proxyrun, tiktok_login)
+                                 ├── college_proxy.py    ──(gọi từ setup_device, proxyrun)
                                  └── tiktok_login.py     ──(gọi từ loginrun)
 ```
 
@@ -166,9 +167,17 @@ Chọn máy → **🌐 Proxy đã chọn** → dán danh sách, mỗi dòng `hos
 thứ nhất đã chọn, dòng 2 cho máy thứ hai… theo thứ tự trên bảng. Có một dòng sai là không gán máy
 nào. Proxy lưu ở trường `proxy` trong `devices.json`; mật khẩu không đi sang giao diện, không vào log.
 
-**Bấm Lưu là máy nhận proxy ngay** (chủ dự án yêu cầu): máy đang rảnh được gắn luôn qua
+Modal có ô **Đang lưu** (proxy đã lưu của từng máy + kết quả gắn gần nhất, không có mật khẩu) — ô dán
+luôn mở ra trống vì mật khẩu không bao giờ sang giao diện, nên trước 2026-09-29 lưu xong mở lại trông
+như "không lưu lại". **🔌 Kiểm tra proxy** (`src/proxycheck.cjs`, ~1 giây): thử chính chuỗi proxy **từ máy
+tính** (GET ra IP + CONNECT `www.tiktok.com:443`) và hỏi điện thoại có **mạng nền** (Wi-Fi) không; ô dán
+có dòng thì thử các dòng đó (chưa lưu gì), ô trống thì thử proxy đang lưu. Nói đúng bệnh: `✕ sai tài
+khoản / mật khẩu proxy (407)`, `✕ điện thoại KHÔNG có mạng — Wi-Fi đang TẮT`…
+
+**Bấm Lưu & Kết nối là máy nhận proxy ngay** (chủ dự án yêu cầu): máy đang rảnh được gắn luôn qua
 `src/proxyrun.cjs` → `python college_proxy.py <serial> gan` (tối đa 3 máy một lúc, chung một adb
-server); cột **Proxy** hiện `⏳ đang gắn…` rồi `✓ IP …` / `✕ không chạy` (rê chuột xem lý do). Máy
+server). Ô dán **trống** + Lưu & Kết nối = gắn lại proxy **đang lưu** (không phải dán lại mật khẩu, vd
+vừa bật Wi-Fi cho máy). Cột **Proxy** hiện `⏳ đang gắn…` rồi `✓ IP …` / `✕ lý do ngắn` (rê chuột xem đủ). Máy
 đang chạy / xếp hàng / nghỉ giữa ca thì **không** chen vào (tiến trình quét đang giữ màn hình, và
 gắn lại = VPN tắt lúc TikTok đang chạy): hiện `⏳ gắn ở lượt chạy sau`. Đang gắn thì nút Chạy của
 máy đó bị chặn. Gắn đầy đủ tắt TikTok trên máy trước (có thể đang mở do thao tác tay). **Bỏ proxy**
@@ -204,6 +213,16 @@ fix") đã cài sẵn trên máy farm — một VPN, không cần root, `college
   mỗi vòng hỏi song song ip-api + ipify + icanhazip, mỗi cái `toybox timeout 12`, tối đa 6 vòng
   (~90 giây), dừng ở vòng được đầu tiên. Xét IP theo NƯỚC (ip-api) trước, không bắt máy tính đọc
   được IP của chính nó (máy tính có Cloudflare WARP). TikTok vẫn chạy trong lúc đó vì nó đi HTTPS.
+- **Lalasoft "Connected" không có nghĩa là máy có mạng** (đo 2026-09-29, 4 máy USB SM-A920F mới): Wi-Fi
+  TẮT, `tun0` vẫn có, nút STOP SERVICE vẫn hiện, nhưng bảng định tuyến chỉ còn `unreachable default` —
+  cổng 80 lẫn 443 đều im, trong khi cùng chuỗi proxy thử từ máy tính HTTP 200. Bản cũ báo "proxy chết,
+  đổi proxy khác": chẩn đoán sai. Giờ `dam_bao_proxy` / `dam_bao_proxy_san_co` hỏi **mạng nền** trước
+  tiên (`settings get global wifi_on; ip route show table all`) → `máy không có mạng: Wi-Fi đang TẮT`,
+  **không đụng vào Lalasoft**.
+- **Đo trên điện thoại không ra gì** (có mạng nền) → thử chính chuỗi proxy **từ máy tính**: 407 → "sai
+  tài khoản/mật khẩu proxy", không trả lời → "proxy chết" (cả hai không mở / gõ lại Lalasoft); proxy sống
+  và Lalasoft CHẮC đang giữ đúng chuỗi này (tệp dấu khớp / app vừa gõ) → **nhận IP proxy**, kèm dòng log
+  ⚠ (chủ dự án: "khi nó đã start được rồi thì auto phải nhận host"). Đo ra IP Việt Nam vẫn **chặn** như cũ.
 - Giữ proxy **bật** khi bấm Dừng (chủ dự án chốt): TikTok trên máy luôn một IP, kể cả khi thao tác
   tay trên 效卫.
 - VPN chỉ đẩy dải IP công cộng; `192.168.*`, `10.*`, `172.16–31.*` đi thẳng `wlan0` → adb qua
@@ -225,8 +244,10 @@ Máy đang chạy / đang gắn proxy thì bị từ chối. Đang đăng nhập
 lưu proxy lúc đó thì để tới lượt sau. Cột **Tài khoản** hiện `⏳ đang đăng nhập…` / `⏳ cần giải
 tay trên xiaowei` / `✓ @handle` / `⚠ lệch: @handle` / `✕ lý do`, và kết quả được lưu (`taiKhoanKq`).
 
-- **Máy có proxy thì gắn proxy trước**, bằng đúng `college_proxy.dam_bao_proxy`. Không đăng nhập
-  bằng IP thật của farm.
+- **Không đụng tới proxy** (2026-09-29, chủ dự án: "khi đăng nhập không cần phải kiểm tra proxy nữa,
+  đăng nhập được rồi thì là thành công luôn"). Bản cũ gắn + đo proxy trước; đo hỏng (máy tắt Wi-Fi,
+  Lalasoft chập chờn) là cả lượt đăng nhập ngã với "proxy hỏng: …". ⚠ Lalasoft đang tắt thì TikTok
+  đăng nhập bằng mạng thật của máy; proxy vẫn được gắn + đo ở mỗi lượt quét như cũ.
 - Luồng xử lý là một vòng **nhìn màn → làm một bước**, không phải một chuỗi bước cứng. Đo trên máy
   60 (TikTok 47.0.2, máy chưa đăng nhập): "Choose what you like" → **Skip**; feed có lớp **"Swipe up
   for more"** nuốt cú bấm → vuốt lên trước; tab **Profile** → màn đăng nhập (`I18nSignUpActivity`)

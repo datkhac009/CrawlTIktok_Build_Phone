@@ -1199,6 +1199,20 @@ const start = (id, serial, cfg = {}) => {
       rTran.dangGan.length === 5 && dangChayCung === 3 && ganGoi.length - truocTran === 5,
       `${dangChayCung} cùng lúc, tổng ${ganGoi.length - truocTran}`);
     proxyTreo = false;
+
+    // ── "Lưu & Kết nối" với ô dán TRỐNG (2026-09-29) = gắn lại proxy ĐANG LƯU ──
+    // Mật khẩu đã lưu không hiện lại trong modal; bắt dán lại chỉ để kết nối lại (vd vừa bật Wi-Fi) là vô lý.
+    await nghi(20);
+    mayGia.set('dKn', { id: 'dKn', name: 'dKn', serial: '520000000000KN', note: '', hw: 'HW-KN' });
+    farmGia.set('520000000000KN', { model: 'dKn', hw: 'HW-KN' });
+    const pKn = mayGia.get('dQ1').proxy;
+    const truocKn = ganGoi.length;
+    const rKn = await handlers.get('devices-set-proxies')({}, { ids: ['dQ1', 'dKn'], ketNoi: true });
+    await nghi(20);
+    const goiKn = ganGoi.slice(truocKn);
+    check('P11. "Lưu & Kết nối" với ô dán trống → gắn lại proxy ĐANG LƯU, máy chưa có proxy bỏ qua, không ghi đè gì',
+      rKn.ok && rKn.ketNoi === 1 && goiKn.length === 1 && goiKn[0].deviceId === 'dQ1' && goiKn[0].proxy === pKn
+      && !goiKn[0].tat && mayGia.get('dQ1').proxy === pKn && !mayGia.get('dKn').proxy, JSON.stringify({ rKn, goiKn }));
   }
 
   // ── TK. TÀI KHOẢN TIKTOK + NÚT ĐĂNG NHẬP (2026-09-24) ──
@@ -1234,9 +1248,10 @@ const start = (id, serial, cfg = {}) => {
     const r = await handlers.get('devices-login')({}, { ids: ['dL1', 'dL2', 'dPy'] });
     await nghi(10);
     const g1 = loginGoi.find((g) => g.deviceId === 'dL1');
-    check('TK5. Bấm Đăng nhập → gọi đúng điện thoại, đúng tài khoản, KÈM proxy của máy',
+    // 2026-09-29: đăng nhập KHÔNG đụng tới proxy nữa (chủ dự án) — máy có proxy cũng không truyền xuống.
+    check('TK5. Bấm Đăng nhập → gọi đúng điện thoại, đúng tài khoản, KHÔNG kèm proxy',
       r.bat.join(',') === 'dL1,dL2' && !!g1 && g1.serial === '5200000000000L1'
-      && g1.taiKhoan === `acc1|${MK}|${KHOA}` && g1.proxy === '1.2.3.4:80:u:p', JSON.stringify({ r, g1 }));
+      && g1.taiKhoan === `acc1|${MK}|${KHOA}` && !('proxy' in g1), JSON.stringify({ r, g1 }));
     check('TK5b. Máy chưa có tài khoản → không đăng nhập, báo lại', r.thieuTk.includes('dPy'));
     check('TK6. Kết quả đăng nhập được LƯU (mở lại app vẫn thấy ✓ @handle), không kèm mật khẩu',
       mayGia.get('dL1').taiKhoanKq && mayGia.get('dL1').taiKhoanKq.ok === true

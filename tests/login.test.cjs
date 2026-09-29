@@ -304,8 +304,15 @@ ket(kq=chay(m, ${TK(KHOA)}), viec=m.viec)`);
     /TAI_KHOAN: String\(taiKhoan/.test(lr) && /\[\.\.\.py\.args, resolveResource\('tiktok_login\.py'\), serial\]/.test(lr));
   check('4b. Danh sách gửi giao diện bỏ `taiKhoan`, chỉ gửi `taiKhoanHien`',
     /const \{ proxy: p, taiKhoan: tk, \.\.\.con \} = d;/.test(main) && /ghiDanhTinh[\s\S]*?return choGiaoDien\(dev\);/.test(main));
-  check('4c. Python gắn proxy TRƯỚC khi đăng nhập (không đăng nhập bằng IP thật)',
-    tl.indexOf('CP.dam_bao_proxy(') > 0 && tl.indexOf('CP.dam_bao_proxy(') < tl.indexOf('kq = dang_nhap('));
+  // 2026-09-29, chủ dự án: "khi đăng nhập không cần phải kiểm tra proxy nữa, đăng nhập được rồi thì là
+  // thành công luôn". Bản cũ gắn + đo proxy trước; đo hỏng (máy tắt Wi-Fi, Lalasoft chập chờn) là
+  // không đăng nhập được, dù TikTok vẫn vào được.
+  const tlMa = tl.replace(/"""[\s\S]*?"""/g, '');   // bỏ docstring: chú thích được nhắc tên cũ
+  // CRLF → LF: máy có `core.autocrlf=true` checkout ra CRLF (xem cùng chú thích trong proxy.test.cjs).
+  const dangNhapMot = (main.replace(/\r\n/g, '\n').match(/async function _dangNhapMot[\s\S]*?\n}\n/) || [''])[0];
+  check('4c. Đăng nhập KHÔNG gắn / đo proxy: không gọi college_proxy.dam_bao_proxy, không nhận PROXY',
+    !/dam_bao_proxy|ProxyHong|PROXY/.test(tlMa) && !/PROXY(_MOC)?:/.test(lr)
+    && !!dangNhapMot && !/proxy: may\.proxy|kind: 'proxy'/.test(dangNhapMot), dangNhapMot.slice(0, 80));
   check('4d. Python không in mật khẩu / khoá ra log', !/log\([^)]*\["(pass|khoa)"\]/.test(tl) && !/emit\([^)]*\["(pass|khoa)"\]/.test(tl));
   check('4e. Bản build .exe mang theo tiktok_login.py', (pkg.build.extraResources || []).includes('tiktok_login.py'));
   check('4f. Máy đang đăng nhập bị coi là bận (gắn proxy không chen vào)',

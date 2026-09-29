@@ -10,8 +10,13 @@ Chủ dự án: "Tiếp theo tôi muốn làm chức năng tự động đăng n
     ⚠ Không có phần tự giải captcha — cố ý.
   - Máy đang đăng nhập tài khoản KHÁC: giữ nguyên, chỉ báo lệch. Không đăng xuất ai cả.
 
-Máy có proxy thì GẮN PROXY TRƯỚC (college_proxy.dam_bao_proxy): đăng nhập từ IP thật của farm rồi
-mới chuyển sang proxy là đúng loại dấu vết khiến TikTok khoá tài khoản.
+KHÔNG ĐỤNG TỚI PROXY (2026-09-29). Bản đầu gắn + đo proxy trước khi đăng nhập (college_proxy.dam_bao_proxy),
+để không đăng nhập bằng IP thật. Đo IP qua Lalasoft chập chờn, và máy tắt Wi-Fi thì proxy "hỏng" dù
+Lalasoft báo Connected — nên nhiều máy không đăng nhập được chỉ vì bước kiểm proxy ("proxy hỏng: gõ
+proxy vào College Proxy không khớp", "máy KHÔNG ra được Internet qua proxy"). Chủ dự án chốt: "khi
+đăng nhập không cần phải kiểm tra proxy nữa, đăng nhập được rồi thì là thành công luôn".
+⚠ Hệ quả đã chấp nhận: Lalasoft đang tắt thì TikTok đăng nhập bằng mạng thật của máy. Proxy vẫn được
+gắn + đo ở mỗi lượt quét (setup_device) như cũ.
 
 ĐƯỜNG ĐI ĐO TRÊN MÁY 60 (SM-A920F, TikTok 47.0.2, chưa đăng nhập, 2026-09-24):
   0. máy MỚI CÀI TikTok (đo ô 62 = 52001c84c055c4bf, 2026-09-24): "Welcome to TikTok"
@@ -29,8 +34,8 @@ mới chuyển sang proxy là đúng loại dấu vết khiến TikTok khoá tà
   ⚠ CHƯA ĐO: chữ báo sai mật khẩu / bị chặn.
 ⚠ resource-id của TikTok bị làm rối (`zn5`, `j1x`…) và đổi theo phiên bản: chỉ khớp theo CHỮ.
 
-Chạy độc lập: `python tiktok_login.py <serial>` với TAI_KHOAN, TK_HANDLE, PROXY, PROXY_MOC trong biến
-môi trường (src/loginrun.cjs truyền). Mật khẩu KHÔNG BAO GIỜ đi qua dòng lệnh hay ra log.
+Chạy độc lập: `python tiktok_login.py <serial>` với TAI_KHOAN, TK_HANDLE trong biến môi trường
+(src/loginrun.cjs truyền). Mật khẩu KHÔNG BAO GIỜ đi qua dòng lệnh hay ra log.
 Kết quả về bằng dòng `@@EVENT@@{"type":"login",...}`.
 """
 import base64
@@ -405,11 +410,6 @@ def _chinh(argv):
         return 1
     try:
         d = connect(serial)
-        if os.environ.get("PROXY"):
-            def tat_tiktok():
-                adb("shell", "am", "force-stop", PKG, serial=serial, timeout=15)
-            CP.dam_bao_proxy(d, serial, os.environ["PROXY"], log, _su_kien,
-                             moc=os.environ.get("PROXY_MOC", ""), truoc_khi_gan=tat_tiktok)
         log("Đăng nhập TikTok bằng %s" % mo_ta(tk))
         kq = dang_nhap(d, serial, tk, log, _su_kien, handle_cu=os.environ.get("TK_HANDLE", ""))
         if kq["trangThai"] == "lech":
@@ -420,10 +420,6 @@ def _chinh(argv):
             log("✓ Đăng nhập xong: %s" % kq["handle"])
         _su_kien("login", **kq)
         return 0 if kq["ok"] else 1
-    except CP.ProxyHong as e:
-        log("⛔ Proxy không chạy — không đăng nhập bằng IP thật: %s" % e)
-        _su_kien("login", ok=False, trangThai="loi", msg="proxy hỏng: %s" % str(e)[:140])
-        return 1
     except DangNhapHong as e:
         log("⛔ Đăng nhập hỏng: %s" % e)
         _su_kien("login", ok=False, trangThai="loi", msg=str(e)[:160])

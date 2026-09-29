@@ -489,19 +489,28 @@
       </div>
       <div class="modal-body">
         <div class="section">
+          <div class="section-title">Đang lưu</div>
+          <div id="proxyCurrent" class="section-desc"></div>
+        </div>
+        <div class="section">
           <div class="section-title">Dán danh sách proxy HTTP — mỗi dòng một proxy</div>
           <textarea class="input" id="proxyText" rows="8" placeholder="203.0.113.10:50100:user:pass"></textarea>
-          <div class="section-desc">Dạng <b>host:port:user:pass</b>. Dòng 1 gán cho máy thứ nhất đã chọn, dòng 2 cho máy thứ hai… theo đúng thứ tự trên bảng. Chỉ dùng cổng <b>HTTP</b>: College Proxy trên máy không chạy SOCKS5 (vẫn báo Connected nhưng máy mất mạng). Bấm <b>Lưu</b> là máy đang rảnh được gắn proxy <b>ngay</b> (~40 giây, xem cột Proxy); máy đang chạy thì gắn ở lượt chạy sau. App đo IP trên điện thoại — proxy không che được IP thật thì máy <b>không chạy</b>.</div>
+          <div class="section-desc">Dạng <b>host:port:user:pass</b>. Dòng 1 gán cho máy thứ nhất đã chọn, dòng 2 cho máy thứ hai… theo đúng thứ tự trên bảng. Để trống ô này = giữ proxy đang lưu (mật khẩu đã lưu không hiện lại ở đây). Chỉ dùng cổng <b>HTTP</b>: College Proxy trên máy không chạy SOCKS5 (vẫn báo Connected nhưng máy mất mạng). Bấm <b>🔌 Kiểm tra proxy</b> để thử proxy từ máy tính và xem điện thoại có mạng (Wi-Fi) không — ô trống thì kiểm proxy đang lưu. Bấm <b>Lưu &amp; Kết nối</b> là máy đang rảnh được gắn proxy <b>ngay</b> (~40 giây, xem cột Proxy); máy đang chạy thì gắn ở lượt chạy sau.</div>
         </div>
         <div class="section">
           <div class="section-title">Sẽ gán</div>
           <div id="proxyPreview" class="section-desc"></div>
         </div>
+        <div class="section" id="proxyCheckBox" hidden>
+          <div class="section-title">Kết quả kiểm tra</div>
+          <div id="proxyCheckResult" class="section-desc"></div>
+        </div>
       </div>
       <div class="modal-foot">
+        <button class="btn" id="proxyCheck">🔌 Kiểm tra proxy</button>
         <button class="btn" id="proxyClear">Bỏ proxy các máy này</button>
         <button class="btn" id="proxyCancel">Huỷ</button>
-        <button class="btn btn-primary" id="proxySave">Lưu</button>
+        <button class="btn btn-primary" id="proxySave">Lưu &amp; Kết nối</button>
       </div>
     </div>
   </div>

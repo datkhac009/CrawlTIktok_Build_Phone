@@ -251,6 +251,8 @@ body {
 
 /* Sections trong modal */
 .section { display: flex; flex-direction: column; gap: 6px; }
+.section[hidden] { display: none; }
+.proxy-dong + .proxy-dong { margin-top: 6px; }
 .section + .section { padding-top: 12px; border-top: 1px solid var(--border); }
 .section-title { font-size: 13px; font-weight: 600; }
 .section-desc { font-size: 12px; color: var(--text-dim); line-height: 1.4; }
