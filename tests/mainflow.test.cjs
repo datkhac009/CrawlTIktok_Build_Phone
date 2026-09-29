@@ -1335,6 +1335,16 @@ const start = (id, serial, cfg = {}) => {
     kiemKq = null;
   }
 
+  // ── G. TRẦN SỐ MÁY CHẠY ĐỒNG THỜI (2026-09-29) ──
+  // Chủ dự án đặt 80 (farm 93 máy) mà app lặng lẽ chạy 50 — máy thứ 51 xếp hàng mãi.
+  {
+    const g80 = await handlers.get('set-global-settings')({}, { deviceConcurrency: 80, launchStaggerMs: 0 });
+    const g999 = await handlers.get('set-global-settings')({}, { deviceConcurrency: 999, launchStaggerMs: 0 });
+    check('G1. Đặt 80 máy chạy đồng thời → áp dụng ĐÚNG 80; gõ 999 → trả về 200 để giao diện báo ra (không kẹp âm thầm)',
+      g80.deviceConcurrency === 80 && g999.deviceConcurrency === 200, JSON.stringify([g80, g999]));
+    await handlers.get('set-global-settings')({}, { deviceConcurrency: 6, launchStaggerMs: 0 });
+  }
+
   _xong = true;
   const failed = results.filter((x) => !x.pass);
   console.log(`\n=== ${results.length - failed.length}/${results.length} PASS ===`);

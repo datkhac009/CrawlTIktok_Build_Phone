@@ -223,7 +223,9 @@ async function init() {
   globalSettings = Object.assign({}, DEFAULT_GLOBAL, stored.global_settings || {});
   // Day xuong tien trinh chinh NGAY luc khoi dong: neu chi day luc bam Luu thi lan chay dau
   // tien sau khi mo app se dung tran mac dinh chu khong phai tran nguoi dung da dat.
-  await window.api.setGlobalSettings(globalSettings);
+  const apDung = await window.api.setGlobalSettings(globalSettings);
+  // So da luu bi kep (ngoai 1–200) → o cai dat hien DUNG so dang chay, khong phai so da go.
+  if (apDung && Number.isFinite(apDung.deviceConcurrency)) globalSettings.deviceConcurrency = apDung.deviceConcurrency;
   refreshPendingConfigured();
   window.api.choDayCount().then(renderChoDay, () => {});
 
@@ -1208,8 +1210,15 @@ async function saveSettings() {
     autoReboot: document.getElementById('cfgAutoReboot').checked,
   };
 
+  // Main kẹp số máy chạy đồng thời vào 1–200 (src/devslot.cjs). Bị kẹp thì LƯU và BÁO đúng số đang áp
+  // dụng — 2026-09-29: ô ghi 80 mà app lặng lẽ chạy 50 (trần cũ), máy thứ 51 xếp hàng không ai hiểu vì sao.
+  const apDung = await window.api.setGlobalSettings(globalSettings);
+  let biKep = '';
+  if (apDung && Number.isFinite(apDung.deviceConcurrency) && apDung.deviceConcurrency !== globalSettings.deviceConcurrency) {
+    biKep = ` Số máy chạy đồng thời phải trong khoảng 1–200 — đã đặt ${apDung.deviceConcurrency}.`;
+    globalSettings.deviceConcurrency = apDung.deviceConcurrency;
+  }
   await window.api.storeSet({ device_settings: deviceSettings, global_settings: globalSettings });
-  await window.api.setGlobalSettings(globalSettings);
 
   // ── ĐẨY CÀI ĐẶT MỚI XUỐNG MÁY ĐANG BẬN (2026-09-18) ──
   // Máy đang chạy theo chu kỳ tự chạy lại sau mỗi giờ nghỉ bằng BẢN CÀI ĐẶT CHỤP LÚC BẤM CHẠY.
@@ -1223,9 +1232,9 @@ async function saveSettings() {
     await window.api.deviceUpdateParams(paramsFor(d));
   }
   closeSettingsModal();
-  toast(banMay
+  toast((banMay
     ? `Đã lưu cài đặt — ${banMay} máy đang chạy sẽ dùng cài đặt mới từ lượt chạy kế tiếp.`
-    : 'Đã lưu cài đặt');
+    : 'Đã lưu cài đặt.') + biKep, !biKep);
 }
 
 // ---- O tich nhom ky tu, dung khuon cua ban PC ----

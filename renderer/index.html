@@ -347,8 +347,8 @@
         <!-- ── Toàn app, không theo từng máy ── -->
         <div class="section" id="cfgGlobalSection">
           <div class="field-label">Số máy chạy đồng thời (toàn app)</div>
-          <input class="input input-sm" type="number" id="cfgDeviceConcurrency" placeholder="6">
-          <div class="section-desc">Mỗi máy đang chạy tốn một tiến trình Python trên máy tính, và cả farm dồn lệnh qua CHUNG một adb server. Bật cả 19 máy cùng lúc là 19 tiến trình tranh nhau một adb server và một đường Wi-Fi, chưa tính phần mềm soi màn hình. Máy vượt trần sẽ xếp hàng chờ.</div>
+          <input class="input input-sm" type="number" id="cfgDeviceConcurrency" placeholder="6" min="1" max="200">
+          <div class="section-desc">Từ 1 đến 200. Máy vượt trần sẽ xếp hàng chờ. Mỗi máy đang chạy tốn một tiến trình Python trên máy tính, và cả farm dồn lệnh qua CHUNG một adb server (của 效卫) và một đường Wi-Fi. Để nhiều máy cùng chạy mà thấy nhiều máy cùng báo "không online" / "mất kết nối" một lúc thì adb server đang nghẹt: tắt 效卫 mở lại, hoặc hạ số này xuống.</div>
           <div class="field-label">Giãn cách khi khởi động nhiều máy … mili-giây (toàn app)</div>
           <input class="input input-sm" type="number" id="cfgLaunchStaggerMs" placeholder="3000">
           <div class="switch-row">

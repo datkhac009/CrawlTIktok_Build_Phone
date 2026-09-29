@@ -28,6 +28,11 @@
 'use strict';
 
 const DEFAULT_MAX = 6;
+// Trần của chính ô "Số máy chạy đồng thời" — chỉ để chặn gõ nhầm (vd 8000), không phải khuyến nghị.
+// ⚠ 2026-09-29: trần cũ là 50, trong khi farm đã lên 93 máy. Chủ dự án đặt 80 thì app lặng lẽ chạy 50,
+// ô cài đặt vẫn ghi 80, máy thứ 51 trở đi "xếp hàng" mà không ai hiểu vì sao. Giờ 200 (dư cho farm lớn
+// thêm), và giao diện báo ra khi số gõ vào bị kẹp.
+const MAX_TRAN = 200;
 const DEFAULT_STAGGER_MS = 3000;
 
 let _max = DEFAULT_MAX;
@@ -38,7 +43,7 @@ let _nextStartAt = 0;         // mốc sớm nhất được khởi động lư�
 
 function setMax(n) {
   const v = parseInt(n, 10);
-  _max = Math.max(1, Math.min(50, Number.isFinite(v) ? v : DEFAULT_MAX));
+  _max = Math.max(1, Math.min(MAX_TRAN, Number.isFinite(v) ? v : DEFAULT_MAX));
   _handOut();
   return _max;
 }
@@ -128,7 +133,7 @@ function _resetForTest() {
 }
 
 module.exports = {
-  DEFAULT_MAX, DEFAULT_STAGGER_MS,
+  DEFAULT_MAX, MAX_TRAN, DEFAULT_STAGGER_MS,
   setMax, getMax, setStaggerMs, getStaggerMs,
   acquire, release, cancel, staggerDelay,
   activeCount, waitingCount, isActive, isWaiting, queuePosition,

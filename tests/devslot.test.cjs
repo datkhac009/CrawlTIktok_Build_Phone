@@ -126,8 +126,10 @@ function check(name, pass, detail) {
     check('7. setMax(0) bị kẹp lên 1', ds.setMax(0) === 1);
     check('7b. setMax(-5) bị kẹp lên 1', ds.setMax(-5) === 1);
     check('7c. setMax("abc") về mặc định', ds.setMax('abc') === ds.DEFAULT_MAX);
-    check('7d. setMax(999) bị kẹp xuống 50', ds.setMax(999) === 50);
+    check('7d. setMax(999) bị kẹp xuống trần 200', ds.MAX_TRAN === 200 && ds.setMax(999) === 200);
     check('7e. setMax("8") nhận chuỗi số (giá trị từ ô nhập luôn là chuỗi)', ds.setMax('8') === 8);
+    // 2026-09-29: farm 93 máy, chủ dự án đặt 80 — trần cũ 50 làm máy thứ 51 xếp hàng mãi.
+    check('7f. setMax(80) chạy đúng 80 máy (trần cũ 50 đã bỏ)', ds.setMax(80) === 80);
   }
 
   // ── 8. Giãn cách khởi động ──
