@@ -904,9 +904,35 @@ ipcMain.handle('devices-set-accounts', (_e, { ids, text, xoa, thu }) => {
 // máy một lúc, như gắn proxy — cả farm dồn lệnh qua chung một adb server.
 const _dangDangNhap = new Set();
 const _hangDangNhap = [];
+// id có lượt trong hàng trên là KIỂM TRA tài khoản (nút 🔍), không phải đăng nhập.
+const _chiKiem = new Set();
 function _dangGanProxyMay(id) {
   return _dangGanProxy.has(id) || _hangGanProxy.some((x) => x.id === id);
 }
+// ── NÚT "🔍 KIỂM TRA TÀI KHOẢN" (2026-09-29) ──
+// Chủ dự án: "thêm tính năng kiểm tra tài khoản (xem máy đó đã đăng nhập tiktok chưa và đăng nhập bằng
+// tài khoản nào — sẽ phải hiển thị ra)". `tiktok_login.py <serial> kiem`: mở TikTok → tab Profile → đọc
+// @handle, KHÔNG gõ gì. Đi CHUNG hàng với nút Đăng nhập (một màn hình chỉ một người lái, tối đa
+// GAN_DONG_THOI máy), nhưng không cần máy đã gán tài khoản. Kết quả hiện ở cột Tài khoản.
+ipcMain.handle('devices-check-account', (_e, { ids }) => {
+  const ds = Array.isArray(ids) ? ids : [];
+  const bat = [];
+  const ban = [];
+  for (const id of ds) {
+    if (_dangDangNhap.has(id) || _hangDangNhap.includes(id)) continue;
+    if (_dangBan(id) || _dangGanProxyMay(id)) {
+      ban.push(id);
+      sendToRenderer('crawl-status', { deviceId: id, kind: 'log', line: '🔍 Máy đang chạy / đang gắn proxy — bấm Dừng rồi mới kiểm tra tài khoản.' });
+      continue;
+    }
+    _chiKiem.add(id);
+    _hangDangNhap.push(id);
+    bat.push(id);
+    sendToRenderer('crawl-status', { deviceId: id, kind: 'login', dang: true, kiem: true });
+  }
+  _chayHangDangNhap();
+  return { ok: true, bat, ban };
+});
 ipcMain.handle('devices-login', (_e, { ids }) => {
   const ds = Array.isArray(ids) ? ids : [];
   const coTk = new Map(devices.loadDevices().map((d) => [d.id, !!account.docTaiKhoan(d.taiKhoan)]));
@@ -934,32 +960,38 @@ function _chayHangDangNhap() {
     _dangDangNhap.add(id);
     _dangNhapMot(id).finally(() => {
       _dangDangNhap.delete(id);
+      _chiKiem.delete(id);
       _chayHangDangNhap();
     });
   }
 }
 async function _dangNhapMot(id) {
+  const kiem = _chiKiem.has(id);
   const say = (line) => sendToRenderer('crawl-status', { deviceId: id, kind: 'log', line });
   // Đăng nhập không đụng tới proxy (2026-09-29, xem tiktok_login.py) nên không có sự kiện `proxy`.
   const suKien = (p) => {
     if (p.type === 'login' && p.trangThai === 'cho_nguoi') sendToRenderer('crawl-status', { deviceId: id, kind: 'login', dang: true, choNguoi: true, msg: String(p.msg || '') });
-    else if (p.type === 'login') sendToRenderer('crawl-status', { deviceId: id, kind: 'login', dang: true });
+    else if (p.type === 'login') sendToRenderer('crawl-status', { deviceId: id, kind: 'login', dang: true, kiem });
   };
   let r;
   try {
     const may = await timMay(id);
     const d = devices.loadDevices().find((x) => x.id === id);
     if (!may.serial) r = { ok: false, trangThai: 'loi', msg: may.loi || 'không tìm thấy máy' };
-    else if (!d || !d.taiKhoan) r = { ok: false, trangThai: 'loi', msg: 'máy chưa có tài khoản' };
+    else if (!kiem && (!d || !d.taiKhoan)) r = { ok: false, trangThai: 'loi', msg: 'máy chưa có tài khoản' };
     else {
-      const cu = d.taiKhoanKq && d.taiKhoanKq.ok ? d.taiKhoanKq.handle : '';
-      r = await loginrun.chayDangNhap({ deviceId: id, serial: may.serial, taiKhoan: d.taiKhoan, handleCu: cu }, say, suKien);
+      const cu = d && d.taiKhoanKq && d.taiKhoanKq.ok ? d.taiKhoanKq.handle : '';
+      r = await loginrun.chayDangNhap({ deviceId: id, serial: may.serial, taiKhoan: (d && d.taiKhoan) || '', handleCu: cu, kiem }, say, suKien);
     }
   } catch (e) {
     r = { ok: false, trangThai: 'loi', msg: String(e && e.message || e).slice(0, 160) };
   }
   const kq = { ok: !!r.ok, trangThai: String(r.trangThai || ''), handle: String(r.handle || ''), msg: String(r.msg || '').slice(0, 200), luc: Date.now() };
+  if (kiem) kq.kiem = true;
   sendToRenderer('crawl-status', { deviceId: id, kind: 'login', ...kq });
+  // Lượt kiểm tra KHÔNG kết luận được (màn lạ, máy không online) thì không ghi đè kết quả cũ đã lưu —
+  // kết quả đăng nhập thành công trước đó còn mang @handle cho lần đăng nhập sau (TK_HANDLE).
+  if (kiem && kq.trangThai === 'loi') return;
   try { devices.updateDevice({ id, taiKhoanKq: kq }); } catch (_) {}
 }
 ipcMain.handle('devices-list-adb', () => devices.listAdbSerials());
@@ -1163,7 +1195,9 @@ ipcMain.handle('device-start', async (_e, params) => {
     return { ok: false, msg: 'Máy này đang được gắn proxy vừa lưu — chờ cột Proxy báo xong rồi bấm Chạy.' };
   }
   if (_dangDangNhap.has(idCho) || _hangDangNhap.includes(idCho)) {
-    return { ok: false, msg: 'Máy này đang đăng nhập TikTok — chờ cột Tài khoản báo xong rồi bấm Chạy.' };
+    return { ok: false, msg: _chiKiem.has(idCho)
+      ? 'Máy này đang được kiểm tra tài khoản TikTok — chờ cột Tài khoản báo xong rồi bấm Chạy.'
+      : 'Máy này đang đăng nhập TikTok — chờ cột Tài khoản báo xong rồi bấm Chạy.' };
   }
   // Bấm Chạy tay thì huỷ mọi hẹn giờ nghỉ đang treo của máy đó, tránh chạy chồng hai lượt.
   huyNghi(params && params.deviceId);

@@ -274,6 +274,22 @@ tay trên xiaowei` / `✓ @handle` / `⚠ lệch: @handle` / `✕ lý do`, và k
   lần sau so bằng `@handle` của lần đăng nhập thành công trước (`TK_HANDLE`).
 - Mã 2FA còn dưới 5 giây là hết hạn → chờ sang mã mới rồi mới gõ. Sai mật khẩu / bị chặn → dừng
   ngay, không gõ lại (gõ lại nhiều lần dễ bị khoá tài khoản).
+- **Hộp thoại "Save login for next time?"** (đo 2026-09-29, TikTok 46.9.3): chỉ hiện khi máy ĐÃ đăng
+  nhập, ghi tên tài khoản ("Log in to <tên> on this device…"). **Back không đóng được** → bấm **Not now**
+  (không lưu gì); không bao giờ bấm "Save login". Bản chụp: `tests/fixtures/login_luu_dang_nhap_46.9.3.xml`.
+
+**Modal Tài khoản** có ô **Đang lưu** (tài khoản đã lưu `@user · 2FA` + kết quả gần nhất, không có mật
+khẩu) — ô dán luôn mở ra trống, nên trước 2026-09-29 lưu xong mở lại trông như "không lưu lại".
+
+**🔍 Kiểm tra tài khoản** (2026-09-29, trong modal Tài khoản; chủ dự án: "xem máy đó đã đăng nhập
+tiktok chưa và đăng nhập bằng tài khoản nào"): `python tiktok_login.py <serial> kiem` mở TikTok → tab
+**Profile** → đọc `@handle` trên trang của mình. **Chỉ xem, không gõ chữ nào**: thấy màn đăng nhập là
+`✕ chưa đăng nhập TikTok`. Không cần máy đã gán tài khoản (`✓ đang đăng nhập @x`); có gán thì so: đúng
+→ `✓ @x`, khác → `⚠ lệch: @x`. Chung hàng với nút Đăng nhập (tối đa 3 máy, máy đang chạy bị từ chối).
+Không đọc được mà không mở giao diện: TikTok có kiểu tài khoản `com.zhiliaoapp.account` với Android
+nhưng không thêm tài khoản nào vào đó (`dumpsys account` của máy đang đăng nhập chỉ có Google). Kiểm
+không ra (màn lạ quá 90 giây) thì báo lên cột nhưng không ghi đè kết quả cũ. Chạy thật 2026-09-29: ~5
+giây mỗi máy; máy `5200b3985a969423` bị báo đăng nhập lỗi hôm trước hoá ra đã đăng nhập đúng tài khoản.
 
 ### Tương tác ở pha Xem (2026-09-25)
 

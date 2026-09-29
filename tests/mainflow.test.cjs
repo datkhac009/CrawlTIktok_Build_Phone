@@ -216,10 +216,13 @@ const loginGoi = [];
 let loginTreo = false;
 const choLogin = [];
 const thaLogin = (kq) => { while (choLogin.length) choLogin.shift()(kq || { ok: true, trangThai: 'xong', handle: '@tk' }); };
+// Nút 🔍 Kiểm tra tài khoản (`kiem: true`) trả `kiemKq` (mặc định: máy chưa đăng nhập).
+let kiemKq = null;
 const fakeLoginrun = {
   chayDangNhap(a) {
     loginGoi.push(a);
     if (loginTreo) return new Promise((r) => choLogin.push(r));
+    if (a.kiem) return Promise.resolve(kiemKq || { ok: false, trangThai: 'chua_dang_nhap', handle: '', msg: 'chưa đăng nhập TikTok' });
     return Promise.resolve({ ok: true, trangThai: 'xong', handle: '@' + String(a.taiKhoan).split('|')[0] });
   },
 };
@@ -1297,6 +1300,39 @@ const start = (id, serial, cfg = {}) => {
 
     await handlers.get('devices-set-accounts')({}, { ids: ['dL1'], xoa: true });
     check('TK12. Bỏ tài khoản → xoá cả tài khoản lẫn kết quả cũ', !mayGia.get('dL1').taiKhoan || mayGia.get('dL1').taiKhoan === '');
+
+    // ── TK-K. NÚT "🔍 KIỂM TRA TÀI KHOẢN" (2026-09-29) ──
+    // Chỉ XEM máy đang đăng nhập tài khoản nào (`tiktok_login.py <serial> kiem`) — không cần gán tài khoản.
+    mayGia.set('dK1', { id: 'dK1', name: 'K1', serial: '52000000000000K1', note: '', hw: 'HW-K1' });
+    farmGia.set('52000000000000K1', { model: 'K1', hw: 'HW-K1' });
+    kiemKq = { ok: false, trangThai: 'dang_nhap_san', handle: '@dang.dung', msg: 'máy đang đăng nhập @dang.dung' };
+    const truocKiem = loginGoi.length;
+    const rK = await handlers.get('devices-check-account')({}, { ids: ['dK1'] });
+    await nghi(10);
+    const gK = loginGoi.slice(truocKiem);
+    const kqK = mayGia.get('dK1').taiKhoanKq;
+    check('TK13. Kiểm tra máy CHƯA gán tài khoản → vẫn kiểm (chế độ kiem), @handle đang đăng nhập hiện ra và được lưu (không ok)',
+      rK.bat.join() === 'dK1' && gK.length === 1 && gK[0].kiem === true && gK[0].serial === '52000000000000K1' && !gK[0].taiKhoan
+      && !!kqK && kqK.handle === '@dang.dung' && kqK.ok === false && kqK.kiem === true
+      && sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dK1' && p.kind === 'login' && p.dang && p.kiem),
+      JSON.stringify({ rK, gK, kqK }));
+
+    kiemKq = { ok: false, trangThai: 'loi', handle: '', msg: 'không kiểm được: màn lạ' };
+    await handlers.get('devices-check-account')({}, { ids: ['dK1'] });
+    await nghi(10);
+    check('TK14. Kiểm tra KHÔNG ra kết luận (màn lạ) → báo lên giao diện nhưng KHÔNG ghi đè kết quả đã lưu',
+      mayGia.get('dK1').taiKhoanKq.handle === '@dang.dung'
+      && sent.some(([c, p]) => c === 'crawl-status' && p.deviceId === 'dK1' && p.kind === 'login' && p.trangThai === 'loi'));
+
+    await handlers.get('device-start')({}, { deviceId: 'dK1', serial: '52000000000000K1', cfg: {} });
+    const truocBanK = loginGoi.length;
+    const rBanK = await handlers.get('devices-check-account')({}, { ids: ['dK1'] });
+    await nghi(10);
+    check('TK15. Máy đang chạy → không kiểm tra chen vào (hai tiến trình cùng lái một màn hình)',
+      rBanK.ban.includes('dK1') && !rBanK.bat.length && loginGoi.length === truocBanK, JSON.stringify(rBanK));
+    ketThuc(lanChay('dK1').slice(-1)[0], false);
+    await nghi(10);
+    kiemKq = null;
   }
 
   _xong = true;

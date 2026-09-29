@@ -243,7 +243,9 @@ body {
   padding: 16px 18px;
   border-bottom: 1px solid var(--border);
 }
-.modal-foot { border-bottom: none; border-top: 1px solid var(--border); justify-content: flex-end; }
+.modal-foot { border-bottom: none; border-top: 1px solid var(--border); justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+/* Modal proxy / tài khoản: 5 nút ở chân + danh sách "Đang lưu" từng máy (2026-09-29). */
+.modal-box.rong { width: 640px; }
 .modal-head h3 { font-size: 16px; }
 .modal-body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 

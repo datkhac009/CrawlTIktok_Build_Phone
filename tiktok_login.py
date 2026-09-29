@@ -36,6 +36,8 @@ gắn + đo ở mỗi lượt quét (setup_device) như cũ.
 
 Chạy độc lập: `python tiktok_login.py <serial>` với TAI_KHOAN, TK_HANDLE trong biến môi trường
 (src/loginrun.cjs truyền). Mật khẩu KHÔNG BAO GIỜ đi qua dòng lệnh hay ra log.
+`python tiktok_login.py <serial> kiem` = CHỈ KIỂM TRA máy đang đăng nhập tài khoản nào (không gõ gì) —
+xem `kiem_tai_khoan`.
 Kết quả về bằng dòng `@@EVENT@@{"type":"login",...}`.
 """
 import base64
@@ -130,6 +132,12 @@ _QUANG_CAO = ("Create your TikTok avatar",
               # Tấm "Viewer history turned on" hiện ngay sau khi đăng nhập (đo ô 62, 2026-09-24).
               # Back = đóng mà KHÔNG đổi cài đặt; bấm "Save" mới là chấp nhận.
               "Viewer history turned on")
+# Hộp thoại "Save login for next time?" (đo 2026-09-29, TikTok 46.9.3, máy 52007cfefe807425 và
+# 5200b3985a969423 — tests/fixtures/login_luu_dang_nhap_46.9.3.xml): TikTok hỏi có lưu thông tin đăng
+# nhập trên máy không. CHỈ hiện khi máy ĐÃ đăng nhập, và ghi tên tài khoản ("Log in to <tên> on this
+# device…"). ⚠ Back KHÔNG đóng được: lượt kiểm tra thật đầu tiên bấm Back suốt 90 giây rồi bỏ cuộc.
+# "Not now" đóng mà không đổi gì; "Save login" mới là lưu — không bao giờ bấm nút đó.
+_RE_LUU_DN = re.compile(r"Log in to (\S+) on this device")
 
 
 def menu_nguon_dang_mo(serial):
@@ -148,7 +156,7 @@ def menu_nguon_dang_mo(serial):
 
 def nhan_dien(xml):
     """Trả (màn, chi_tiết). Màn: dong_y | so_thich | huong_dan_vuot | feed | chon_cach | o_ten | o_mat_khau |
-    ma_2fa | ho_so_minh | sai_mk | bi_khoa | khac."""
+    ma_2fa | ho_so_minh | luu_dang_nhap | sai_mk | bi_khoa | khac."""
     ns = _nodes(xml)
     chu = [x["text"] for x in ns if x["text"]] + [x["desc"] for x in ns if x["desc"]]
     tap = set(chu)
@@ -160,6 +168,9 @@ def nhan_dien(xml):
         return "bi_khoa", next(c for c in chu if _RE_KHOA.search(c))[:120]
     if _RE_SAI_MK.search(gop):
         return "sai_mk", next(c for c in chu if _RE_SAI_MK.search(c))[:120]
+    if "Save login for next time?" in tap:
+        m = _RE_LUU_DN.search(gop)
+        return "luu_dang_nhap", ("@" + m.group(1)) if m else ""
     if "Agree and continue" in tap:
         return "dong_y", ""
     if "Choose what you like" in tap or ("Skip" in tap and any(c.startswith("Next (") for c in chu)):
@@ -300,7 +311,8 @@ def dang_nhap(d, serial, tk, log, emit, handle_cu=""):
                 or (man != "ma_2fa" and luc_2fa and time.time() - luc_2fa < SAU_2FA)):
             time.sleep(1.5)
             continue
-        if man in ("dong_y", "so_thich", "huong_dan_vuot", "feed", "chon_cach", "o_ten", "o_mat_khau", "ma_2fa", "quang_cao"):
+        if man in ("dong_y", "so_thich", "huong_dan_vuot", "feed", "chon_cach", "o_ten", "o_mat_khau", "ma_2fa", "quang_cao",
+                   "luu_dang_nhap"):
             da_go[man] = da_go.get(man, 0) + 1
             if da_go[man] > LAM_LAI_TOI_DA + (6 if man in ("feed", "huong_dan_vuot") else 0):
                 raise DangNhapHong("kẹt ở màn %s — xem màn hình máy trên xiaowei" % man)
@@ -319,6 +331,9 @@ def dang_nhap(d, serial, tk, log, emit, handle_cu=""):
         if man == "quang_cao":
             log("Đóng quảng cáo của TikTok: %s" % ct)
             d.press("back")
+        elif man == "luu_dang_nhap":
+            log('Đóng hộp thoại "Save login for next time?" của TikTok (Not now — không lưu gì).')
+            _bam_chu(d, "Not now")
         elif man == "dong_y":
             _bam_chu(d, "Agree and continue")
         elif man == "so_thich":
@@ -386,9 +401,125 @@ def dang_nhap(d, serial, tk, log, emit, handle_cu=""):
     raise DangNhapHong("quá %d phút chưa đăng nhập xong" % (HAN_TONG // 60))
 
 
+# ── KIỂM TRA TÀI KHOẢN (2026-09-29) ──
+# Chủ dự án: "thêm tính năng kiểm tra tài khoản (xem máy đó đã đăng nhập tiktok chưa và đăng nhập bằng
+# tài khoản nào — sẽ phải hiển thị ra)".
+# ⚠ KHÔNG ĐỌC ĐƯỢC TÀI KHOẢN MÀ KHÔNG MỞ GIAO DIỆN: TikTok có đăng ký kiểu tài khoản
+# `com.zhiliaoapp.account` với Android nhưng KHÔNG thêm tài khoản nào vào đó — đo 2026-09-29, máy
+# 52007cfefe807425 đang đăng nhập mà `dumpsys account` chỉ có tài khoản Google; không root thì cũng không
+# đọc được dữ liệu của app. Nên: mở TikTok → tab Profile → đọc @handle trên trang cá nhân của mình.
+# CHỈ NHÌN: không gõ chữ nào; thấy màn đăng nhập là trả "chưa đăng nhập" ngay. Chỉ bấm đúng những bước
+# điều hướng luồng đăng nhập cũng bấm (Agree and continue, Skip, vuốt qua lớp hướng dẫn, tab Profile,
+# Back đóng quảng cáo / menu nguồn).
+KIEM_HAN = 90          # giây
+MAN_DANG_NHAP = ("chon_cach", "o_ten", "o_mat_khau", "ma_2fa", "sai_mk")
+
+
+def kiem_tai_khoan(d, serial, log):
+    """Máy đang đăng nhập TikTok chưa, bằng tài khoản nào → {"dangNhap": bool, "handle": "@x" | ""}.
+    Bị chặn / màn lạ quá KIEM_HAN giây → ném DangNhapHong."""
+    _ve_tiktok(d, serial)
+    het = time.time() + KIEM_HAN
+    da_bam = {}
+    la_tu = None
+    ct = ""
+    while time.time() < het:
+        man, ct = nhan_dien(_xml(d))
+        if man == "ho_so_minh":
+            if ct:
+                return {"dangNhap": True, "handle": ct}
+            time.sleep(1)      # trang của mình hiện dần, @handle tới sau
+            continue
+        if man in MAN_DANG_NHAP:
+            return {"dangNhap": False, "handle": ""}
+        if man == "bi_khoa":
+            raise DangNhapHong("TikTok chặn: " + ct)
+        if man != "khac":
+            la_tu = None
+            da_bam[man] = da_bam.get(man, 0) + 1
+            if da_bam[man] > LAM_LAI_TOI_DA + 3:
+                raise DangNhapHong("kẹt ở màn %s — xem màn hình máy trên xiaowei" % man)
+        if man == "dong_y":
+            _bam_chu(d, "Agree and continue")
+        elif man == "so_thich":
+            _bam_chu(d, "Skip")
+        elif man == "huong_dan_vuot":
+            _vuot_len(d)
+        elif man == "feed":
+            _bam_chu(d, "Profile")
+            time.sleep(1.5)
+        elif man == "quang_cao":
+            d.press("back")
+        elif man == "luu_dang_nhap":
+            # Hộp thoại này chỉ hiện khi máy ĐÃ đăng nhập, và có sẵn tên tài khoản: đóng mãi không được
+            # thì lấy luôn tên đó thay vì bỏ cuộc.
+            if da_bam[man] > 2 and ct:
+                return {"dangNhap": True, "handle": ct}
+            _bam_chu(d, "Not now")      # KHÔNG bấm "Save login"
+        else:
+            if menu_nguon_dang_mo(serial):
+                d.press("back")
+                time.sleep(1.5)
+                continue
+            # Màn lạ (video mở dở, trang tìm kiếm, hộp hỏi quyền…): chờ màn đứng yên, rồi thử tab Profile;
+            # không có tab đó thì Back một nhịp (lỡ ra khỏi TikTok thì mở lại).
+            if la_tu is None:
+                la_tu = time.time()
+            elif time.time() - la_tu > 6:
+                if not _bam_chu(d, "Profile", timeout=1):
+                    d.press("back")
+                    time.sleep(1)
+                    _ve_tiktok(d, serial)
+                la_tu = time.time()
+        time.sleep(2)
+    raise DangNhapHong("quá %d giây chưa nhận ra máy đã đăng nhập hay chưa — đang thấy: %s" % (KIEM_HAN, ct))
+
+
+def ket_qua_kiem(kiem, tk=None, handle_cu=""):
+    """Kết quả `kiem_tai_khoan` → sự kiện `login` cho cột Tài khoản.
+
+    ⚠ `ok` CHỈ True khi CHẮC máy đang đăng nhập ĐÚNG tài khoản đã gán: main.js lấy @handle của kết quả
+    ok làm TK_HANDLE cho lần đăng nhập sau — ghi nhầm một handle lạ vào đó thì lần sau nó tưởng "đã đăng
+    nhập sẵn". Chưa gán tài khoản / tài khoản email chưa từng đăng nhập qua app (không so được) →
+    "dang_nhap_san": vẫn hiện @handle, nhưng không ok."""
+    if not kiem["dangNhap"]:
+        return {"ok": False, "trangThai": "chua_dang_nhap", "handle": "", "msg": "chưa đăng nhập TikTok"}
+    h = kiem["handle"]
+    if tk:
+        if _cung_tai_khoan(h, tk, handle_cu):
+            return {"ok": True, "trangThai": "da_co", "handle": h}
+        if "@" not in tk["user"] or handle_cu:
+            return {"ok": False, "trangThai": "lech", "handle": h}
+    return {"ok": False, "trangThai": "dang_nhap_san", "handle": h, "msg": "máy đang đăng nhập " + h}
+
+
 def _su_kien(loai, **k):
     import json
     print("@@EVENT@@" + json.dumps({"type": loai, **k}, ensure_ascii=False), flush=True)
+
+
+def _kiem(serial, tk, handle_cu, log):
+    """`python tiktok_login.py <serial> kiem`: CHỈ kiểm tra, không đăng nhập. TAI_KHOAN không bắt buộc —
+    có thì so xem máy có đang đăng nhập ĐÚNG tài khoản đó không."""
+    from adb_helper import connect
+    try:
+        d = connect(serial)
+        log("🔍 Kiểm tra tài khoản TikTok trên máy (chỉ xem, không gõ gì)…")
+        kq = ket_qua_kiem(kiem_tai_khoan(d, serial, log), tk, handle_cu)
+    except Exception as e:
+        log("⛔ Không kiểm được tài khoản: %s" % str(e)[:160])
+        _su_kien("login", ok=False, trangThai="loi", msg="không kiểm được: %s" % str(e)[:140])
+        return 1
+    if kq["trangThai"] == "chua_dang_nhap":
+        log("✕ Máy CHƯA đăng nhập TikTok.")
+    elif kq["trangThai"] == "lech":
+        log("⚠ Máy đang đăng nhập %s — KHÁC tài khoản đã gán (%s)." % (kq["handle"], mo_ta(tk)))
+    elif kq["trangThai"] == "da_co":
+        log("✓ Máy đang đăng nhập đúng tài khoản đã gán: %s." % kq["handle"])
+    else:
+        log("✓ Máy đang đăng nhập %s." % kq["handle"])
+    _su_kien("login", **kq)
+    return 0
 
 
 def _chinh(argv):
@@ -400,11 +531,13 @@ def _chinh(argv):
     except Exception:
         pass
     if len(argv) < 2:
-        print("Dùng: python tiktok_login.py <serial>   (TAI_KHOAN trong biến môi trường)", flush=True)
+        print("Dùng: python tiktok_login.py <serial> [kiem]   (TAI_KHOAN trong biến môi trường)", flush=True)
         return 2
     serial = argv[1]
     log = lambda m: print(m, flush=True)
     tk = doc_tai_khoan(os.environ.get("TAI_KHOAN", ""))
+    if len(argv) > 2 and argv[2] == "kiem":
+        return _kiem(serial, tk, os.environ.get("TK_HANDLE", ""), log)
     if not tk:
         _su_kien("login", ok=False, trangThai="loi", msg="chưa có tài khoản hoặc sai dạng user|pass|2fa")
         return 1

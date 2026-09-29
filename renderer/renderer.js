@@ -300,10 +300,12 @@ function onCrawlStatus(payload) {
   // Đăng nhập TikTok (tiktok_login.py qua main.js: _dangNhapMot) — đang / chờ người / kết quả.
   if (kind === 'login') {
     st.login = {
-      dang: !!payload.dang, choNguoi: !!payload.choNguoi, ok: !!payload.ok,
+      dang: !!payload.dang, choNguoi: !!payload.choNguoi, ok: !!payload.ok, kiem: !!payload.kiem,
       trangThai: payload.trangThai || '', handle: payload.handle || '', msg: payload.msg || '',
     };
     renderDeviceRow(deviceId);
+    // Modal tài khoản đang mở cho máy này → ô "Đang lưu" đổi theo (⏳ đang kiểm tra… → @handle).
+    if (document.getElementById('accModal').classList.contains('open') && accIds.includes(deviceId)) veTaiKhoanDangLuu();
     return;
   }
   // Kết quả gắn proxy (college_proxy.py). Hỏng thì Python đã tự dừng và in lý do vào log.
@@ -485,11 +487,15 @@ function oProxy(d, st) {
 // gần nhất. "Lệch" = máy đang đăng nhập tài khoản KHÁC — app cố ý không đụng vào.
 function oTaiKhoan(d, st) {
   const k = st.login || d.taiKhoanKq;
+  // Kết quả của nút 🔍 Kiểm tra tài khoản (2026-09-29) ghi thêm giờ kiểm vào chữ rê chuột.
+  const luc = k && k.kiem && k.luc ? ` (kiểm lúc ${new Date(k.luc).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})` : '';
   let kq = '';
   if (k && k.choNguoi) kq = `<div class="pproxy-wait" title="${esc(k.msg)}">⏳ cần giải tay trên xiaowei</div>`;
-  else if (k && k.dang) kq = '<div class="pproxy-wait">⏳ đang đăng nhập…</div>';
-  else if (k && k.ok) kq = `<div class="pproxy-ok">✓ ${esc(k.handle || 'đã đăng nhập')}</div>`;
-  else if (k && k.trangThai === 'lech') kq = `<div class="pproxy-wait" title="Máy đang đăng nhập tài khoản khác — app không đụng vào">⚠ lệch: ${esc(k.handle)}</div>`;
+  else if (k && k.dang) kq = `<div class="pproxy-wait">⏳ ${k.kiem ? 'đang kiểm tra' : 'đang đăng nhập'}…</div>`;
+  else if (k && k.ok) kq = `<div class="pproxy-ok" title="Máy đang đăng nhập đúng tài khoản đã gán${luc}">✓ ${esc(k.handle || 'đã đăng nhập')}</div>`;
+  else if (k && k.trangThai === 'lech') kq = `<div class="pproxy-wait" title="Máy đang đăng nhập tài khoản khác — app không đụng vào${luc}">⚠ lệch: ${esc(k.handle)}</div>`;
+  else if (k && k.trangThai === 'dang_nhap_san') kq = `<div class="pproxy-ok" title="Máy đang đăng nhập tài khoản này (chưa gán tài khoản, hoặc chưa so được với tài khoản đã gán)${luc}">✓ đang đăng nhập ${esc(k.handle)}</div>`;
+  else if (k && k.trangThai === 'chua_dang_nhap') kq = `<div class="pproxy-err" title="Tab Profile của TikTok hiện màn đăng nhập${luc}">✕ chưa đăng nhập TikTok</div>`;
   else if (k) kq = `<div class="pproxy-err" title="${esc(k.msg)}">✕ ${esc((k.msg || 'hỏng').slice(0, 40))}</div>`;
   if (!d.taiKhoanHien) return kq || '<span class="pproxy-none">—</span>';
   return `<span class="pserial">${esc(d.taiKhoanHien)}</span>${kq}`;
@@ -757,12 +763,35 @@ function openAccModal(ids) {
     ? ((devices.find((x) => x.id === ids[0]) || {}).name || '1 máy')
     : `${ids.length} máy đã chọn`;
   document.getElementById('accText').value = '';
+  veTaiKhoanDangLuu();
   xemTruocTaiKhoan();
   document.getElementById('accModal').classList.add('open');
 }
 
 function closeAccModal() {
   document.getElementById('accModal').classList.remove('open');
+}
+
+// Ô "Đang lưu": tài khoản ĐÃ LƯU của từng máy (@user · 2FA — mật khẩu / khoá không bao giờ sang giao
+// diện) + kết quả đăng nhập / kiểm tra gần nhất, cùng chữ với cột Tài khoản.
+// VÌ SAO (2026-09-29): ô dán luôn mở ra trống, nên lưu xong mở lại, chủ dự án tưởng "không lưu lại".
+function veTaiKhoanDangLuu() {
+  document.getElementById('accCurrent').innerHTML = accIds.map((id) => {
+    const d = devices.find((x) => x.id === id) || { id, name: id };
+    const st = deviceState[id] || trangThaiMoi();
+    const o = d.taiKhoanHien || st.login || d.taiKhoanKq ? oTaiKhoan(d, st) : '<span class="pproxy-none">chưa có tài khoản</span>';
+    return `<div class="proxy-dong"><b>${esc(d.name || id)}</b>: ${o}</div>`;
+  }).join('');
+}
+
+// Nút "🔍 Kiểm tra tài khoản" (main.js: devices-check-account → tiktok_login.py <serial> kiem): mở TikTok,
+// vào tab Profile, đọc máy đang đăng nhập tài khoản nào — không gõ gì. Kết quả về dần ở ô "Đang lưu"
+// và cột Tài khoản (mỗi máy ~10–60 giây, tối đa 3 máy một lúc).
+async function kiemTraTaiKhoan() {
+  const r = await window.api.devicesCheckAccount({ ids: accIds });
+  veTaiKhoanDangLuu();
+  toast(`Đang kiểm tra ${r.bat.length} máy — xem cột Tài khoản`
+    + (r.ban.length ? ` · ${r.ban.length} máy đang chạy / đang bận, dừng trước đã` : ''), r.bat.length > 0);
 }
 
 async function xemTruocTaiKhoan() {
@@ -1437,6 +1466,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('accSave').addEventListener('click', () => saveAccounts(false));
   document.getElementById('accSaveLogin').addEventListener('click', () => saveAccounts(true));
   document.getElementById('accClear').addEventListener('click', clearAccounts);
+  document.getElementById('accCheck').addEventListener('click', kiemTraTaiKhoan);
   document.getElementById('accText').addEventListener('input', xemTruocTaiKhoan);
 
   document.getElementById('sheetsBtn').addEventListener('click', openSheetsModal);

@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('api', {
   proxiesCheck: (data) => ipcRenderer.invoke('proxies-check', data),
   devicesSetAccounts: (data) => ipcRenderer.invoke('devices-set-accounts', data),
   devicesLogin: (data) => ipcRenderer.invoke('devices-login', data),
+  devicesCheckAccount: (data) => ipcRenderer.invoke('devices-check-account', data),
   devicesListAdb: () => ipcRenderer.invoke('devices-list-adb'),
   deviceCheck: (serial) => ipcRenderer.invoke('device-check', serial),
   deviceIdentify: (serial) => ipcRenderer.invoke('device-identify', serial),

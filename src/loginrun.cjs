@@ -4,6 +4,8 @@
 // (mật khẩu không qua dòng lệnh).
 // KHÔNG gắn / đo proxy khi đăng nhập (2026-09-29, chủ dự án: "khi đăng nhập không cần phải kiểm tra
 // proxy nữa") — nên không truyền PROXY xuống. Xem chú thích đầu tiktok_login.py.
+// `kiem: true` (2026-09-29) = nút "🔍 Kiểm tra tài khoản": `tiktok_login.py <serial> kiem` CHỈ xem máy
+// đang đăng nhập tài khoản nào, không gõ gì; tài khoản đã gán (nếu có) chỉ để so.
 // Máy đang chạy thì main.js KHÔNG gọi tới đây (tiến trình quét đang giữ màn hình).
 'use strict';
 
@@ -14,12 +16,14 @@ const { adbPath, adbServerPort } = require('./adbpath.cjs');
 const { findPython } = require('./pythonpath.cjs');
 
 const EVENT_PREFIX = '@@EVENT@@';
-// Đăng nhập tối đa 8 phút, cộng tới 5 phút chờ người giải captcha.
+// Đăng nhập tối đa 8 phút, cộng tới 5 phút chờ người giải captcha. Kiểm tra: tối đa 90 giây nhìn màn
+// (tiktok_login.KIEM_HAN) + nối uiautomator2.
 const HAN_MS = 13 * 60 * 1000;
+const HAN_KIEM_MS = 4 * 60 * 1000;
 
-// { deviceId, serial, taiKhoan, handleCu } → Promise<{ ok, trangThai, handle, msg }>.
+// { deviceId, serial, taiKhoan, handleCu, kiem } → Promise<{ ok, trangThai, handle, msg }>.
 // `onLog(line)` nhận từng dòng log; `onSuKien(p)` nhận sự kiện giữa chừng (cho_nguoi…).
-function chayDangNhap({ serial, taiKhoan, handleCu }, onLog = () => {}, onSuKien = () => {}) {
+function chayDangNhap({ serial, taiKhoan, handleCu, kiem }, onLog = () => {}, onSuKien = () => {}) {
   return new Promise((resolve) => {
     const py = findPython();
     if (!py || !py.hasU2) return resolve({ ok: false, trangThai: 'loi', msg: 'Chưa có Python + uiautomator2 — bấm 🔌 Kiểm tra.' });
@@ -35,12 +39,12 @@ function chayDangNhap({ serial, taiKhoan, handleCu }, onLog = () => {}, onSuKien
     let kq = null;
     let xong = false;
     const ket = (r) => { if (!xong) { xong = true; clearTimeout(hen); resolve(r); } };
-    const proc = spawn(py.cmd, [...py.args, resolveResource('tiktok_login.py'), serial],
+    const proc = spawn(py.cmd, [...py.args, resolveResource('tiktok_login.py'), serial, ...(kiem ? ['kiem'] : [])],
       { cwd: getBaseDir(), env, windowsHide: true });
     const hen = setTimeout(() => {
       try { proc.kill(); } catch (_) {}
-      ket({ ok: false, trangThai: 'loi', msg: 'đăng nhập quá 13 phút không xong — đã dừng' });
-    }, HAN_MS);
+      ket({ ok: false, trangThai: 'loi', msg: kiem ? 'kiểm tra quá 4 phút không xong — đã dừng' : 'đăng nhập quá 13 phút không xong — đã dừng' });
+    }, kiem ? HAN_KIEM_MS : HAN_MS);
     const doc = (line) => {
       if (!line) return;
       if (line.startsWith(EVENT_PREFIX)) {

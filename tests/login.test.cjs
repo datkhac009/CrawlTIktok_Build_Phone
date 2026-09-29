@@ -95,6 +95,9 @@ MAN = {
   "ma_2fa": [nut("2-step verification"), nut("Authenticator app"), nut("", cls="android.widget.EditText"), nut("Continue")],
   "captcha": [nut("Drag the slider to fit the puzzle")],
   "sai_mk": [nut("Incorrect account or password"), nut("", cls="android.widget.EditText", pw=True), nut("Log in")],
+  # Đo 2026-09-29 (46.9.3): hiện khi máy ĐÃ đăng nhập; Back không đóng được, "Not now" mới đóng.
+  "luu": [nut("Save login for next time?"), nut("Log in to hung.acc on this device without needing to enter your info."),
+          nut("Save login", cls="android.widget.Button"), nut("Not now", cls="android.widget.Button"), nut(desc="Dialog")],
 }
 def ho_so(h): return [nut(desc="Profile menu"), nut("Add bio", desc="Add bio"), nut(h), nut("Following")]
 
@@ -118,9 +121,9 @@ class Touch:
 class May:
     # tre: sau khi bấm, màn CŨ còn đứng thêm chừng ấy lần đọc (TikTok đang xử lý — đo máy 60).
     # loe_mk: qua 2FA rồi, màn mật khẩu cũ loé lên chừng ấy lần đọc trước khi vào app.
-    def __init__(s, man, dang_nhap="", co_2fa=False, captcha=0, sai_mk=False, tre=0, loe_mk=0, quang_cao=False):
+    def __init__(s, man, dang_nhap="", co_2fa=False, captcha=0, sai_mk=False, tre=0, loe_mk=0, quang_cao=False, luu=False):
         s.man = man; s.dang_nhap = dang_nhap; s.co_2fa = co_2fa; s.captcha = captcha; s.sai_mk = sai_mk
-        s.tre = tre; s.cho = None; s.loe_mk = loe_mk; s.quang_cao = quang_cao
+        s.tre = tre; s.cho = None; s.loe_mk = loe_mk; s.quang_cao = quang_cao; s.luu = luu
         s.menu_nguon = False; s.lan_menu = 0
         s.viec = []; s.go = []; s.touch = Touch(s); s.user = "hung.acc"
     def app_current(s): return {"package": T.PKG}
@@ -170,7 +173,9 @@ class May:
                 if not s.co_2fa: s.dang_nhap = "@" + s.user
         elif s.man == "ma_2fa" and t == "Continue":
             s.dang_nhap = "@" + s.user
-            s.man = "captcha" if s.captcha else ("loe" if s.loe_mk else ("quang_cao" if s.quang_cao else "ho_so"))
+            s.man = "captcha" if s.captcha else ("loe" if s.loe_mk else ("quang_cao" if s.quang_cao else ("luu" if s.luu else "ho_so")))
+        elif s.man == "luu" and t == "Not now":
+            s.man = "feed"
 
 MAY = [None]
 def adb_gia(*a, serial=None, timeout=60):
@@ -223,11 +228,15 @@ def ket(**k):
     check('2b. Mã 2FA đúng mẫu chuẩn RFC 6238', !!t.kq && t.kq.kq.join(',') === '287082,081804', t.kq ? t.kq.kq : t.loi);
     const FX = [['login_dong_y_47.0.2.xml', 'dong_y'], ['login_so_thich_47.0.2.xml', 'so_thich'], ['login_huong_dan_vuot_47.0.2.xml', 'huong_dan_vuot'],
       ['login_chon_cach_47.0.2.xml', 'chon_cach'], ['login_o_ten_47.0.2.xml', 'o_ten'], ['login_o_ten_da_go_47.0.2.xml', 'o_ten'],
-      ['login_2fa_47.0.2.xml', 'ma_2fa'], ['login_popup_avatar_47.0.2.xml', 'quang_cao'], ['login_ho_so_minh_47.0.2.xml', 'ho_so_minh'], ['feed_nut_tako_46.9.3.xml', 'feed']];
+      ['login_2fa_47.0.2.xml', 'ma_2fa'], ['login_popup_avatar_47.0.2.xml', 'quang_cao'], ['login_ho_so_minh_47.0.2.xml', 'ho_so_minh'], ['feed_nut_tako_46.9.3.xml', 'feed'],
+      ['login_luu_dang_nhap_46.9.3.xml', 'luu_dang_nhap']];
     const n = chay('fx', `ket(kq=[T.nhan_dien(open(os.path.join(os.environ["APP_DIR"], "tests", "fixtures", f), encoding="utf-8").read())[0] for f in ${JSON.stringify(FX.map((x) => x[0]))}])`);
     const sai = n.kq ? FX.filter(([, m], i) => n.kq.kq[i] !== m) : FX;
     const hs = chay('hs', `ket(kq=T.nhan_dien(open(os.path.join(os.environ["APP_DIR"], "tests", "fixtures", "login_ho_so_minh_47.0.2.xml"), encoding="utf-8").read()))`);
     check('2d. Trang cá nhân của mình (bản chụp thật) → đọc đúng @handle', !!hs.kq && hs.kq.kq[1] === '@ten.dang.nhap', hs.kq ? JSON.stringify(hs.kq.kq) : hs.loi);
+    const luu = chay('luu_that', `ket(kq=T.nhan_dien(open(os.path.join(os.environ["APP_DIR"], "tests", "fixtures", "login_luu_dang_nhap_46.9.3.xml"), encoding="utf-8").read()))`);
+    check('2e. Hộp thoại "Save login for next time?" (bản chụp thật 46.9.3) → nhận ra, đọc được tên tài khoản trong câu "Log in to …"',
+      !!luu.kq && luu.kq.kq[0] === 'luu_dang_nhap' && luu.kq.kq[1] === '@ten.dang.nhap', luu.kq ? JSON.stringify(luu.kq.kq) : luu.loi);
     check('2c. Nhận diện đúng các màn chụp THẬT trên máy 60 (Agree and continue của máy mới cài, sở thích, lớp vuốt, chọn cách, ô tên trống / đã gõ, 2FA, quảng cáo, trang của mình, feed)', !sai.length,
       n.kq ? JSON.stringify(n.kq.kq) : n.loi);
   }
@@ -291,6 +300,67 @@ ket(kq=chay(m, ${TK(KHOA)}), viec=m.viec)`);
     const k = chay('thieu2fa', `ket(kq=chay(May("o_mk", co_2fa=True), ${TK()}))`);
     check('3k. TikTok hỏi 2FA mà tài khoản không có khoá → dừng, nói rõ',
       !!k.kq && /không có khoá 2FA/.test(k.kq.kq.loi || ''), k.kq ? JSON.stringify(k.kq.kq) : k.loi);
+
+    // ── 3n–3r. Nút "🔍 Kiểm tra tài khoản" (2026-09-29): CHỈ XEM, không gõ chữ nào ──
+    const KIEM = `
+def kiem(may):
+    MAY[0] = may
+    try:
+        return T.kiem_tai_khoan(may, "SERIAL", log)
+    except T.DangNhapHong as e:
+        return {"loi": str(e)}
+`;
+    const k1 = chay('kiem_co', `${KIEM}
+ket(kq=kiem(May("feed", dang_nhap="@nguoi.dung")), go=MAY[0].go)`);
+    check('3n. Kiểm tra máy ĐÃ đăng nhập → tab Profile → đọc đúng @handle, không gõ gì',
+      !!k1.kq && k1.kq.kq.dangNhap === true && k1.kq.kq.handle === '@nguoi.dung' && !k1.kq.go.length,
+      k1.kq ? JSON.stringify(k1.kq.kq) : k1.loi);
+    const k2 = chay('kiem_chua', `${KIEM}
+ket(kq=kiem(May("dong_y")), go=MAY[0].go, viec=MAY[0].viec)`);
+    check('3o. Máy CHƯA đăng nhập (mới cài) → qua Welcome / Skip / lớp vuốt / Profile, thấy màn đăng nhập → "chưa đăng nhập"; KHÔNG bấm vào luồng đăng nhập, không gõ',
+      !!k2.kq && k2.kq.kq.dangNhap === false && !k2.kq.go.length
+      && !k2.kq.viec.some((v) => v[0] === 'click' && /Continue with email|Log in/.test(JSON.stringify(v[1]))),
+      k2.kq ? JSON.stringify(k2.kq) : k2.loi);
+    // Đo thật 2026-09-29: lượt kiểm tra đầu trên máy thật kẹt 90 giây ở hộp thoại này (bấm Back không đóng).
+    const k4 = chay('kiem_luu', `${KIEM}
+ket(kq=kiem(May("luu", dang_nhap="@hung.acc")), go=MAY[0].go, viec=MAY[0].viec)`);
+    check('3n2. Hộp thoại "Save login for next time?" → bấm "Not now" (KHÔNG bấm "Save login"), đi tiếp đọc được @handle',
+      !!k4.kq && k4.kq.kq.dangNhap === true && k4.kq.kq.handle === '@hung.acc' && !k4.kq.go.length
+      && k4.kq.viec.some((v) => v[0] === 'click' && v[1].text === 'Not now')
+      && !k4.kq.viec.some((v) => v[0] === 'click' && v[1].text === 'Save login'), k4.kq ? JSON.stringify(k4.kq) : k4.loi);
+    const kl = chay('login_luu', `ket(kq=chay(May("o_mk", co_2fa=True, luu=True), ${TK(KHOA)}), viec=MAY[0].viec)`);
+    check('3n3. Đăng nhập xong gặp "Save login for next time?" → "Not now", tới xong, KHÔNG báo "cần người"',
+      !!kl.kq && kl.kq.kq.trangThai === 'xong' && !kl.kq.su_kien.some((x) => x.trangThai === 'cho_nguoi')
+      && kl.kq.viec.some((v) => v[0] === 'click' && v[1].text === 'Not now')
+      && !kl.kq.viec.some((v) => v[0] === 'click' && v[1].text === 'Save login'), kl.kq ? JSON.stringify(kl.kq.kq) : kl.loi);
+    const k3 = chay('kiem_la', `${KIEM}
+ket(kq=kiem(May("captcha", captcha=10**6)), go=MAY[0].go)`);
+    check('3p. Màn lạ mãi không qua → dừng sau 90 giây, nói rõ đang thấy gì, không gõ gì',
+      !!k3.kq && /quá 90 giây/.test(k3.kq.kq.loi || '') && /Drag the slider/.test(k3.kq.kq.loi || '') && !k3.kq.go.length,
+      k3.kq ? JSON.stringify(k3.kq.kq) : k3.loi);
+    const k5 = chay('kiem_kq', `
+tk = {"user": "hung.acc", "pass": "x", "khoa": ""}
+tk_mail = {"user": "a@mail.com", "pass": "x", "khoa": ""}
+co = lambda h: {"dangNhap": True, "handle": h}
+ket(kq=[T.ket_qua_kiem(co("@hung.acc"), tk), T.ket_qua_kiem(co("@khac"), tk), T.ket_qua_kiem(co("@ai.do"), None),
+        T.ket_qua_kiem(co("@ai.do"), tk_mail), T.ket_qua_kiem(co("@ai.do"), tk_mail, "@ai.do"),
+        T.ket_qua_kiem({"dangNhap": False, "handle": ""}, tk)])`);
+    const tt = k5.kq ? k5.kq.kq.map((x) => `${x.trangThai}:${x.ok}`) : [];
+    check('3q. Kết quả kiểm tra: đúng tài khoản đã gán → ✓ ok; tài khoản khác → lệch; chưa gán / email chưa so được → hiện @handle nhưng KHÔNG ok (không thành TK_HANDLE lần sau); chưa đăng nhập → báo rõ',
+      tt.join() === 'da_co:true,lech:false,dang_nhap_san:false,dang_nhap_san:false,da_co:true,chua_dang_nhap:false',
+      JSON.stringify(tt) || k5.loi);
+    const k6 = chay('kiem_cli', `
+import adb_helper
+m = May("feed", dang_nhap="@nguoi.dung"); MAY[0] = m
+adb_helper.connect = lambda s: m
+T._su_kien = lambda loai, **k: SK.append(dict(type=loai, **k))
+os.environ["TAI_KHOAN"] = ""
+rc = T._chinh(["tiktok_login.py", "SERIAL", "kiem"])
+ket(rc=rc, go=m.go)`);
+    check('3r. `tiktok_login.py <serial> kiem` KHÔNG cần tài khoản: báo sự kiện login kèm @handle, thoát 0, không gõ gì',
+      !!k6.kq && k6.kq.rc === 0 && !k6.kq.go.length
+      && k6.kq.su_kien.some((s) => s.type === 'login' && s.trangThai === 'dang_nhap_san' && s.handle === '@nguoi.dung'),
+      k6.kq ? JSON.stringify(k6.kq) : k6.loi);
   }
 }
 
@@ -300,8 +370,21 @@ ket(kq=chay(m, ${TK(KHOA)}), viec=m.viec)`);
   const lr = doc('src/loginrun.cjs');
   const tl = doc('tiktok_login.py');
   const pkg = JSON.parse(doc('package.json'));
-  check('4a. Mật khẩu đi qua biến môi trường, KHÔNG qua dòng lệnh',
-    /TAI_KHOAN: String\(taiKhoan/.test(lr) && /\[\.\.\.py\.args, resolveResource\('tiktok_login\.py'\), serial\]/.test(lr));
+  check('4a. Mật khẩu đi qua biến môi trường, KHÔNG qua dòng lệnh (dòng lệnh chỉ có serial [+ "kiem"])',
+    /TAI_KHOAN: String\(taiKhoan/.test(lr)
+    && /\[\.\.\.py\.args, resolveResource\('tiktok_login\.py'\), serial, \.\.\.\(kiem \? \['kiem'\] : \[\]\)\]/.test(lr));
+  // 2026-09-29: nút "🔍 Kiểm tra tài khoản" + ô "Đang lưu" trong modal tài khoản.
+  const html = doc('renderer/index.html');
+  const rend = doc('renderer/renderer.js');
+  check('4h. Nút 🔍 Kiểm tra tài khoản nối đủ: modal → preload → main (devices-check-account, CHUNG hàng đăng nhập) → loginrun kiem',
+    /id="accCheck">🔍 Kiểm tra tài khoản</.test(html) && /id="accCurrent"/.test(html) && /'accCurrent'/.test(rend)
+    && /devicesCheckAccount: \(data\) => ipcRenderer\.invoke\('devices-check-account'/.test(doc('preload.cjs'))
+    && /ipcMain\.handle\('devices-check-account'[\s\S]{0,1500}_hangDangNhap\.push\(id\)/.test(main)
+    && /window\.api\.devicesCheckAccount\(/.test(rend) && /addEventListener\('click', kiemTraTaiKhoan\)/.test(rend));
+  check('4i. Cột Tài khoản vẽ đủ kết quả kiểm tra: đang kiểm tra / đang đăng nhập @x / chưa đăng nhập',
+    /đang kiểm tra/.test(rend) && /trangThai === 'dang_nhap_san'/.test(rend) && /trangThai === 'chua_dang_nhap'/.test(rend));
+  check('4j. Modal tài khoản không còn nói "gắn proxy trước rồi mới đăng nhập" (đăng nhập không đụng proxy từ 2026-09-29)',
+    !/gắn proxy <b>trước<\/b>/.test(html));
   check('4b. Danh sách gửi giao diện bỏ `taiKhoan`, chỉ gửi `taiKhoanHien`',
     /const \{ proxy: p, taiKhoan: tk, \.\.\.con \} = d;/.test(main) && /ghiDanhTinh[\s\S]*?return choGiaoDien\(dev\);/.test(main));
   // 2026-09-29, chủ dự án: "khi đăng nhập không cần phải kiểm tra proxy nữa, đăng nhập được rồi thì là
